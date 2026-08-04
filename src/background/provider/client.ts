@@ -1,0 +1,103 @@
+// 统一 HTTP 层:超时、错误归一化、取消 signal 合并、有限重试
+// 重试参考 Anthropic SDK / Claude Code:只重试临时错误 + 指数退避带抖动 + 尊重 Retry-After
+// 不做 SSE 解析 / 请求体构造 —— 那些因 provider 而异,留在各 adapter
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+// 可重试的临时错误:429 限流、502/503/529 服务过载。4xx(除 429)和明确错误不重试
+const RETRYABLE_STATUS = new Set([429, 502, 503, 529]);
+const MAX_RETRY = 3;
+const BASE_DELAY_MS = 500;
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public body: string,
+  ) {
+    super(`HTTP ${status}${body ? ` — ${body.slice(0, 200)}` : ""}`);
+    this.name = "ApiError";
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 指数退避 + 随机抖动;若服务端给了 Retry-After 则优先使用 */
+function delayFor(attempt: number, retryAfterMs: number | null): number {
+  if (retryAfterMs !== null) return retryAfterMs;
+  return BASE_DELAY_MS * 2 ** attempt + Math.round(Math.random() * 200);
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number.parseInt(header, 10);
+  return Number.isFinite(seconds) ? seconds * 1000 : null;
+}
+
+export interface ApiFetchOptions {
+  baseUrl: string;
+  apiKey: string;
+  path: string;
+  body?: unknown;
+  timeoutMs?: number;
+  signal?: AbortSignal; // 外部取消(用户点取消 / agent 终止)
+}
+
+export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
+  const {
+    baseUrl,
+    apiKey,
+    path,
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    signal,
+  } = opts;
+
+  for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+    const timeout = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      timeout.abort();
+    }, timeoutMs);
+    // 合并外部 signal 和超时:任一 abort 都让 fetch 中断
+    const merged = signal
+      ? AbortSignal.any([signal, timeout.signal])
+      : timeout.signal;
+
+    try {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`, // ? Bearer 是什么？
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: merged,
+      });
+
+      if (res.ok) return res;
+
+      const errBody = await res.text().catch(() => ""); // ? 这里的 catch 什么都没做，是为什么？
+      // 临时错误且未到重试上限 → 退避后重试
+      if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_RETRY) {
+        await sleep(
+          delayFor(attempt, parseRetryAfter(res.headers.get("retry-after"))),
+        );
+        continue;
+      }
+      throw new ApiError(res.status, errBody);
+    } catch (err) {
+      if (timedOut) throw new Error(`request timeout after ${timeoutMs}ms`);
+      if (signal?.aborted) throw err; // 用户取消,不重试
+      if (err instanceof ApiError) throw err; // 明确错误(如 401/400),不重试
+      if (attempt >= MAX_RETRY) throw err; // 网络层错误重试耗尽
+      await sleep(delayFor(attempt, null)); // fetch 网络层失败(连接/超时类)→ 退避重试
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /* 逻辑上不可达,仅供 TS 收尾 */
+  throw new Error("retry exhausted");
+}
