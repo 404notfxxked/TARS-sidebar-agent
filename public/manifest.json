@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Hello Sidebar (React 19)",
+  "version": "1.0.0",
+  "description": "基于 React 19 + service worker agent loop 的 Chrome 侧边栏",
+  "permissions": ["sidePanel", "tabs", "activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "打开 Hello Sidebar"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
