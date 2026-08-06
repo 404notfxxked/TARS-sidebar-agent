@@ -77,7 +77,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   };
 
   const fieldClass =
-    "mt-1.5 w-full rounded-[6px] border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none transition-colors focus:border-[var(--accent)]";
+    "mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none transition-all duration-200 focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_var(--accent-soft)]";
 
   return (
     <div className="absolute inset-0 z-10 flex justify-end">
@@ -85,12 +85,12 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
         type="button"
         aria-label="关闭设置"
         onClick={onClose}
-        className="absolute inset-0 bg-black/10"
+        className="absolute inset-0 bg-white/40 backdrop-blur-[6px]"
       />
-      <section className="slide-in relative flex h-full w-full flex-col bg-[var(--surface)] px-5 py-5">
+      <section className="slide-in relative flex h-full w-full flex-col bg-[var(--surface)] px-5 py-5 shadow-[var(--shadow-md)]">
         <header className="flex items-start justify-between">
           <div>
-            <h2 className="title-serif m-0 text-[16px] font-semibold leading-none">
+            <h2 className="m-0 text-[15px] font-semibold leading-none tracking-[-0.01em]">
               设置
             </h2>
             <p className="eyebrow m-0 mt-1.5">Settings</p>
@@ -99,7 +99,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="关闭设置"
-            className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-colors hover:bg-[var(--line)] hover:text-[var(--ink)]"
+            className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-all duration-150 hover:bg-[var(--line)] hover:text-[var(--ink)] active:scale-90"
           >
             <svg
               width="13"
@@ -216,7 +216,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
               type="button"
               onClick={save}
               disabled={savedFlash === "saving"}
-              className="flex-1 rounded-[6px] bg-[var(--accent)] py-2 text-[13px] text-white transition-colors hover:bg-[var(--accent-strong)] disabled:opacity-40"
+              className="flex-1 rounded-lg bg-[var(--accent)] py-2 text-[13px] font-medium text-white transition-all duration-150 hover:bg-[var(--accent-strong)] active:scale-[0.97] disabled:opacity-40 disabled:scale-100"
             >
               {savedFlash === "saving"
                 ? "保存中…"
@@ -230,7 +230,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 onClick={forget}
-                className="rounded-[6px] border border-[var(--line)] px-3 text-[13px] text-[var(--muted)] transition-colors hover:border-[var(--danger)] hover:text-[var(--danger)]"
+                className="rounded-lg border border-[var(--line)] px-3 text-[13px] text-[var(--muted)] transition-all duration-150 hover:border-[var(--danger)] hover:text-[var(--danger)] active:scale-[0.97]"
               >
                 忘记
               </button>

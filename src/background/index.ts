@@ -24,9 +24,11 @@ const activeRuns = new Map<string, RunState>();
 
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name !== PORT_NAME) return;
+  console.log("[sw] port connected");
 
   // 侧栏关闭 / 刷新 → 端口断开 → 取消并清理所有运行中的 agent
   port.onDisconnect.addListener(() => {
+    console.log("[sw] port disconnected, cleaning up", activeRuns.size, "runs");
     for (const [sessionId, run] of activeRuns) {
       run.abort.abort();
       activeRuns.delete(sessionId);
@@ -42,16 +44,33 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         const sessionId = msg.payload.sessionId ?? crypto.randomUUID();
         const run: RunState = { abort: new AbortController() };
         activeRuns.set(sessionId, run);
+        console.log("[agent] run started", sessionId);
         try {
-          await runAgentLoop(msg.payload, wrapPort(port, sessionId), run.abort.signal);
+          await runAgentLoop(
+            { ...msg.payload, sessionId },
+            wrapPort(port, sessionId),
+            run.abort.signal,
+          );
         } finally {
           activeRuns.delete(sessionId);
+          console.log("[agent] run ended", sessionId);
+          // 用原始 port 通知前端 run 结束(包括被取消的情况——wrapPort 已拒绝发送)
+          try {
+            port.postMessage({ type: MSG.AGENT_DONE });
+          } catch {
+            /* 端口已断开,前端反正也收不到 */
+          }
         }
         break;
       }
       case MSG.CANCEL_RUN: {
-        // 用户取消 → abort 正在进行的 fetch;agent 的 catch 看到 aborted 会静默结束
-        activeRuns.get(msg.sessionId)?.abort.abort();
+        const run = activeRuns.get(msg.sessionId);
+        console.log(
+          "[agent] cancel requested",
+          msg.sessionId,
+          run ? "found — aborting" : "NOT FOUND — no-op",
+        );
+        run?.abort.abort();
         break;
       }
     }
