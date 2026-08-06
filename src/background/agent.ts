@@ -8,7 +8,7 @@ import { loadConfig } from "../shared/configStore";
 
 const MAX_TURNS = 10;
 
-const SYSTEM_PROMPT = `你是「随读」，一个跑在浏览器侧栏里的文档答疑助手。
+const SYSTEM_PROMPT = `你是一个跑在浏览器侧栏里的文档答疑助手。
 用户边阅读网页边向你提问。规则：
 1. 需要页面信息时，先用工具读取当前页面，不要凭空猜测。
 2. 回答用中文，简洁、准确；能指出信息来源（页面原文 / 工具返回 / 自身知识）。
@@ -49,7 +49,7 @@ export async function runAgentLoop(
     ];
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      // 告诉前端开始思考了,前端可以展示「思考中…」
+      console.log("[agent] turn", turn + 1, "/", MAX_TURNS);
       port.postMessage({ type: MSG.AGENT_THINKING, turn });
 
       const result = await provider.chat({
@@ -70,6 +70,7 @@ export async function runAgentLoop(
         });
 
         for (const tc of result.toolCalls) {
+          console.log("[agent] dispatching tool:", tc.name);
           port.postMessage({ type: MSG.AGENT_TOOL_CALL, name: tc.name, args: tc.args });
 
           // 工具失败不中断整个 agent:把错误文本作为观察结果回填,
@@ -77,7 +78,9 @@ export async function runAgentLoop(
           let toolResult: unknown;
           try {
             toolResult = await dispatchToolCall(tc.name, tc.args);
+            console.log("[agent] tool result:", tc.name, typeof toolResult === "string" ? "(string)" : "(object)");
           } catch (err) {
+            console.log("[agent] tool error:", tc.name, err);
             toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
 
@@ -98,7 +101,10 @@ export async function runAgentLoop(
     port.postMessage({ type: MSG.AGENT_DONE });
   } catch (err) {
     // 用户取消 → 静默结束,不算错误(wrapPort 也会拒绝再发事件)
-    if (signal?.aborted) return;
+    if (signal?.aborted) {
+      console.log("[agent] aborted by user — exiting silently");
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     port.postMessage({ type: MSG.AGENT_ERROR, error: message });
   }

@@ -1,9 +1,8 @@
-// 主布局:卷首 header + 对话 + 设置滑层
+// 主布局:仅保留设置入口,对话视图占满整栏
 
-import { useEffect, useState } from 'react'
-import ChatView from './ChatView'
-import SettingsPanel from './SettingsPanel'
-import { loadConfig } from '../shared/configStore'
+import { useState } from "react";
+import ChatView from "./ChatView";
+import SettingsPanel from "./SettingsPanel";
 
 function SettingsIcon() {
   return (
@@ -23,50 +22,28 @@ function SettingsIcon() {
       <line x1="2.5" y1="12" x2="13.5" y2="12" />
       <circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none" />
     </svg>
-  )
+  );
 }
 
 export default function App() {
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [active, setActive] = useState<{ provider: string; model: string } | null>(null)
-
-  // 挂载时 + 设置关闭后,刷新「当前配置」chip
-  useEffect(() => {
-    if (!settingsOpen) {
-      loadConfig().then((c) => {
-        setActive(c.model ? { provider: c.provider, model: c.model } : null)
-      })
-    }
-  }, [settingsOpen])
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <div className="relative flex h-full flex-col">
-      <header className="flex items-start justify-between px-4 pb-3 pt-4">
-        <div>
-          <h1 className="title-serif m-0 text-[16px] font-semibold leading-none">
-            随读
-          </h1>
-          <p className="eyebrow m-0 mt-1.5">Sidebar · QA</p>
-        </div>
+      <header className="flex justify-end px-4 pb-1 pt-3">
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
           aria-label="打开设置"
-          className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-colors hover:bg-[var(--line)] hover:text-[var(--ink)]"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-all duration-150 hover:bg-[var(--line)] hover:text-[var(--ink)] active:scale-90"
         >
           <SettingsIcon />
         </button>
       </header>
 
-      {active && (
-        <p className="px-4 pb-2 font-mono text-[10px] tracking-[0.04em] text-[var(--muted)]">
-          {active.model} · {active.provider}
-        </p>
-      )}
-
       <ChatView />
 
       {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </div>
-  )
+  );
 }
