@@ -6,6 +6,7 @@
 
 import { MSG, PORT_NAME, type SideToBg } from "../shared/messages";
 import { runAgentLoop, type AgentPort } from "./agent";
+import { loadHistory, toChatRecords } from "./sessionHistory";
 
 // 点击工具栏图标 → 打开侧边栏
 chrome.action.onClicked.addListener((tab: chrome.tabs.Tab) => {
@@ -17,11 +18,16 @@ chrome.action.onClicked.addListener((tab: chrome.tabs.Tab) => {
 /** 单个 agent 运行的状态:持有一个 AbortController,取消时中断正在进行的网络请求 */
 interface RunState {
   abort: AbortController;
+  /** 提交时激活的 tab(可观测性,暂未消费) */
+  tabId?: number;
 }
 
 // 每个运行中的 agent 会话 → 取消句柄(以 sessionId 为 key)
+// 注意:SW 休眠时此 Map 会被清空(内存态,本就不该跨唤醒存活);
+// 需跨唤醒存活的数据(会话历史)走 chrome.storage.session,不在这里。
 const activeRuns = new Map<string, RunState>();
 
+// MV3 事件驱动:onConnect 触发时 SW 被唤醒并分发事件
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name !== PORT_NAME) return;
   console.log("[sw] port connected");
@@ -42,7 +48,10 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     switch (msg.type) {
       case MSG.USER_MESSAGE: {
         const sessionId = msg.payload.sessionId ?? crypto.randomUUID();
-        const run: RunState = { abort: new AbortController() };
+        const run: RunState = {
+          abort: new AbortController(),
+          tabId: msg.payload.tabId,
+        };
         activeRuns.set(sessionId, run);
         console.log("[agent] run started", sessionId);
         try {
@@ -71,6 +80,15 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           run ? "found — aborting" : "NOT FOUND — no-op",
         );
         run?.abort.abort();
+        break;
+      }
+      case MSG.LOAD_HISTORY: {
+        // 面板重开 / 切会话时,把该会话历史回给前端渲染
+        const history = await loadHistory(msg.sessionId);
+        port.postMessage({
+          type: MSG.HISTORY,
+          messages: toChatRecords(history),
+        });
         break;
       }
     }

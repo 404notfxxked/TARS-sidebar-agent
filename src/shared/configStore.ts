@@ -49,7 +49,8 @@ export async function saveConfig(input: AppConfig): Promise<void> {
   await chrome.storage.session.set({ apiKey: input.apiKey }); // 本次会话总是可用
 }
 
-// ? 清楚功能是不是应该把其他信息也都清掉？
+// 「忘记」只清 API key,不清 provider/model/baseUrl:那些是非敏感偏好,
+// 每次忘记都清掉会让用户反复重选;需要「恢复默认」时应另加函数,而非改这里
 export async function forgetApiKey(): Promise<void> {
   await chrome.storage.local.remove("apiKey");
   await chrome.storage.session.remove("apiKey");

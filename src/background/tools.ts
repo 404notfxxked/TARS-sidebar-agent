@@ -2,6 +2,7 @@
 
 import type { AgentEvent } from "../shared/messages";
 import { callContentTool, getActiveTabId } from "../shared/contentTools";
+import { getToolExecutionContext } from "./toolContext";
 import type { ToolSchema } from "../shared/toolTypes";
 
 /** 工具定义:注册表条目 = 共享的 ToolSchema(纯 schema)+ 可执行的 execute */
@@ -36,6 +37,14 @@ registerTool<Record<string, never>, { url?: string; title?: string }>({
   description: "获取当前激活 tab 的 URL 和标题",
   parameters: { type: "object", properties: {} },
   execute: async () => {
+    // 优先用 run 作用域的 tab(提交时捕获),避免执行时切 tab 读错页面
+    const ctx = getToolExecutionContext();
+    const tabId = ctx?.tabId;
+    if (tabId != null) {
+      const tab = await chrome.tabs.get(tabId);
+      return { url: tab?.url, title: tab?.title };
+    }
+    // 无 run 上下文(如 agent loop 外的直接调用)→ 退回实时激活 tab
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
@@ -55,7 +64,9 @@ registerTool<
     "读取当前激活网页的标题、URL 和正文文本(截断到 8000 字符),用于总结或答疑",
   parameters: { type: "object", properties: {} },
   execute: async () => {
-    const tabId = await getActiveTabId();
+    // 优先用 run 作用域的 tab(提交时捕获),避免执行时切 tab 读错页面
+    const ctx = getToolExecutionContext();
+    const tabId = ctx?.tabId ?? (await getActiveTabId());
     if (tabId === null) throw new Error("no active tab");
     return (await callContentTool(tabId, "get_page_content")) as {
       title?: string;

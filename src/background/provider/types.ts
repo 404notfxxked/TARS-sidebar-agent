@@ -4,7 +4,10 @@
 import type { ToolSchema } from "../../shared/toolTypes";
 
 export interface ProviderConfig {
-  provider: "openai" | "anthropic"; // ? 这里把 provider 改成 protocol 是否更合理？或者说 provider 和 protocol 其实是两个东西？
+  // provider 是「厂商」(openai/anthropic),决定走哪个 adapter;
+  // 与 protocol(wire 格式)是两回事,但当前阶段厂商与协议一一对应,合并成一个字段即可。
+  // 若未来出现「厂商与协议错位」(如 OpenAI key 走 Anthropic 协议的代理)再拆成 protocol。
+  provider: "openai" | "anthropic";
   apiKey: string;
   model: string;
   baseUrl?: string; // 测试用覆盖,如 DeepSeek 用 https://api.deepseek.com/v1
