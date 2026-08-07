@@ -70,7 +70,10 @@ export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`, // ? Bearer 是什么？
+          // Bearer 认证(RFC 6750):Authorization 头带 token,「持票即放行」。
+          // 注意:Anthropic Messages API 不用 Bearer,用 x-api-key + anthropic-version;
+          // 实现 anthropic 适配器时这里需支持传自定义 headers。
+          Authorization: `Bearer ${apiKey}`,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: merged,
@@ -78,7 +81,9 @@ export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
 
       if (res.ok) return res;
 
-      const errBody = await res.text().catch(() => ""); // ? 这里的 catch 什么都没做，是为什么？
+      // 尽量拿错误体用于报错;读 body 本身也可能失败(连接中断等),
+      // 兜底为空串,不让次要的读取失败掩盖真正要抛出的 HTTP 错误
+      const errBody = await res.text().catch(() => "");
       // 临时错误且未到重试上限 → 退避后重试
       if (RETRYABLE_STATUS.has(res.status) && attempt < MAX_RETRY) {
         await sleep(

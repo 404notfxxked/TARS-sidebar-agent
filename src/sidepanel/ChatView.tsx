@@ -4,10 +4,14 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
+import { getActiveTabId } from "../shared/contentTools";
+import { getOrCreateSessionId } from "../shared/sessionStore";
 
 interface ChatMsg {
   role: "user" | "assistant";
   content: string;
+  /** 所属会话:以提交时的激活 tab 为维度(见 sessionStore) */
+  sessionId: string;
 }
 
 type AgentStatus = "idle" | "thinking" | "streaming";
@@ -16,10 +20,27 @@ export default function ChatView() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
+  const [currentSession, setCurrentSession] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const streamingRef = useRef(false);
   const sessionRef = useRef("");
+  const historyReqRef = useRef("");
   const listRef = useRef<HTMLDivElement | null>(null);
+  // 同步 status 的 ref(供 onActivated 等持久监听器读,避免闭包过期)
+  const statusRef = useRef<AgentStatus>("idle");
+  // 最近一次已加载历史的会话,防重复请求
+  const lastLoadedSessionRef = useRef("");
+
+  /** 会话随「当前激活 tab」走;无激活 tab 时退回一次性会话(仅本次面板有效) */
+  const resolveContext = async (): Promise<{
+    tabId: number | undefined;
+    sessionId: string;
+  }> => {
+    const tabId = await getActiveTabId();
+    return tabId !== null
+      ? { tabId, sessionId: await getOrCreateSessionId(tabId) }
+      : { tabId: undefined, sessionId: crypto.randomUUID() };
+  };
 
   const connect = (): chrome.runtime.Port => {
     // 复用已有连接（没断开就不新建）
@@ -29,10 +50,14 @@ export default function ChatView() {
     portRef.current = port;
     console.log("[chat] port connected");
 
+    // delta 顺序有保证:后台 readSSE 按序处理事件,port 单通道 FIFO 送达
     const appendDelta = (delta: string) => {
       if (!streamingRef.current) {
         streamingRef.current = true;
-        setMessages((ms) => [...ms, { role: "assistant", content: delta }]);
+        setMessages((ms) => [
+          ...ms,
+          { role: "assistant", content: delta, sessionId: sessionRef.current },
+        ]);
       } else {
         setMessages((ms) => {
           const last = ms[ms.length - 1];
@@ -42,7 +67,11 @@ export default function ChatView() {
               { ...last, content: last.content + delta },
             ];
           }
-          return [...ms, { role: "assistant", content: delta }];
+          // 防御分支:正常流式时最后一条必是 assistant,走上面合并;走不到这里
+          return [
+            ...ms,
+            { role: "assistant", content: delta, sessionId: sessionRef.current },
+          ];
         });
       }
     };
@@ -75,6 +104,17 @@ export default function ChatView() {
           console.log("[chat] agent done");
           finalize();
           setStatus("idle");
+          // run 结束后:若用户已切到别的 tab(run 期间 onActivated 被忽略),
+          // 同步面板到当前 tab 的会话
+          resolveContext().then(({ sessionId }) => {
+            if (
+              sessionId !== sessionRef.current &&
+              sessionId !== lastLoadedSessionRef.current
+            ) {
+              sessionRef.current = sessionId;
+              loadSessionHistory(sessionId);
+            }
+          });
           break;
         case MSG.AGENT_ERROR:
           console.log("[chat] agent error:", evt.error);
@@ -82,8 +122,26 @@ export default function ChatView() {
           setStatus("idle");
           setMessages((ms) => [
             ...ms,
-            { role: "assistant", content: `⚠ ${evt.error}` },
+            {
+              role: "assistant",
+              content: `⚠ ${evt.error}`,
+              sessionId: sessionRef.current,
+            },
           ]);
+          break;
+        case MSG.HISTORY:
+          // 后端回的历史 → 填入该会话。
+          // 仅当该会话在本地面板尚无记录时才填(本地有记录 = 本地更新过/正在用,保留本地);
+          // 否则 idempotent,避免覆盖面板里已有的新消息。
+          // 发起请求后会话已变(用户切走/抢先提交)则不切换 currentSession。
+          if (historyReqRef.current === sessionRef.current) {
+            setMessages((ms) => {
+              const sid = historyReqRef.current;
+              if (ms.some((m) => m.sessionId === sid)) return ms;
+              return evt.messages.map((m) => ({ ...m, sessionId: sid }));
+            });
+            setCurrentSession(historyReqRef.current);
+          }
           break;
       }
     });
@@ -92,18 +150,53 @@ export default function ChatView() {
       console.log("[chat] port disconnected");
       portRef.current = null;
       streamingRef.current = false;
+      // SW 休眠 / 刷新导致断开时,重置状态,避免 UI 卡在 thinking
+      setStatus("idle");
     });
 
     return port;
   };
 
+  // 加载某会话历史到面板(去重:同一会话不重复请求)
+  const loadSessionHistory = (sessionId: string) => {
+    if (sessionId === lastLoadedSessionRef.current) return;
+    historyReqRef.current = sessionId;
+    lastLoadedSessionRef.current = sessionId;
+    connect().postMessage({ type: MSG.LOAD_HISTORY, sessionId });
+  };
+
+  // 挂载时解析激活 tab 的会话,向后端拉取历史恢复显示
   useEffect(() => {
     const port = connect();
+    resolveContext().then(({ sessionId }) => {
+      sessionRef.current = sessionId;
+      loadSessionHistory(sessionId);
+    });
     return () => {
       streamingRef.current = false;
       port.disconnect();
       portRef.current = null;
     };
+  }, []);
+
+  // statusRef 与 state 同步(供持久监听器读取最新状态)
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  // 面板跟随激活 tab:idle 时切 tab → 切到该 tab 的会话
+  // 运行中(thinking/streaming)忽略,避免打断流式
+  useEffect(() => {
+    const handleTabActivated = () => {
+      if (statusRef.current !== "idle") return;
+      resolveContext().then(({ sessionId }) => {
+        if (sessionId === lastLoadedSessionRef.current) return;
+        sessionRef.current = sessionId;
+        loadSessionHistory(sessionId);
+      });
+    };
+    chrome.tabs.onActivated.addListener(handleTabActivated);
+    return () => chrome.tabs.onActivated.removeListener(handleTabActivated);
   }, []);
 
   // 新消息自动滚到底
@@ -121,14 +214,21 @@ export default function ChatView() {
     });
   };
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     const text = input.trim();
     if (!text || status !== "idle") return;
-    console.log("[chat] submit, text:", text);
-    setMessages((ms) => [...ms, { role: "user", content: text }]);
+    // 会话随「当前激活 tab」走:用户读到哪个页面,提问就归属哪个 tab 的会话
+    const { tabId, sessionId } = await resolveContext();
+    sessionRef.current = sessionId;
+    setCurrentSession(sessionId);
+    console.log("[chat] submit, text:", text, "session:", sessionId, "tab:", tabId);
+    setMessages((ms) => [...ms, { role: "user", content: text, sessionId }]);
     setInput("");
-    connect().postMessage({ type: MSG.USER_MESSAGE, payload: { text } });
+    connect().postMessage({
+      type: MSG.USER_MESSAGE,
+      payload: { text, sessionId, tabId },
+    });
   };
 
   return (
@@ -137,17 +237,22 @@ export default function ChatView() {
         ref={listRef}
         className="flex-1 space-y-3 overflow-y-auto px-4 py-2 pb-1"
       >
-        {messages.length === 0 && status === "idle" ? (
-          <EmptyState />
-        ) : (
-          messages.map((m, i) =>
-            m.role === "user" ? (
-              <UserBubble key={i} text={m.content} />
-            ) : (
-              <AssistantBubble key={i} text={m.content} />
-            ),
-          )
-        )}
+        {(() => {
+          const visible = messages.filter(
+            (m) => m.sessionId === currentSession,
+          );
+          return visible.length === 0 && status === "idle" ? (
+            <EmptyState />
+          ) : (
+            visible.map((m, i) =>
+              m.role === "user" ? (
+                <UserBubble key={i} text={m.content} />
+              ) : (
+                <AssistantBubble key={i} text={m.content} />
+              ),
+            )
+          );
+        })()}
         {status === "thinking" && (
           <div className="flex items-center gap-1.5 py-1 pl-1 text-[var(--muted)]">
             <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
@@ -213,6 +318,8 @@ function EmptyState() {
     </div>
   );
 }
+
+// TODO: reasoning bubble
 
 function UserBubble({ text }: { text: string }) {
   return (

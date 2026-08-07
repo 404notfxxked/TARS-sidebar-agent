@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Hello Sidebar (React 19)",
+  "name": "sidebar helper",
   "version": "1.0.0",
   "description": "基于 React 19 + service worker agent loop 的 Chrome 侧边栏",
   "permissions": ["sidePanel", "tabs", "activeTab", "scripting", "storage"],

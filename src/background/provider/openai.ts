@@ -1,7 +1,6 @@
 // OpenAI-compatible 适配器:OpenAI / DeepSeek / Groq / vLLM / Ollama 都走这
 // 只做「内部格式 ⇄ OpenAI wire 格式」的双向转换 + SSE 流式解析
-
-// ? 一个设想，是否可以引入 @open-schemas/types 来进行类型限制
+// 类型用本地 SSEChunk / ToolSchema 即可,暂不引入第三方类型包(@open-schemas/types)
 
 import { apiFetch } from "./client";
 import type {
@@ -141,7 +140,6 @@ function safeParse(s: string): unknown {
 
 // ---- SSE 解析(流式) ----
 
-// ? 我是第一次接触流式，可不可以加一些注释帮助我理解？
 /**
  * 流式读取 SSE(Server-Sent Events)。
  *
