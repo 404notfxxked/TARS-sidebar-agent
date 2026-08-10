@@ -25,7 +25,7 @@ export interface ToolCall {
 /** 内部消息格式 —— OpenAI 扁平形状(见记忆 agent-loop-byok-design) */
 export type InternalMsg =
   | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string | null; toolCalls?: ToolCall[] }
+  | { role: "assistant"; content: string | null; toolCalls?: ToolCall[]; reasoning_content?: string }
   | { role: "tool"; toolCallId: string; content: string };
 
 export interface ChatRequest {
@@ -40,6 +40,7 @@ export interface ChatRequest {
 export interface ChatResult {
   content: string;
   toolCalls: ToolCall[];
+  reasoning_content?: string;
   finishReason?: "stop" | "tool_calls" | "length";
 }
 
