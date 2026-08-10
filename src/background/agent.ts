@@ -99,6 +99,9 @@ export async function runAgentLoop(
           role: "assistant",
           content: result.content || null,
           toolCalls: result.toolCalls,
+          ...(result.reasoning_content !== undefined
+            ? { reasoning_content: result.reasoning_content }
+            : {}),
         });
 
         for (const tc of result.toolCalls) {
@@ -139,7 +142,13 @@ export async function runAgentLoop(
       }
 
       // 没有工具调用 → 这就是最终回答,写入历史后再退出
-      messages.push({ role: "assistant", content: result.content });
+      messages.push({
+        role: "assistant",
+        content: result.content,
+        ...(result.reasoning_content !== undefined
+          ? { reasoning_content: result.reasoning_content }
+          : {}),
+      });
       break;
     }
 

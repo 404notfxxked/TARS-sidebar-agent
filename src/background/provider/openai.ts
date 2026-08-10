@@ -19,6 +19,7 @@ type SSEChunk = {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      reasoning_content?: string;
       tool_calls?: Array<{
         index: number;
         id?: string;
@@ -49,6 +50,8 @@ export class OpenAIAdapter implements ChatProvider {
     });
 
     let content = "";
+    let reasoning = "";
+    let hasReasoning = false; // 区分「没收到字段」和「收到了但为空」——DeepSeek 要求后者也必须回传
     // 流式工具调用按 index 累加(arguments 是分片拼接的 JSON)
     const toolAcc: Record<number, { id: string; name: string; args: string }> =
       {};
@@ -62,6 +65,10 @@ export class OpenAIAdapter implements ChatProvider {
       if (typeof delta.content === "string") {
         content += delta.content;
         req.onDelta(delta.content);
+      }
+      if (typeof delta.reasoning_content === "string") {
+        reasoning += delta.reasoning_content;
+        hasReasoning = true;
       }
       for (const tc of delta.tool_calls ?? []) {
         toolAcc[tc.index] ??= { id: "", name: "", args: "" };
@@ -81,7 +88,7 @@ export class OpenAIAdapter implements ChatProvider {
         args: safeParse(tool.args),
       }));
 
-    return { content, toolCalls, finishReason };
+    return { content, toolCalls, ...(hasReasoning ? { reasoning_content: reasoning } : {}), finishReason };
   }
 }
 
@@ -97,6 +104,9 @@ function toWireMessages(msgs: InternalMsg[]): unknown[] {
         return {
           role: "assistant",
           content: message.content,
+          ...(message.reasoning_content !== undefined
+            ? { reasoning_content: message.reasoning_content }
+            : {}),
           ...(message.toolCalls?.length
             ? { tool_calls: message.toolCalls.map(toWireToolCall) }
             : {}),
