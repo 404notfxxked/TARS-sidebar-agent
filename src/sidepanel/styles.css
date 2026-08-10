@@ -35,15 +35,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 等宽眉题 */
-.eyebrow {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
 /* 键盘焦点 — soft ring, skip inputs (they get per-component focus styles) */
 :focus-visible:not(input):not(textarea) {
   outline: none;
@@ -52,16 +43,6 @@ body {
 }
 
 /* 入场动效 — spring-like curves */
-@keyframes slide-in {
-  from {
-    transform: translateX(16px) scale(0.98);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0) scale(1);
-    opacity: 1;
-  }
-}
 @keyframes msg-in {
   from {
     opacity: 0;
@@ -72,11 +53,10 @@ body {
     transform: translateY(0) scale(1);
   }
 }
-.slide-in {
-  animation: slide-in 280ms var(--spring-enter);
-}
-.msg-in {
-  animation: msg-in 200ms var(--spring-enter);
+@layer components {
+  .msg-in {
+    animation: msg-in 200ms var(--spring-enter);
+  }
 }
 
 /* 尊重 reduced motion — cross-fade instead of motion */
@@ -91,7 +71,8 @@ body {
   }
 }
 
-/* ---- markdown 渲染 ---- */
+/* ---- markdown 渲染(组件类) ---- */
+@layer components {
 .markdown > *:first-child {
   margin-top: 0;
 }
@@ -176,6 +157,7 @@ body {
   border: 0;
   border-top: 1px solid var(--line);
 }
+} /* /@layer components: markdown */
 
 /* ---- 滚动条(WebKit) ---- */
 ::-webkit-scrollbar {
@@ -192,23 +174,300 @@ body {
   background: var(--muted);
 }
 
-/* ---- 毛玻璃工具条(共用) ---- */
-.glass-bar {
-  background: rgba(251, 252, 251, 0.72);
-  backdrop-filter: blur(12px) saturate(150%);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-}
-
-/* ---- 浮动输入胶囊 ---- */
-.input-pill {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .glass-bar,
+/* ---- 浮动输入胶囊:backdrop-filter 是 Tailwind 表达不了的,留在类里;
+      背景/圆角/边框等交给元素上的 utility(现有用法是 bg-white/75) ---- */
+@layer components {
   .input-pill {
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+  }
+}
+
+/* ---- 设置面板(iOS 风格) ----
+   毛玻璃面板 + 内嵌分组卡片:遵循「大表面读作更厚」——
+   面板 blur 24px 比小胶囊更重,卡片近乎实心保证可读性(不在半透明上叠半透明) */
+
+/* keyframes 留在级联层外:动画名解析不受 layer 影响,放外面最稳 */
+@keyframes settings-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes settings-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+/* 组件类进 @layer components:utility 层在其后声明,
+   因此元素上再加 py-1 / mx-4 这类 utility 能可预期地覆盖类里写死的属性,
+   互不打架 —— 「类管复杂逻辑 + utility 管一次性调整」的正统协作方式 */
+@layer components {
+  /* 面板:从右滑入,退出沿同一路径滑出(spatial consistency) */
+  .settings-sheet {
+    background: rgba(251, 252, 251, 0.76);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-left: 0.5px solid rgba(0, 0, 0, 0.08);
+    box-shadow:
+      -8px 0 32px rgba(0, 0, 0, 0.1),
+      inset 1px 0 0 rgba(255, 255, 255, 0.6);
+    animation: settings-in 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .settings-wrap.closing .settings-sheet {
+    animation: settings-out 200ms cubic-bezier(0.3, 0, 1, 1) forwards;
+  }
+  .settings-wrap.closing .scrim {
+    /* 类仅作为关闭态选择器目标;过渡时长由元素上的 transition-opacity utility 负责 */
+    opacity: 0;
+  }
+
+/* 大写小标签(标题眉题 / 分组标题共用):sans + 微量 tracking */
+.settings-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* 分组卡片:近实心白,发丝边框,内凹 0.5px 分隔线 */
+.settings-card {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  border: 0.5px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.settings-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 8px 14px;
+}
+/* 内凹发丝分隔线:从标签起始处开始,而非整卡贯通 */
+.settings-cell + .settings-cell::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  height: 0.5px;
+  background: rgba(0, 0, 0, 0.08);
+}
+.settings-cell-label {
+  flex-shrink: 0;
+  /* 固定宽 label 列:让右侧 input/控件左缘对齐,避免因 label 长短不一导致 input 参差 */
+  width: 76px;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* 单元格内输入:右对齐(detail 风格),聚焦时白底 + accent ring */
+.settings-cell-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  font-size: 13px;
+  color: var(--ink);
+  text-align: right;
+  caret-color: var(--accent);
+  outline: none;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.settings-cell-input::placeholder {
+  color: var(--muted);
+  opacity: 0.65;
+}
+.settings-cell-input:focus {
+  background: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 分段控件:选中滑块测量定位,弹簧滑动 */
+.segmented {
+  position: relative;
+  display: flex;
+  flex: 1;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 9px;
+  padding: 2px;
+}
+.segmented-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 0;
+  background: #fff;
+  border-radius: 7px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  transition:
+    left 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.segmented button {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  padding: 5px 6px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: color 150ms ease;
+}
+.segmented button.selected {
+  color: var(--ink);
+}
+
+/* iOS 开关:on 变 accent,旋钮弹簧位移 */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 42px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: background 200ms ease;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.22),
+    0 0 1px rgba(0, 0, 0, 0.1);
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.switch[aria-checked="true"] {
+  background: var(--accent);
+}
+.switch[aria-checked="true"] .switch-knob {
+  transform: translateX(16px);
+}
+
+/* 图标按钮(关闭 / 显隐):反馈在按下瞬间 */
+.settings-icon-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--muted);
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
+}
+.settings-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+.settings-icon-btn:active {
+  transform: scale(0.92);
+}
+
+/* 眼睛按钮:浮在 input 右缘内部,不占布局 → 三个 input 保持等宽 */
+.settings-eye-btn {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--muted);
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
+}
+.settings-eye-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+.settings-eye-btn:active {
+  transform: translateY(-50%) scale(0.92);
+}
+.settings-cell-input.has-eye {
+  padding-right: 36px; /* 给浮在右缘的眼睛按钮留位 */
+}
+
+/* 分组脚注 */
+.settings-group-footer {
+  margin: 6px 16px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* 底部状态 + 主操作(状态行/忘记按钮的一次性样式在元素上走 utility) */
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 1px 3px rgba(22, 163, 74, 0.22);
+  transition:
+    transform 120ms ease-out,
+    background 160ms ease,
+    opacity 160ms ease;
+}
+.btn-primary:hover {
+  background: var(--accent-strong);
+}
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.985);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  transform: none;
+}
+} /* /@layer components */
+
+/* 降级块留在层外(unlayered > layered):必须压过 components 层里的
+   .input-pill/.settings-sheet/.settings-card,降级才生效 */
+@media (prefers-reduced-transparency: reduce) {
+  .input-pill,
+  .settings-sheet,
+  .settings-card {
     background: var(--surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
