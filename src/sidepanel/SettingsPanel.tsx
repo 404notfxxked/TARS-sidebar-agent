@@ -1,6 +1,13 @@
-// 设置滑层:Provider / Model / Base URL / API Key 的输入与保存
+// 设置滑层 —— iOS 风格分组表单
+// 毛玻璃面板 + 内嵌分组卡片 + 分段控件(协议)/开关(记住我) + 弹簧动效
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   loadConfig,
   saveConfig,
@@ -9,6 +16,7 @@ import {
 } from "../shared/configStore";
 
 type SaveStatus = "none" | "saved" | "session";
+type FlashState = "saving" | "saved" | "error" | null;
 
 const MODEL_PLACEHOLDER: Record<ProviderName, string> = {
   openai: "eg: deepseek-v4-flash, gpt-5.6",
@@ -16,30 +24,43 @@ const MODEL_PLACEHOLDER: Record<ProviderName, string> = {
 };
 
 const BASE_URL_PLACEHOLDER: Record<ProviderName, string> = {
-  openai: "默认为 api.openai.com",
-  anthropic: "默认为 api.anthropic.com",
+  openai: "默认 api.openai.com",
+  anthropic: "默认 api.anthropic.com",
 };
+
+const PROVIDERS: ProviderName[] = ["openai", "anthropic"];
 
 export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
   const [remember, setRemember] = useState(true);
   const [provider, setProvider] = useState<ProviderName>("openai");
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [status, setStatus] = useState<SaveStatus>("none");
-  const [savedFlash, setSavedFlash] = useState<
-    "saving" | "saved" | "error" | null
-  >(null);
+  const [flash, setFlash] = useState<FlashState>(null);
+  const [closing, setClosing] = useState(false);
   const flashTimer = useRef<number | null>(null);
+  const segRef = useRef<HTMLDivElement>(null);
+  const [thumb, setThumb] = useState({ left: 0, width: 0 });
 
-  useEffect(
-    () => () => {
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-    },
-    [],
-  );
+  // 分段控件滑块:测量选中按钮的实际位置/宽度,让滑块"贴"上去
+  // (不用百分比——文字宽窄不同,测量才准)
+  useLayoutEffect(() => {
+    const el = segRef.current;
+    const btn = el?.querySelector<HTMLButtonElement>(`[data-p="${provider}"]`);
+    if (btn) setThumb({ left: btn.offsetLeft, width: btn.offsetWidth });
+  }, [provider]);
+
+  const requestClose = useCallback(() => {
+    setClosing(true); // 先播退出动画,动画结束后再真正卸载(见 onAnimationEnd)
+  }, []);
 
   useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    window.addEventListener("keydown", onKey);
     loadConfig().then((c) => {
       setApiKey(c.apiKey);
       setRemember(c.remember);
@@ -48,10 +69,14 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
       setBaseUrl(c.baseUrl);
       setStatus(c.apiKey ? (c.remember ? "saved" : "session") : "none");
     });
-  }, []);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+    };
+  }, [requestClose]);
 
   const save = async () => {
-    setSavedFlash("saving");
+    setFlash("saving");
     try {
       await saveConfig({
         apiKey: apiKey.trim(),
@@ -61,12 +86,12 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
         baseUrl,
       });
       setStatus(apiKey.trim() ? (remember ? "saved" : "session") : "none");
-      setSavedFlash("saved");
+      setFlash("saved");
     } catch {
-      setSavedFlash("error");
+      setFlash("error");
     }
     if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => setSavedFlash(null), 1600);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 1600);
   };
 
   const forget = async () => {
@@ -76,30 +101,40 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
     setStatus("none");
   };
 
-  const fieldClass =
-    "mt-1.5 w-full rounded-lg border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none transition-all duration-200 focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_var(--accent-soft)]";
-
   return (
-    <div className="absolute inset-0 z-10 flex justify-end">
+    <div
+      className={`settings-wrap absolute inset-0 z-10 flex justify-end ${closing ? "closing" : ""}`}
+      onAnimationEnd={(e) => {
+        if (closing && e.animationName === "settings-out") onClose();
+      }}
+    >
+      {/* 点背景关闭;淡入淡出,不抢毛玻璃面板的风头 */}
       <button
         type="button"
         aria-label="关闭设置"
-        onClick={onClose}
-        className="absolute inset-0 bg-white/40 backdrop-blur-[6px]"
+        onClick={requestClose}
+        className="scrim absolute inset-0 bg-black/[0.05] transition-opacity duration-200"
       />
-      <section className="slide-in relative flex h-full w-full flex-col bg-[var(--surface)] px-5 py-5 shadow-[var(--shadow-md)]">
-        <header className="flex items-start justify-between">
+
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
+        className="settings-sheet relative flex h-full w-full flex-col px-4 pb-2 pt-4"
+      >
+        {/* 标题 + 关闭 */}
+        <header className="flex items-start justify-between px-1 pb-1">
           <div>
-            <h2 className="m-0 text-[15px] font-semibold leading-none tracking-[-0.01em]">
+            <h2 className="m-0 text-[17px] font-semibold leading-tight tracking-[-0.02em] text-[var(--ink)]">
               设置
             </h2>
-            <p className="eyebrow m-0 mt-1.5">Settings</p>
+            <p className="settings-eyebrow mt-1">Settings</p>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="关闭设置"
-            className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-all duration-150 hover:bg-[var(--line)] hover:text-[var(--ink)] active:scale-90"
+            className="settings-icon-btn h-7 w-7"
           >
             <svg
               width="13"
@@ -115,95 +150,155 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <section className="mt-6 space-y-6">
-            <div>
-              <p className="eyebrow">模型</p>
-              <div className="mt-3 space-y-3">
-                <div>
-                  <label className="block text-[12px] text-[var(--muted)]">
-                    协议
-                  </label>
-                  <select
-                    value={provider}
-                    onChange={(e) =>
-                      setProvider(e.target.value as ProviderName)
-                    }
-                    className={fieldClass}
+          {/* ── 模型 ── */}
+          <h3 className="settings-eyebrow mx-4 mb-1.5 mt-4">模型</h3>
+          <div className="settings-card">
+            <div className="settings-cell">
+              <span className="settings-cell-label">协议</span>
+              <div
+                ref={segRef}
+                role="radiogroup"
+                aria-label="协议"
+                className="segmented"
+              >
+                <span
+                  className="segmented-thumb"
+                  style={{ left: thumb.left, width: thumb.width }}
+                />
+                {PROVIDERS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="radio"
+                    aria-checked={provider === p}
+                    data-p={p}
+                    className={provider === p ? "selected" : ""}
+                    onClick={() => setProvider(p)}
                   >
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                  <p className="mt-1.5 pl-[2px] text-[11px] leading-relaxed text-[var(--muted)]">
-                    先选择协议，再填模型名、Base URL。
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-[12px] text-[var(--muted)]">
-                    模型名
-                  </label>
-                  <input
-                    type="text"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    placeholder={MODEL_PLACEHOLDER[provider]}
-                    autoComplete="off"
-                    className={`${fieldClass} font-mono`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[12px] text-[var(--muted)]">
-                    Base URL
-                  </label>
-                  <input
-                    type="text"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder={BASE_URL_PLACEHOLDER[provider]}
-                    autoComplete="off"
-                    className={`${fieldClass} font-mono`}
-                  />
-                </div>
+                    {p === "openai" ? "OpenAI" : "Anthropic"}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div>
-              <p className="eyebrow">API Key</p>
-              <label className="mt-3 block text-[12px] text-[var(--muted)]">
-                API Key
+            <div className="settings-cell">
+              <label htmlFor="settings-model" className="settings-cell-label">
+                模型名
               </label>
               <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-…"
+                id="settings-model"
+                type="text"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder={MODEL_PLACEHOLDER[provider]}
                 autoComplete="off"
-                className={`${fieldClass} font-mono`}
+                spellCheck={false}
+                className="settings-cell-input font-mono"
               />
-              <label className="mt-4 flex cursor-pointer items-center gap-2 text-[12px]">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-[var(--accent)]"
-                />
-                记住我（下次自动填充）
-              </label>
-              <p className="mt-1.5 pl-[22px] text-[11px] leading-relaxed text-[var(--muted)]">
-                不勾选则仅本次会话有效，关闭浏览器后清除。
-              </p>
             </div>
-          </section>
+
+            <div className="settings-cell">
+              <label htmlFor="settings-baseurl" className="settings-cell-label">
+                Base URL
+              </label>
+              <input
+                id="settings-baseurl"
+                type="text"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder={BASE_URL_PLACEHOLDER[provider]}
+                autoComplete="off"
+                spellCheck={false}
+                className="settings-cell-input font-mono"
+              />
+            </div>
+          </div>
+          <p className="settings-group-footer">
+            先选协议，再填模型名与 Base URL。
+          </p>
+
+          {/* ── API Key ── */}
+          <h3 className="settings-eyebrow mx-4 mb-1.5 mt-4">API Key</h3>
+          <div className="settings-card">
+            <div className="settings-cell">
+              <label htmlFor="settings-apikey" className="settings-cell-label">
+                API Key
+              </label>
+              <div className="relative flex min-w-0 flex-1 items-center">
+                <input
+                  id="settings-apikey"
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="settings-cell-input has-eye font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((s) => !s)}
+                  aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
+                  className="settings-eye-btn"
+                >
+                  {showKey ? (
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                      <path d="m4 4 16 16" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="settings-cell">
+              <span className="settings-cell-label">记住我</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={remember}
+                onClick={() => setRemember((r) => !r)}
+                className="switch ml-auto"
+              >
+                <span className="switch-knob" />
+              </button>
+            </div>
+          </div>
+          <p className="settings-group-footer">
+            不勾选则仅本次会话有效，关闭浏览器后失效。
+          </p>
         </div>
 
-        <div className="mt-auto pt-5">
+        {/* 底部:状态 + 主操作 */}
+        <div className="pt-3">
           <p
-            className={
-              status === "none"
-                ? "mb-2 text-[11px] text-[var(--muted)]"
-                : "mb-2 text-[11px] text-[var(--accent)]"
-            }
+            className={`mb-2.5 text-center text-xs text-[var(--muted)] transition-colors ${
+              status !== "none" ? "text-[var(--accent)]" : ""
+            }`}
           >
             {status === "none"
               ? "尚未保存 API Key"
@@ -211,31 +306,29 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                 ? "已记住 · 下次自动填充"
                 : "仅本次会话有效"}
           </p>
-          <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={save}
+            disabled={flash === "saving"}
+            className="btn-primary"
+          >
+            {flash === "saving"
+              ? "保存中…"
+              : flash === "saved"
+                ? "已保存 ✓"
+                : flash === "error"
+                  ? "保存失败"
+                  : "保存"}
+          </button>
+          {status !== "none" && (
             <button
               type="button"
-              onClick={save}
-              disabled={savedFlash === "saving"}
-              className="flex-1 rounded-lg bg-[var(--accent)] py-2 text-[13px] font-medium text-white transition-all duration-150 hover:bg-[var(--accent-strong)] active:scale-[0.97] disabled:opacity-40 disabled:scale-100"
+              onClick={forget}
+              className="w-full pt-2.5 pb-1 text-[13px] text-[var(--muted)] transition-colors hover:text-[var(--danger)]"
             >
-              {savedFlash === "saving"
-                ? "保存中…"
-                : savedFlash === "saved"
-                  ? "已保存 ✓"
-                  : savedFlash === "error"
-                    ? "保存失败"
-                    : "保存"}
+              忘记已保存的 Key
             </button>
-            {status !== "none" && (
-              <button
-                type="button"
-                onClick={forget}
-                className="rounded-lg border border-[var(--line)] px-3 text-[13px] text-[var(--muted)] transition-all duration-150 hover:border-[var(--danger)] hover:text-[var(--danger)] active:scale-[0.97]"
-              >
-                忘记
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </section>
     </div>
