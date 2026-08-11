@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
+import {
+  MSG,
+  PORT_NAME,
+  type AgentEvent,
+} from "../shared/messages";
 import { getActiveTabId } from "../shared/contentTools";
 import { getOrCreateSessionId } from "../shared/sessionStore";
 
