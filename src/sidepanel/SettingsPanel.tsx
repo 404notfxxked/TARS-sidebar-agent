@@ -36,6 +36,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [remember, setRemember] = useState(true);
   const [provider, setProvider] = useState<ProviderName>("openai");
   const [model, setModel] = useState("");
+  const [maxCtx, setMaxCtx] = useState(0);
   const [baseUrl, setBaseUrl] = useState("");
   const [status, setStatus] = useState<SaveStatus>("none");
   const [flash, setFlash] = useState<FlashState>(null);
@@ -66,6 +67,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
       setRemember(c.remember);
       setProvider(c.provider);
       setModel(c.model);
+      setMaxCtx(c.maxContextTokens);
       setBaseUrl(c.baseUrl);
       setStatus(c.apiKey ? (c.remember ? "saved" : "session") : "none");
     });
@@ -84,6 +86,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
         provider,
         model,
         baseUrl,
+        maxContextTokens: maxCtx,
       });
       setStatus(apiKey.trim() ? (remember ? "saved" : "session") : "none");
       setFlash("saved");
@@ -198,6 +201,23 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="settings-cell">
+              <label htmlFor="settings-maxctx" className="settings-cell-label">
+                最大上下文
+              </label>
+              <input
+                id="settings-maxctx"
+                type="number"
+                value={maxCtx || ""}
+                onChange={(e) =>
+                  setMaxCtx(Number(e.target.value) || 0)
+                }
+                placeholder="可选，如 128000"
+                autoComplete="off"
+                className="settings-cell-input font-mono"
+              />
+            </div>
+
+            <div className="settings-cell">
               <label htmlFor="settings-baseurl" className="settings-cell-label">
                 Base URL
               </label>
@@ -214,7 +234,7 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           <p className="settings-group-footer">
-            先选协议，再填模型名与 Base URL。
+            先选协议，再填模型名与 Base URL。最大上下文可选，填后开启用量展示。
           </p>
 
           {/* ── API Key ── */}

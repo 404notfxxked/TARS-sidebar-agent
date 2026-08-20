@@ -42,6 +42,7 @@ export interface ChatResult {
   toolCalls: ToolCall[];
   reasoning_content?: string;
   finishReason?: "stop" | "tool_calls" | "length";
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
 }
 
 /** 每个 provider 适配器都要实现的统一接口 */

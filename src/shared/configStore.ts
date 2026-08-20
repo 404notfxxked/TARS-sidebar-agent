@@ -11,6 +11,7 @@ export interface AppConfig {
   provider: ProviderName;
   model: string;
   baseUrl: string; // 空 = 用适配器默认地址
+  maxContextTokens: number; // 0 = 未设置，不展示用量进度条
 }
 
 export async function loadConfig(): Promise<AppConfig> {
@@ -20,6 +21,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "provider",
     "model",
     "baseUrl",
+    "maxContextTokens",
   ]);
 
   const apiKey = s.apiKey ?? l.apiKey ?? "";
@@ -29,6 +31,7 @@ export async function loadConfig(): Promise<AppConfig> {
     provider: l.provider ?? "openai",
     model: l.model ?? "",
     baseUrl: l.baseUrl ?? "",
+    maxContextTokens: l.maxContextTokens ?? 0,
   };
 }
 
@@ -38,6 +41,7 @@ export async function saveConfig(input: AppConfig): Promise<void> {
     provider: input.provider,
     model: input.model.trim(),
     baseUrl: input.baseUrl.trim(),
+    maxContextTokens: input.maxContextTokens,
   });
 
   // apiKey 受「记住」控制

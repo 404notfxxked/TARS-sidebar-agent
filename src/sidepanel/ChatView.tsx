@@ -1,13 +1,9 @@
 // 对话视图:经 port 连 SW,ReAct agent 的流式回复渲染
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type SubmitEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import {
-  MSG,
-  PORT_NAME,
-  type AgentEvent,
-} from "../shared/messages";
+import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
 import { getActiveTabId } from "../shared/contentTools";
 import { getOrCreateSessionId } from "../shared/sessionStore";
 
@@ -20,10 +16,24 @@ interface ChatMsg {
 
 type AgentStatus = "idle" | "thinking" | "streaming";
 
-export default function ChatView() {
+function formatTokens(n: number): string {
+  if (n >= 1_000_000)
+    return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
+}
+
+export default function ChatView({
+  onOpenSettings,
+}: {
+  onOpenSettings: () => void;
+}) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
+  const [usage, setUsage] = useState<{ used: number; max: number } | null>(
+    null,
+  );
   const [currentSession, setCurrentSession] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const streamingRef = useRef(false);
@@ -74,7 +84,11 @@ export default function ChatView() {
           // 防御分支:正常流式时最后一条必是 assistant,走上面合并;走不到这里
           return [
             ...ms,
-            { role: "assistant", content: delta, sessionId: sessionRef.current },
+            {
+              role: "assistant",
+              content: delta,
+              sessionId: sessionRef.current,
+            },
           ];
         });
       }
@@ -89,6 +103,7 @@ export default function ChatView() {
           sessionRef.current = evt.sessionId;
           console.log("[chat] agent started, sessionId:", evt.sessionId);
           setStatus("thinking");
+          setUsage(null);
           break;
         case MSG.AGENT_THINKING:
           console.log("[chat] agent thinking, turn:", evt.turn);
@@ -132,6 +147,9 @@ export default function ChatView() {
               sessionId: sessionRef.current,
             },
           ]);
+          break;
+        case MSG.AGENT_USAGE:
+          setUsage({ used: evt.used, max: evt.max });
           break;
         case MSG.HISTORY:
           // 后端回的历史 → 填入该会话。
@@ -218,7 +236,26 @@ export default function ChatView() {
     });
   };
 
-  const submit = async (e: FormEvent) => {
+  // 开始新对话:清掉后台该会话的历史 + 清空面板。
+  // 会话 id 仍绑定当前 tab,下次提问/切 tab 回到的就是一个空会话。
+  const resetConversation = () => {
+    if (status !== "idle") return; // 运行中不允许打断
+    const old = sessionRef.current;
+    console.log("[chat] new conversation, old session:", old);
+    if (old) {
+      connect().postMessage({ type: MSG.CLEAR_HISTORY, sessionId: old });
+    }
+    setMessages([]);
+    setInput("");
+    setUsage(null);
+    setCurrentSession("");
+    // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
+    sessionRef.current = "";
+    historyReqRef.current = "";
+    lastLoadedSessionRef.current = "";
+  };
+
+  const submit = async (e: SubmitEvent) => {
     e.preventDefault();
     const text = input.trim();
     if (!text || status !== "idle") return;
@@ -226,7 +263,14 @@ export default function ChatView() {
     const { tabId, sessionId } = await resolveContext();
     sessionRef.current = sessionId;
     setCurrentSession(sessionId);
-    console.log("[chat] submit, text:", text, "session:", sessionId, "tab:", tabId);
+    console.log(
+      "[chat] submit, text:",
+      text,
+      "session:",
+      sessionId,
+      "tab:",
+      tabId,
+    );
     setMessages((ms) => [...ms, { role: "user", content: text, sessionId }]);
     setInput("");
     connect().postMessage({
@@ -237,6 +281,25 @@ export default function ChatView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex justify-end gap-1 px-4 pb-1 pt-3">
+        <button
+          type="button"
+          onClick={resetConversation}
+          aria-label="开始新对话"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-all duration-150 hover:bg-[var(--line)] hover:text-[var(--ink)] active:scale-90"
+        >
+          <PlusIcon />
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          aria-label="打开设置"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-all duration-150 hover:bg-[var(--line)] hover:text-[var(--ink)] active:scale-90"
+        >
+          <SettingsIcon />
+        </button>
+      </header>
+
       <div
         ref={listRef}
         className="flex-1 space-y-3 overflow-y-auto px-4 py-2 pb-1"
@@ -265,6 +328,29 @@ export default function ChatView() {
           </div>
         )}
       </div>
+
+      {usage && (
+        <div className="usage-bar px-4 py-1">
+          <div className="usage-bar-track">
+            <div
+              className="usage-bar-fill"
+              style={{
+                width: `${Math.min((usage.used / usage.max) * 100, 100)}%`,
+              }}
+              data-usage-level={
+                usage.used / usage.max < 0.5
+                  ? "low"
+                  : usage.used / usage.max < 0.8
+                    ? "mid"
+                    : "high"
+              }
+            />
+          </div>
+          <span className="usage-bar-label">
+            {formatTokens(usage.used)} / {formatTokens(usage.max)}
+          </span>
+        </div>
+      )}
 
       <form
         onSubmit={submit}
@@ -308,6 +394,45 @@ export default function ChatView() {
         </div>
       </form>
     </div>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <line x1="8" y1="3" x2="8" y2="13" />
+      <line x1="3" y1="8" x2="13" y2="8" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      aria-hidden="true"
+    >
+      <line x1="2.5" y1="4" x2="13.5" y2="4" />
+      <circle cx="6" cy="4" r="1.7" fill="currentColor" stroke="none" />
+      <line x1="2.5" y1="8" x2="13.5" y2="8" />
+      <circle cx="10.5" cy="8" r="1.7" fill="currentColor" stroke="none" />
+      <line x1="2.5" y1="12" x2="13.5" y2="12" />
+      <circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none" />
+    </svg>
   );
 }
 
