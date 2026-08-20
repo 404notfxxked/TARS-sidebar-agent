@@ -14,3 +14,5 @@ dist
 # 防止其他包管理器锁文件混入（统一用 pnpm）
 package-lock.json
 yarn.lock
+
+tests/

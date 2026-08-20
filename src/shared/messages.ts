@@ -8,6 +8,7 @@ export const MSG = {
   USER_MESSAGE: 'user_message',
   CANCEL_RUN: 'cancel_run',
   LOAD_HISTORY: 'load_history',
+  CLEAR_HISTORY: 'clear_history',
 
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
@@ -17,6 +18,7 @@ export const MSG = {
   AGENT_MESSAGE: 'agent_message',
   AGENT_DONE: 'agent_done',
   AGENT_ERROR: 'agent_error',
+  AGENT_USAGE: 'agent_usage',
   HISTORY: 'history',
 } as const
 
@@ -39,6 +41,7 @@ export type SideToBg =
   | { type: typeof MSG.USER_MESSAGE; payload: UserMessagePayload }
   | { type: typeof MSG.CANCEL_RUN; sessionId: string }
   | { type: typeof MSG.LOAD_HISTORY; sessionId: string }
+  | { type: typeof MSG.CLEAR_HISTORY; sessionId: string }
 
 // ---------- 面板展示用消息(前后端一致的精简形状) ----------
 
@@ -58,4 +61,5 @@ export type AgentEvent =
   | { type: typeof MSG.AGENT_MESSAGE; delta: string }
   | { type: typeof MSG.AGENT_DONE }
   | { type: typeof MSG.AGENT_ERROR; error: string }
+  | { type: typeof MSG.AGENT_USAGE; used: number; max: number }
   | { type: typeof MSG.HISTORY; messages: ChatRecord[] }

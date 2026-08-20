@@ -94,6 +94,15 @@ export async function runAgentLoop(
         signal,
       });
 
+      // 上下文用量:仅当用户在设置里填了 maxContextTokens 且 API 返回了 usage 时才推送
+      if (result.usage && config.maxContextTokens > 0) {
+        port.postMessage({
+          type: MSG.AGENT_USAGE,
+          used: result.usage.totalTokens,
+          max: config.maxContextTokens,
+        });
+      }
+
       // 模型要调用工具 → 执行并回填观察结果,进入下一轮
       if (result.toolCalls.length > 0) {
         messages.push({

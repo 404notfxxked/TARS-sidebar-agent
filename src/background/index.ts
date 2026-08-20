@@ -6,7 +6,7 @@
 
 import { MSG, PORT_NAME, type SideToBg } from "../shared/messages";
 import { runAgentLoop, type AgentPort } from "./agent";
-import { loadHistory, toChatRecords } from "./sessionHistory";
+import { clearHistory, loadHistory, toChatRecords } from "./sessionHistory";
 
 // 点击工具栏图标 → 打开侧边栏
 chrome.action.onClicked.addListener((tab: chrome.tabs.Tab) => {
@@ -89,6 +89,13 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           type: MSG.HISTORY,
           messages: toChatRecords(history),
         });
+        break;
+      }
+      case MSG.CLEAR_HISTORY: {
+        // 「开始新对话」:清掉该会话后台持久化历史,
+        // 否则面板重开 / 切回此 tab 时旧对话会被 loadHistory 捞回来
+        console.log("[sw] clear history", msg.sessionId);
+        await clearHistory(msg.sessionId);
         break;
       }
     }

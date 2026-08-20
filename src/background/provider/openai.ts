@@ -28,6 +28,11 @@ type SSEChunk = {
     };
     finish_reason?: "stop" | "tool_calls" | "length";
   }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
 };
 
 export class OpenAIAdapter implements ChatProvider {
@@ -45,6 +50,7 @@ export class OpenAIAdapter implements ChatProvider {
         messages: toWireMessages(req.messages),
         ...(req.tools?.length ? { tools: req.tools.map(toWireTool) } : {}),
         stream: true,
+        stream_options: { include_usage: true },
       },
       signal: req.signal,
     });
@@ -56,9 +62,17 @@ export class OpenAIAdapter implements ChatProvider {
     const toolAcc: Record<number, { id: string; name: string; args: string }> =
       {};
     let finishReason: ChatResult["finishReason"];
+    let lastUsage: ChatResult["usage"];
 
     for await (const event of readSSE<SSEChunk>(res)) {
       const choice = event.choices?.[0];
+      if (event.usage) {
+        lastUsage = {
+          promptTokens: event.usage.prompt_tokens,
+          completionTokens: event.usage.completion_tokens,
+          totalTokens: event.usage.total_tokens,
+        };
+      }
       if (!choice) continue;
 
       const delta = choice.delta ?? {};
@@ -88,7 +102,7 @@ export class OpenAIAdapter implements ChatProvider {
         args: safeParse(tool.args),
       }));
 
-    return { content, toolCalls, ...(hasReasoning ? { reasoning_content: reasoning } : {}), finishReason };
+    return { content, toolCalls, ...(hasReasoning ? { reasoning_content: reasoning } : {}), finishReason, ...(lastUsage ? { usage: lastUsage } : {}) };
   }
 }
 
