@@ -62,7 +62,7 @@ registerTool<
   type: "function",
   name: "get_page_content",
   description:
-    "读取当前激活网页的结构化正文(按 h1-h6 标题分节,带 # 层级,截断 8000 字符)。适合整页不长、一次读完。长文档应改用 get_page_structure + read_section 按需读节。",
+    "读取当前激活网页的结构化正文(按 h1-h6 标题分节,带 # 层级)。适合短页一次读完;长文档内容会被截断,改用 get_page_structure + read_section 按需读节。仅当回答依赖当前页面具体内容时才调用;能用通用知识回答的问题(概念解释、常识)不要调用。",
   parameters: { type: "object", properties: {} },
   execute: async () => {
     // 优先用 run 作用域的 tab(提交时捕获),避免执行时切 tab 读错页面
@@ -81,12 +81,12 @@ registerTool<
 // 结构化读页(第二级):先拿大纲,再按 index 读具体某节,长文档按需读取
 registerTool<
   Record<string, never>,
-  { url?: string; sections?: unknown[]; hasStructure?: boolean }
+  { url?: string; sections?: unknown[]; hasStructure?: boolean; total?: number }
 >({
   type: "function",
   name: "get_page_structure",
   description:
-    "读取当前页面的大纲(按 h1-h6 标题分节,含每节开头 preview,最多 30 节;无标题结构时 sections 为空)。先调用它了解文档结构,再按需用 read_section 读取具体某节。",
+    "读取当前页面的大纲(按 h1-h6 标题分节,含每节开头 preview 和总节数 total;无标题结构时 sections 为空)。先调用它了解文档结构,再按需用 read_section 读具体某节;sections 条数少于 total 说明大纲未列全。",
   parameters: { type: "object", properties: {} },
   execute: async () => {
     const ctx = getToolExecutionContext();

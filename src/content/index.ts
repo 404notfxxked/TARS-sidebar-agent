@@ -133,13 +133,16 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
     }
 
     // 结构化读页(第二级):先拿大纲,再按 index 读具体某节,长文档不再整页截断
-    case "get_page_structure":
+    case "get_page_structure": {
+      const heads = collectHeadings();
       return {
         url: location.href,
         title: document.title,
-        hasStructure: collectHeadings().length > 0,
-        sections: buildOutline(),
+        hasStructure: heads.length > 0,
+        total: heads.length,
+        sections: buildOutline(heads),
       };
+    }
 
     case "read_section": {
       const a = args as { index?: unknown; until?: unknown };
@@ -291,14 +294,13 @@ const OUTLINE_MAX = 30;
 /** 连续读取单次最多覆盖的节数(整节不截断,靠节数上限兜底防超长) */
 const MAX_RANGE_SPAN = 20;
 
-/** 大纲:标题列表的位置即节 index */
-function buildOutline(): {
+/** 大纲:标题列表的位置即节 index;heads 由调用方传入,避免重复遍历 */
+function buildOutline(heads: HTMLElement[]): {
   index: number;
   level: number;
   title: string;
   preview: string;
 }[] {
-  const heads = collectHeadings();
   return heads.slice(0, OUTLINE_MAX).map((el, i) => ({
     index: i,
     level: headingLevel(el),
