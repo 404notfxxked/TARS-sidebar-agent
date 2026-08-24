@@ -1,17 +1,15 @@
-// 会话 id 存储:以 tab 为维度,持久化到 chrome.storage.session
-// - 为什么按 tab:agent 读取的内容是「当前激活 tab」的页面,对话上下文应跟随阅读对象
-// - 为什么用 session storage:面板重开 / SW 休眠后仍可取回,浏览器重启自动清空(会话语义)
-// - P0 边界:同 tab 内导航到另一篇文章不会重置会话,后续可按 URL 进一步细分
+// 会话 id 存储:全局单会话,持久化到 chrome.storage.session
+// 会话与 tab 解耦:sessionId 只代表一段对话,页面上下文由消息级 tabId 承载
+// 为什么用 session storage:面板重开 / SW 休眠后仍可取回,浏览器重启自动清空(会话语义)
 
-const KEY_PREFIX = "sessionId:";
+const GLOBAL_KEY = "sessionId:default";
 
-/** 取某 tab 的会话 id;没有则创建并持久化(供面板重开、多轮记忆按会话取回) */
-export async function getOrCreateSessionId(tabId: number): Promise<string> {
-  const key = KEY_PREFIX + tabId;
-  const data = await chrome.storage.session.get(key);
-  const existing = data[key] as string | undefined;
+/** 取全局会话 id;没有则创建并持久化(多轮记忆按此 id 取回) */
+export async function getOrCreateSessionId(): Promise<string> {
+  const data = await chrome.storage.session.get(GLOBAL_KEY);
+  const existing = data[GLOBAL_KEY] as string | undefined;
   if (existing) return existing;
   const id = crypto.randomUUID();
-  await chrome.storage.session.set({ [key]: id });
+  await chrome.storage.session.set({ [GLOBAL_KEY]: id });
   return id;
 }

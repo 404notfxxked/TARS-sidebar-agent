@@ -10,7 +10,7 @@ import { getOrCreateSessionId } from "../shared/sessionStore";
 interface ChatMsg {
   role: "user" | "assistant";
   content: string;
-  /** 所属会话:以提交时的激活 tab 为维度(见 sessionStore) */
+  /** 所属会话:全局单会话,与 tab 解耦(见 sessionStore) */
   sessionId: string;
 }
 
@@ -40,20 +40,16 @@ export default function ChatView({
   const sessionRef = useRef("");
   const historyReqRef = useRef("");
   const listRef = useRef<HTMLDivElement | null>(null);
-  // 同步 status 的 ref(供 onActivated 等持久监听器读,避免闭包过期)
-  const statusRef = useRef<AgentStatus>("idle");
   // 最近一次已加载历史的会话,防重复请求
   const lastLoadedSessionRef = useRef("");
 
-  /** 会话随「当前激活 tab」走;无激活 tab 时退回一次性会话(仅本次面板有效) */
+  /** 会话全局唯一、与 tab 解耦;tabId 只随消息传递,作为工具执行的页面上下文 */
   const resolveContext = async (): Promise<{
     tabId: number | undefined;
     sessionId: string;
   }> => {
     const tabId = await getActiveTabId();
-    return tabId !== null
-      ? { tabId, sessionId: await getOrCreateSessionId(tabId) }
-      : { tabId: undefined, sessionId: crypto.randomUUID() };
+    return { tabId: tabId ?? undefined, sessionId: await getOrCreateSessionId() };
   };
 
   const connect = (): chrome.runtime.Port => {
@@ -123,17 +119,6 @@ export default function ChatView({
           console.log("[chat] agent done");
           finalize();
           setStatus("idle");
-          // run 结束后:若用户已切到别的 tab(run 期间 onActivated 被忽略),
-          // 同步面板到当前 tab 的会话
-          resolveContext().then(({ sessionId }) => {
-            if (
-              sessionId !== sessionRef.current &&
-              sessionId !== lastLoadedSessionRef.current
-            ) {
-              sessionRef.current = sessionId;
-              loadSessionHistory(sessionId);
-            }
-          });
           break;
         case MSG.AGENT_ERROR:
           console.log("[chat] agent error:", evt.error);
@@ -201,26 +186,6 @@ export default function ChatView({
     };
   }, []);
 
-  // statusRef 与 state 同步(供持久监听器读取最新状态)
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
-
-  // 面板跟随激活 tab:idle 时切 tab → 切到该 tab 的会话
-  // 运行中(thinking/streaming)忽略,避免打断流式
-  useEffect(() => {
-    const handleTabActivated = () => {
-      if (statusRef.current !== "idle") return;
-      resolveContext().then(({ sessionId }) => {
-        if (sessionId === lastLoadedSessionRef.current) return;
-        sessionRef.current = sessionId;
-        loadSessionHistory(sessionId);
-      });
-    };
-    chrome.tabs.onActivated.addListener(handleTabActivated);
-    return () => chrome.tabs.onActivated.removeListener(handleTabActivated);
-  }, []);
-
   // 新消息自动滚到底
   useEffect(() => {
     const el = listRef.current;
@@ -237,7 +202,7 @@ export default function ChatView({
   };
 
   // 开始新对话:清掉后台该会话的历史 + 清空面板。
-  // 会话 id 仍绑定当前 tab,下次提问/切 tab 回到的就是一个空会话。
+  // 全局单会话:清空后下次提问从空会话开始。
   const resetConversation = () => {
     if (status !== "idle") return; // 运行中不允许打断
     const old = sessionRef.current;
@@ -259,7 +224,7 @@ export default function ChatView({
     e.preventDefault();
     const text = input.trim();
     if (!text || status !== "idle") return;
-    // 会话随「当前激活 tab」走:用户读到哪个页面,提问就归属哪个 tab 的会话
+    // 会话全局唯一;tabId 记录本次提问的页面上下文(工具去该 tab 执行)
     const { tabId, sessionId } = await resolveContext();
     sessionRef.current = sessionId;
     setCurrentSession(sessionId);
