@@ -5,6 +5,68 @@ import type {
   ContentToolCall,
   ContentToolResultMsg,
 } from "../shared/contentTools";
+import TurndownService from "turndown";
+import { gfm } from "turndown-plugin-gfm";
+
+// ---- 文本提取:Turndown(HTML → markdown) ----
+// 替代旧的 range.toString() + 空白折叠:保留标题/列表/代码块/换行结构,
+// 给 LLM 的正文不再是一整段压平的字。
+const turndown = new TurndownService({
+  headingStyle: "atx",      // ## 标题,与分节输出的 # 层级风格一致
+  codeBlockStyle: "fenced", // 代码块用 ``` 围栏,比缩进对 LLM 更清晰
+  bulletListMarker: "-",
+  linkStyle: "inlined",     // [文字](链接),保留链接目标
+});
+
+// GFM 扩展:表格 / 删除线 / 任务列表 —— 文档页最常被丢的结构
+turndown.use(gfm);
+// gfm 插件把删除线转成单 ~(非标准 GFM),而下游 react-markdown 的 remark-gfm 只认 ~~;
+// 用同名规则覆盖(addRule 后加优先),输出标准双 ~~
+turndown.addRule("strikethrough", {
+  filter: (node) => ["DEL", "S", "STRIKE"].includes(node.tagName),
+  replacement: (content) => `~~${content}~~`,
+});
+
+// turndown 默认不滤 script/style/隐藏内容 —— 补一条最高优先级规则整块丢弃。
+// 注意:turndown 内部会 clone 节点,克隆树上 getComputedStyle 取不到值,
+// 只能认内联 style + hidden / aria-hidden 属性。
+turndown.addRule("noise", {
+  filter: (node) => {
+    const tag = node.tagName?.toLowerCase() ?? "";
+    if (
+      tag === "script" ||
+      tag === "style" ||
+      tag === "noscript" ||
+      tag === "template" ||
+      tag === "head" ||
+      tag === "title" ||
+      tag === "meta"
+    ) {
+      return true;
+    }
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") {
+      return true;
+    }
+    const inline = node.getAttribute("style") ?? "";
+    return (
+      /display\s*:\s*none/i.test(inline) ||
+      /visibility\s*:\s*hidden/i.test(inline)
+    );
+  },
+  replacement: () => "",
+});
+
+// 空链接:文字为空的 <a>(纯空白/图标/svg 链接)会被 turndown 渲染成 [](url),
+// 对回答毫无信息量,整条丢掉;有 <img> 子元素的会渲染成 [![](src)](url),不算空,保留。
+turndown.addRule("emptyLink", {
+  filter: (node) => {
+    if (node.nodeName !== "A" || !node.getAttribute("href")) return false;
+    return (
+      (node.textContent ?? "").trim() === "" && !node.querySelector("img")
+    );
+  },
+  replacement: () => "",
+});
 
 chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
   const msg = raw as ContentToolCall;
@@ -39,21 +101,27 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
 async function runTool(name: string, args: unknown): Promise<unknown> {
   switch (name) {
     case "get_page_content": {
-      // 有标题结构 → 按节输出(带层级);无结构 → 兜底 flat 截断(优先 main/article 区域,别从导航开头截)
+      // 有标题结构 → 按节输出(带层级);无结构 → 整页 markdown 兜底(优先 main/article 区域,别从导航开头截)
       const heads = collectHeadings();
       let text: string;
       if (heads.length > 0) {
         const parts: string[] = [];
+        let total = 0;
         for (const [i, el] of heads.entries()) {
           if (i >= OUTLINE_MAX) break;
-          parts.push(
-            `${"#".repeat(headingLevel(el))} ${headingTitle(el)}\n${sectionText(el, heads[i + 1] ?? null)}`,
-          );
+          const section =
+            `${"#".repeat(headingLevel(el))} ${headingTitle(el)}\n` +
+            sectionText(el, heads[i + 1] ?? null);
+          // 按节累计预算,到 PAGE_CONTENT_MAX 就停,不切碎某一节(markdown 结构不拦腰断);
+          // total > 0 保证至少返回一节,避免极端情况下返回空
+          if (total > 0 && total + section.length > PAGE_CONTENT_MAX) break;
+          parts.push(section);
+          total += section.length;
         }
-        text = parts.join("\n\n").slice(0, 8000);
+        text = parts.join("\n\n");
       } else {
         const root = (document.querySelector("main, article") ?? document.body) as HTMLElement;
-        text = root.innerText.slice(0, 8000);
+        text = truncateMarkdown(turndown.turndown(root), PAGE_CONTENT_MAX);
       }
       return {
         title: document.title,
@@ -64,7 +132,7 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
       };
     }
 
-    // 结构化读页(第二级):先拿大纲,再按 index 读具体某节,长文档不再整页 8000 截断
+    // 结构化读页(第二级):先拿大纲,再按 index 读具体某节,长文档不再整页截断
     case "get_page_structure":
       return {
         url: location.href,
@@ -182,7 +250,8 @@ function headingTitle(el: HTMLElement): string {
 }
 
 /**
- * 某一节 = 从标题开头到下一个标题开头之间的文本;最后一节到 main/article/body 末尾。
+ * 某一节 = 从标题开头到下一个标题开头之间的内容;最后一节到 main/article/body 末尾。
+ * 用 Turndown 转成 markdown(保留标题/列表/代码块/换行结构),不再压平成一段字。
  * maxChars 传 Infinity 表示整节返回(连续读取用,不中途截断);默认 4000 兜底单节。
  */
 function sectionText(
@@ -192,11 +261,29 @@ function sectionText(
 ): string {
   const root = document.querySelector("main, article") ?? document.body;
   const range = document.createRange();
-  range.setStart(from, 0);
+  // setStartAfter 跳过标题元素本身:标题由调用方拼成 markdown 头,
+  // 避免标题文字在正文里重复出现。
+  range.setStartAfter(from);
   if (to) range.setEnd(to, 0);
   else range.setEndAfter(root);
-  return range.toString().replace(/\s+/g, " ").trim().slice(0, maxChars);
+  // cloneContents 得到独立片段,再交给 turndown(它内部还会 clone,
+  // 不会改动页面真实 DOM)。
+  const container = document.createElement("div");
+  container.appendChild(range.cloneContents());
+  return truncateMarkdown(turndown.turndown(container), maxChars);
 }
+
+/** 截断到 maxChars,尽量在行边界断开,避免把 ``` 或 [text]( 链接语法拦腰切断 */
+function truncateMarkdown(md: string, maxChars: number): string {
+  if (md.length <= maxChars) return md;
+  const cut = md.slice(0, maxChars);
+  // 切点附近有换行就回退到行首;整段单行文本则不回退,避免截得太短
+  const nl = cut.lastIndexOf("\n");
+  return nl > maxChars * 0.8 ? cut.slice(0, nl) : cut;
+}
+
+/** 单次 get_page_content 返回的总预算(字符):按节累计,到预算停,不切碎某一节 */
+const PAGE_CONTENT_MAX = 12000;
 
 /** 大纲上限:超长文档只列前 N 节,read_section 仍可用更大的 index(仅大纲不列) */
 const OUTLINE_MAX = 30;
