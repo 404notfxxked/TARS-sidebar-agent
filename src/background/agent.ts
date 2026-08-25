@@ -92,6 +92,9 @@ export async function runAgentLoop(
         onDelta: (delta) =>
           // 流式把输出推给前端
           port.postMessage({ type: MSG.AGENT_MESSAGE, delta }),
+        onReasoningDelta: (delta) =>
+          // 思考过程流式透出(provider 支持时才会回调)
+          port.postMessage({ type: MSG.AGENT_REASONING, delta }),
         signal,
       });
 
@@ -119,13 +122,16 @@ export async function runAgentLoop(
           console.log("[agent] dispatching tool:", tc.name);
           port.postMessage({
             type: MSG.AGENT_TOOL_CALL,
+            id: tc.id,
             name: tc.name,
+            displayName: getTool(tc.name)?.displayName,
             args: tc.args,
           });
 
           // 工具失败不中断整个 agent:把错误文本作为观察结果回填,
           // 让模型看到失败原因后换工具 / 换参数 / 直接回答
           let toolResult: unknown;
+          let ok = true;
           try {
             toolResult = await dispatchToolCall(tc.name, tc.args);
             console.log(
@@ -135,12 +141,15 @@ export async function runAgentLoop(
             );
           } catch (err) {
             console.log("[agent] tool error:", tc.name, err);
+            ok = false;
             toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
 
           port.postMessage({
             type: MSG.AGENT_TOOL_RESULT,
+            id: tc.id,
             name: tc.name,
+            ok,
             result: toolResult,
           });
           messages.push({

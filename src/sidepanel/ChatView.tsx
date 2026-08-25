@@ -16,6 +16,31 @@ interface ChatMsg {
 
 type AgentStatus = "idle" | "thinking" | "streaming";
 
+// ---- 执行轨迹(trace):当前轮的思考块 + 工具块,按时间序混合 ----
+// 只属于「进行中这轮」,不持久化;新一轮(AGENT_STARTED / 提交)清空
+
+type ToolTraceItem = {
+  kind: "tool";
+  id: string;
+  name: string;
+  displayName?: string;
+  args?: unknown;
+  status: "running" | "done" | "error";
+  result?: unknown;
+};
+type ReasoningTraceItem = { kind: "reasoning"; text: string; collapsed: boolean };
+type TraceItem = ToolTraceItem | ReasoningTraceItem;
+
+type ToolCallEvent = Extract<AgentEvent, { type: typeof MSG.AGENT_TOOL_CALL }>;
+type ToolResultEvent = Extract<
+  AgentEvent,
+  { type: typeof MSG.AGENT_TOOL_RESULT }
+>;
+
+// 展开预览的截断阈值(字符):工具结果可达 12k,思考过程整段也不短,不整段渲染
+const PREVIEW_CHARS = 200;
+const REASONING_MAX_CHARS = 2000;
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000)
     return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -42,6 +67,77 @@ export default function ChatView({
   const listRef = useRef<HTMLDivElement | null>(null);
   // 最近一次已加载历史的会话,防重复请求
   const lastLoadedSessionRef = useRef("");
+
+  const [trace, setTrace] = useState<TraceItem[]>([]);
+
+  // reasoning delta → 追加到最后一个「展开中」的思考块;末块已折叠(属于上一阶段)则新开一块
+  const appendReasoning = (delta: string) =>
+    setTrace((ts) => {
+      const last = ts[ts.length - 1];
+      if (last?.kind === "reasoning" && !last.collapsed) {
+        return [...ts.slice(0, -1), { ...last, text: last.text + delta }];
+      }
+      return [...ts, { kind: "reasoning", text: delta, collapsed: false }];
+    });
+
+  // 任何「下一阶段」事件(工具开始 / 内容开始)→ 折叠所有思考块
+  const collapseReasoning = () =>
+    setTrace((ts) =>
+      ts.some((t) => t.kind === "reasoning" && !t.collapsed)
+        ? ts.map((t) =>
+            t.kind === "reasoning" ? { ...t, collapsed: true } : t,
+          )
+        : ts,
+    );
+
+  const pushTool = (evt: ToolCallEvent) =>
+    setTrace((ts) => [
+      ...ts,
+      {
+        kind: "tool",
+        id: evt.id,
+        name: evt.name,
+        displayName: evt.displayName,
+        args: evt.args,
+        status: "running",
+      },
+    ]);
+
+  const applyToolResult = (evt: ToolResultEvent) =>
+    setTrace((ts) =>
+      ts.map((t) =>
+        t.kind === "tool" && t.id === evt.id
+          ? { ...t, status: evt.ok ? "done" : "error", result: evt.result }
+          : t,
+      ),
+    );
+
+  // 结束兜底:取消/异常时残留的 running 工具归一为 done(防 spinner 卡死),思考块收起
+  const settleTrace = () =>
+    setTrace((ts) => {
+      let changed = false;
+      const next = ts.map((t) => {
+        if (t.kind === "reasoning" && !t.collapsed) {
+          changed = true;
+          return { ...t, collapsed: true };
+        }
+        if (t.kind === "tool" && t.status === "running") {
+          changed = true;
+          return { ...t, status: "done" as const };
+        }
+        return t;
+      });
+      return changed ? next : ts;
+    });
+
+  const toggleReasoning = (index: number) =>
+    setTrace((ts) =>
+      ts.map((t, i) =>
+        t.kind === "reasoning" && i === index
+          ? { ...t, collapsed: !t.collapsed }
+          : t,
+      ),
+    );
 
   /** 会话全局唯一、与 tab 解耦;tabId 只随消息传递,作为工具执行的页面上下文 */
   const resolveContext = async (): Promise<{
@@ -100,29 +196,43 @@ export default function ChatView({
           console.log("[chat] agent started, sessionId:", evt.sessionId);
           setStatus("thinking");
           setUsage(null);
+          // 新一轮开始:上一轮轨迹不保留(过程不持久化)
+          setTrace([]);
           break;
         case MSG.AGENT_THINKING:
           console.log("[chat] agent thinking, turn:", evt.turn);
           finalize();
           setStatus("thinking");
           break;
+        case MSG.AGENT_REASONING:
+          appendReasoning(evt.delta);
+          break;
         case MSG.AGENT_MESSAGE:
+          // 内容开始 = 下一阶段:折叠思考块,再走现有流式逻辑
+          collapseReasoning();
           setStatus("streaming");
           appendDelta(evt.delta);
           break;
         case MSG.AGENT_TOOL_CALL:
           console.log("[chat] tool call:", evt.name);
+          collapseReasoning();
+          pushTool(evt);
           finalize();
           setStatus("thinking");
+          break;
+        case MSG.AGENT_TOOL_RESULT:
+          applyToolResult(evt);
           break;
         case MSG.AGENT_DONE:
           console.log("[chat] agent done");
           finalize();
+          settleTrace();
           setStatus("idle");
           break;
         case MSG.AGENT_ERROR:
           console.log("[chat] agent error:", evt.error);
           finalize();
+          settleTrace();
           setStatus("idle");
           setMessages((ms) => [
             ...ms,
@@ -186,11 +296,11 @@ export default function ChatView({
     };
   }, []);
 
-  // 新消息自动滚到底
+  // 新消息 / 轨迹更新自动滚到底
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, status]);
+  }, [messages, trace, status]);
 
   const cancel = () => {
     console.log("[chat] cancel clicked, sessionId:", sessionRef.current);
@@ -213,6 +323,7 @@ export default function ChatView({
     setMessages([]);
     setInput("");
     setUsage(null);
+    setTrace([]); // 对话清空,上一轮轨迹也不保留
     setCurrentSession("");
     // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
     sessionRef.current = "";
@@ -238,6 +349,7 @@ export default function ChatView({
     );
     setMessages((ms) => [...ms, { role: "user", content: text, sessionId }]);
     setInput("");
+    setTrace([]); // 新一轮:旧轨迹立即清掉(AGENT_STARTED 会再兜一次)
     connect().postMessage({
       type: MSG.USER_MESSAGE,
       payload: { text, sessionId, tabId },
@@ -273,17 +385,31 @@ export default function ChatView({
           const visible = messages.filter(
             (m) => m.sessionId === currentSession,
           );
-          return visible.length === 0 && status === "idle" ? (
-            <EmptyState />
-          ) : (
-            visible.map((m, i) =>
+          if (visible.length === 0 && status === "idle") return <EmptyState />;
+          // 轨迹插在最后一条 user 消息之后:它是「当前这轮」的过程,
+          // 本轮流式答案(assistant 气泡)自然排在轨迹后面;历史回放时 trace 为空不渲染
+          const lastUserIdx = visible.reduce(
+            (acc, m, i) => (m.role === "user" ? i : acc),
+            -1,
+          );
+          return visible.flatMap((m, i) => {
+            const node =
               m.role === "user" ? (
                 <UserBubble key={i} text={m.content} />
               ) : (
                 <AssistantBubble key={i} text={m.content} />
-              ),
-            )
-          );
+              );
+            return i === lastUserIdx && trace.length > 0
+              ? [
+                  node,
+                  <TraceView
+                    key="trace"
+                    items={trace}
+                    onToggleReasoning={toggleReasoning}
+                  />,
+                ]
+              : [node];
+          });
         })()}
         {status === "thinking" && (
           <div className="flex items-center gap-1.5 py-1 pl-1 text-[var(--muted)]">
@@ -413,7 +539,135 @@ function EmptyState() {
   );
 }
 
-// TODO: reasoning bubble
+// ---- 执行轨迹组件 ----
+
+/** 轨迹容器:按时间序渲染思考块与工具块 */
+function TraceView({
+  items,
+  onToggleReasoning,
+}: {
+  items: TraceItem[];
+  onToggleReasoning: (index: number) => void;
+}) {
+  return (
+    <div className="msg-in space-y-1.5">
+      {items.map((t, i) =>
+        t.kind === "reasoning" ? (
+          <ReasoningBlock
+            key={i}
+            text={t.text}
+            collapsed={t.collapsed}
+            onToggle={() => onToggleReasoning(i)}
+          />
+        ) : (
+          <ToolChip key={t.id} item={t} />
+        ),
+      )}
+    </div>
+  );
+}
+
+/** 思考块:折叠态一行「💭 思考过程」,展开显示文本(超长截断) */
+function ReasoningBlock({
+  text,
+  collapsed,
+  onToggle,
+}: {
+  text: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="reasoning-block">
+      <button
+        type="button"
+        className="reasoning-header"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+      >
+        <span className="reasoning-icon" aria-hidden="true">
+          💭
+        </span>
+        <span className="reasoning-label">思考过程</span>
+        <span className="trace-chevron" aria-hidden="true">
+          {collapsed ? "▸" : "▾"}
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="reasoning-body">{truncate(text, REASONING_MAX_CHARS)}</div>
+      )}
+    </div>
+  );
+}
+
+/** 工具块:名称 + 状态常显,参数/结果点击展开(结果摘要截断) */
+function ToolChip({ item }: { item: ToolTraceItem }) {
+  const [open, setOpen] = useState(false);
+  const statusText =
+    item.status === "running" ? "运行中" : item.status === "error" ? "失败" : "完成";
+  return (
+    <div className="tool-chip" data-status={item.status}>
+      <button
+        type="button"
+        className="tool-chip-header"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {item.status === "running" ? (
+          <span className="tool-chip-spinner" aria-label="运行中" />
+        ) : item.status === "error" ? (
+          <span className="tool-chip-mark mark-error" aria-hidden="true">
+            ✕
+          </span>
+        ) : (
+          <span className="tool-chip-mark mark-ok" aria-hidden="true">
+            ✓
+          </span>
+        )}
+        <span className="tool-chip-name">{item.displayName ?? item.name}</span>
+        <span className="tool-chip-status">{statusText}</span>
+        <span className="trace-chevron" aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
+      </button>
+      {open && (
+        <div className="tool-chip-body">
+          <div className="tool-chip-label">参数</div>
+          <pre className="tool-chip-pre">
+            {item.args === undefined
+              ? "(无)"
+              : truncate(stringifyPreview(item.args), PREVIEW_CHARS)}
+          </pre>
+          {item.result !== undefined && (
+            <>
+              <div className="tool-chip-label">
+                {item.status === "error" ? "错误" : "结果"}
+              </div>
+              <pre className="tool-chip-pre">
+                {truncate(stringifyPreview(item.result), PREVIEW_CHARS)}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** unknown → 可展示文本:字符串原样,对象 JSON 美化,失败退 String() */
+function stringifyPreview(v: unknown): string {
+  if (typeof v === "string") return v;
+  try {
+    return JSON.stringify(v, null, 2) ?? String(v);
+  } catch {
+    return String(v);
+  }
+}
+
+/** 超长文本截断,尾部标注总字数 */
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max)}…(共 ${s.length} 字)` : s;
+}
 
 function UserBubble({ text }: { text: string }) {
   return (

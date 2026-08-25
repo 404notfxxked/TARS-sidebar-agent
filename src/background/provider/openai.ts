@@ -83,6 +83,7 @@ export class OpenAIAdapter implements ChatProvider {
       if (typeof delta.reasoning_content === "string") {
         reasoning += delta.reasoning_content;
         hasReasoning = true;
+        req.onReasoningDelta?.(delta.reasoning_content);
       }
       for (const tc of delta.tool_calls ?? []) {
         toolAcc[tc.index] ??= { id: "", name: "", args: "" };
