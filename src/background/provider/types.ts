@@ -33,6 +33,8 @@ export interface ChatRequest {
   tools?: ToolSchema[];
   /** 流式文本增量,逐块回调给 UI */
   onDelta: (text: string) => void;
+  /** 流式思考过程增量(reasoning_content);可选 —— provider 不支持时不回调 */
+  onReasoningDelta?: (text: string) => void;
   /** 外部取消:agent 终止时中止网络请求 */
   signal?: AbortSignal;
 }

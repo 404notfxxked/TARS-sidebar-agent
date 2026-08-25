@@ -7,6 +7,8 @@ import type { ToolSchema } from "../shared/toolTypes";
 
 /** 工具定义:注册表条目 = 共享的 ToolSchema(纯 schema)+ 可执行的 execute */
 export interface Tool<P = unknown, R = unknown> extends ToolSchema {
+  /** 面板展示名;只在注册表条目上,不进 ToolSchema(那是给 LLM 的 wire 契约) */
+  displayName?: string;
   execute: (args: P) => Promise<R>;
 }
 
@@ -42,6 +44,7 @@ async function resolveTargetTabId(args?: { tabId?: number }): Promise<number> {
 registerTool<Record<string, never>, { url?: string; title?: string }>({
   type: "function",
   name: "get_current_tab",
+  displayName: "获取当前页",
   description: "获取当前激活 tab 的 URL 和标题",
   parameters: { type: "object", properties: {} },
   execute: async () => {
@@ -69,6 +72,7 @@ registerTool<
 >({
   type: "function",
   name: "get_page_content",
+  displayName: "读取页面",
   description:
     "读取指定网页的结构化正文(按 h1-h6 标题分节,带 # 层级)。适合短页一次读完;长文档内容会被截断,改用 get_page_structure + read_section 按需读节。仅当回答依赖页面具体内容时才调用;能用通用知识回答的问题(概念解释、常识)不要调用。",
   parameters: {
@@ -95,6 +99,7 @@ registerTool<
 >({
   type: "function",
   name: "get_page_structure",
+  displayName: "读取大纲",
   description:
     "读取指定页面的大纲(按 h1-h6 标题分节,含每节开头 preview 和总节数 total;无标题结构时 sections 为空)。先调用它了解文档结构,再按需用 read_section 读具体某节;sections 条数少于 total 说明大纲未列全。",
   parameters: {
@@ -120,6 +125,7 @@ registerTool<
 >({
   type: "function",
   name: "read_section",
+  displayName: "读取章节",
   description:
     "按 get_page_structure 返回的大纲 index 读取一节或连续多节(index 到 until,含)的完整文本。连续片段用 until 一次读取(整节返回,不中途截断);分散片段或单节内容特别长可多次单独调用。",
   parameters: {

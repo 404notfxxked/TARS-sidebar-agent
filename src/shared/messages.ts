@@ -13,6 +13,7 @@ export const MSG = {
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
   AGENT_THINKING: 'agent_thinking',
+  AGENT_REASONING: 'agent_reasoning',
   AGENT_TOOL_CALL: 'agent_tool_call',
   AGENT_TOOL_RESULT: 'agent_tool_result',
   AGENT_MESSAGE: 'agent_message',
@@ -56,8 +57,22 @@ export interface ChatRecord {
 export type AgentEvent =
   | { type: typeof MSG.AGENT_STARTED; sessionId: string }
   | { type: typeof MSG.AGENT_THINKING; turn: number }
-  | { type: typeof MSG.AGENT_TOOL_CALL; name: string; args?: unknown }
-  | { type: typeof MSG.AGENT_TOOL_RESULT; name: string; result: unknown }
+  /** 思考过程增量(DeepSeek reasoning_content,流式);先于 content 到达 */
+  | { type: typeof MSG.AGENT_REASONING; delta: string }
+  | {
+      type: typeof MSG.AGENT_TOOL_CALL;
+      id: string;
+      name: string;
+      displayName?: string;
+      args?: unknown;
+    }
+  | {
+      type: typeof MSG.AGENT_TOOL_RESULT;
+      id: string;
+      name: string;
+      ok: boolean;
+      result: unknown;
+    }
   | { type: typeof MSG.AGENT_MESSAGE; delta: string }
   | { type: typeof MSG.AGENT_DONE }
   | { type: typeof MSG.AGENT_ERROR; error: string }
