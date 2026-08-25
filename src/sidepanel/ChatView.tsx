@@ -28,7 +28,13 @@ type ToolTraceItem = {
   status: "running" | "done" | "error";
   result?: unknown;
 };
-type ReasoningTraceItem = { kind: "reasoning"; text: string; collapsed: boolean };
+type ReasoningTraceItem = {
+  kind: "reasoning";
+  text: string;
+  collapsed: boolean;
+  /** 仍在流式生成中:驱动 shimmer 标题与光标;阶段收口时置 false */
+  active: boolean;
+};
 type TraceItem = ToolTraceItem | ReasoningTraceItem;
 
 type ToolCallEvent = Extract<AgentEvent, { type: typeof MSG.AGENT_TOOL_CALL }>;
@@ -70,25 +76,69 @@ export default function ChatView({
 
   const [trace, setTrace] = useState<TraceItem[]>([]);
 
-  // reasoning delta → 追加到最后一个「展开中」的思考块;末块已折叠(属于上一阶段)则新开一块
-  const appendReasoning = (delta: string) =>
+  // ---- 思考流缓冲:delta 先进缓冲,按固定节拍合入状态 ----
+  // 流式期间只渲染单行 ticker(尾部内容),行高恒定不推挤后续消息;
+  // 渲染频率从「每 delta 一次」降到 ~10Hz
+  const reasoningBufRef = useRef("");
+  const reasoningFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** 把缓冲同步合入最后一个活跃思考块(节拍到期 / 阶段收口前调用) */
+  const flushReasoning = () => {
+    if (reasoningFlushRef.current !== null) {
+      clearTimeout(reasoningFlushRef.current);
+      reasoningFlushRef.current = null;
+    }
+    const buf = reasoningBufRef.current;
+    if (!buf) return;
+    reasoningBufRef.current = "";
     setTrace((ts) => {
       const last = ts[ts.length - 1];
-      if (last?.kind === "reasoning" && !last.collapsed) {
-        return [...ts.slice(0, -1), { ...last, text: last.text + delta }];
+      if (last?.kind === "reasoning" && last.active) {
+        return [...ts.slice(0, -1), { ...last, text: last.text + buf }];
       }
-      return [...ts, { kind: "reasoning", text: delta, collapsed: false }];
+      return ts; // 活跃块已被收口(异常时序),缓冲无从归属,丢弃
     });
+  };
 
-  // 任何「下一阶段」事件(工具开始 / 内容开始)→ 折叠所有思考块
-  const collapseReasoning = () =>
+  /** 直接丢弃缓冲(新一轮开始 / 清空对话:旧缓冲不属于任何块) */
+  const dropReasoningBuf = () => {
+    if (reasoningFlushRef.current !== null) {
+      clearTimeout(reasoningFlushRef.current);
+      reasoningFlushRef.current = null;
+    }
+    reasoningBufRef.current = "";
+  };
+
+  // reasoning delta → 入缓冲;无活跃思考块则先开块(行立即出现,文本由节拍供给)
+  const appendReasoning = (delta: string) => {
+    reasoningBufRef.current += delta;
+    setTrace((ts) => {
+      const last = ts[ts.length - 1];
+      return last?.kind === "reasoning" && last.active
+        ? ts
+        : [
+            ...ts,
+            { kind: "reasoning", text: "", collapsed: false, active: true },
+          ];
+    });
+    if (reasoningFlushRef.current === null) {
+      reasoningFlushRef.current = setTimeout(flushReasoning, 100);
+    }
+  };
+
+  // 任何「下一阶段」事件(工具开始 / 内容开始)→ 先冲刷缓冲(别丢尾部字符),再收口所有思考块
+  const collapseReasoning = () => {
+    flushReasoning();
     setTrace((ts) =>
-      ts.some((t) => t.kind === "reasoning" && !t.collapsed)
+      ts.some((t) => t.kind === "reasoning" && (t.active || !t.collapsed))
         ? ts.map((t) =>
-            t.kind === "reasoning" ? { ...t, collapsed: true } : t,
+            t.kind === "reasoning"
+              ? { ...t, collapsed: true, active: false }
+              : t,
           )
         : ts,
     );
+  };
 
   const pushTool = (evt: ToolCallEvent) =>
     setTrace((ts) => [
@@ -112,14 +162,15 @@ export default function ChatView({
       ),
     );
 
-  // 结束兜底:取消/异常时残留的 running 工具归一为 done(防 spinner 卡死),思考块收起
-  const settleTrace = () =>
+  // 结束兜底:先冲刷缓冲,再把残留 running 工具归一为 done(防 spinner 卡死),思考块收口
+  const settleTrace = () => {
+    flushReasoning();
     setTrace((ts) => {
       let changed = false;
       const next = ts.map((t) => {
-        if (t.kind === "reasoning" && !t.collapsed) {
+        if (t.kind === "reasoning" && (!t.collapsed || t.active)) {
           changed = true;
-          return { ...t, collapsed: true };
+          return { ...t, collapsed: true, active: false };
         }
         if (t.kind === "tool" && t.status === "running") {
           changed = true;
@@ -129,6 +180,7 @@ export default function ChatView({
       });
       return changed ? next : ts;
     });
+  };
 
   const toggleReasoning = (index: number) =>
     setTrace((ts) =>
@@ -196,7 +248,8 @@ export default function ChatView({
           console.log("[chat] agent started, sessionId:", evt.sessionId);
           setStatus("thinking");
           setUsage(null);
-          // 新一轮开始:上一轮轨迹不保留(过程不持久化)
+          // 新一轮开始:上一轮轨迹不保留(过程不持久化),旧缓冲一并丢弃
+          dropReasoningBuf();
           setTrace([]);
           break;
         case MSG.AGENT_THINKING:
@@ -291,6 +344,7 @@ export default function ChatView({
     });
     return () => {
       streamingRef.current = false;
+      dropReasoningBuf();
       port.disconnect();
       portRef.current = null;
     };
@@ -323,6 +377,7 @@ export default function ChatView({
     setMessages([]);
     setInput("");
     setUsage(null);
+    dropReasoningBuf();
     setTrace([]); // 对话清空,上一轮轨迹也不保留
     setCurrentSession("");
     // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
@@ -541,7 +596,7 @@ function EmptyState() {
 
 // ---- 执行轨迹组件 ----
 
-/** 轨迹容器:按时间序渲染思考块与工具块 */
+/** 轨迹容器:单一卡片面(settings-card 同族),行序 = 时间序(思考行 + 工具行) */
 function TraceView({
   items,
   onToggleReasoning,
@@ -550,107 +605,170 @@ function TraceView({
   onToggleReasoning: (index: number) => void;
 }) {
   return (
-    <div className="msg-in space-y-1.5">
+    <div className="msg-in trace">
       {items.map((t, i) =>
         t.kind === "reasoning" ? (
-          <ReasoningBlock
+          <ReasoningRow
             key={i}
-            text={t.text}
-            collapsed={t.collapsed}
+            item={t}
             onToggle={() => onToggleReasoning(i)}
           />
         ) : (
-          <ToolChip key={t.id} item={t} />
+          <ToolRow key={t.id} item={t} />
         ),
       )}
     </div>
   );
 }
 
-/** 思考块:折叠态一行「💭 思考过程」,展开显示文本(超长截断) */
-function ReasoningBlock({
-  text,
-  collapsed,
+/** 思考行:流式时是单行 ticker(只显示最近的尾部内容,节流刷新,不推挤布局);
+ * 阶段结束后折叠为一行,点击展开完整文本回看 */
+function ReasoningRow({
+  item,
   onToggle,
 }: {
-  text: string;
-  collapsed: boolean;
+  item: ReasoningTraceItem;
   onToggle: () => void;
 }) {
+  if (item.active) {
+    return (
+      <div className="trace-row" data-kind="reasoning" data-active="true">
+        <div className="trace-line">
+          <span className="trace-icon" aria-hidden="true">
+            <SparkleIcon />
+          </span>
+          <span className="trace-label trace-shimmer">思考中</span>
+          <span className="trace-tail-text" aria-hidden="true">
+            {tailSlice(item.text)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+  const open = !item.collapsed;
   return (
-    <div className="reasoning-block">
+    <div className="trace-row" data-kind="reasoning" data-open={open}>
       <button
         type="button"
-        className="reasoning-header"
+        className="trace-header"
         onClick={onToggle}
-        aria-expanded={!collapsed}
+        aria-expanded={open}
       >
-        <span className="reasoning-icon" aria-hidden="true">
-          💭
+        <span className="trace-icon" aria-hidden="true">
+          <SparkleIcon />
         </span>
-        <span className="reasoning-label">思考过程</span>
-        <span className="trace-chevron" aria-hidden="true">
-          {collapsed ? "▸" : "▾"}
+        <span className="trace-label">思考过程</span>
+        <span className="trace-tail">
+          <ChevronIcon />
         </span>
       </button>
-      {!collapsed && (
-        <div className="reasoning-body">{truncate(text, REASONING_MAX_CHARS)}</div>
-      )}
+      <div className="trace-body-wrap">
+        <div className="trace-body">
+          <div className="reasoning-text">
+            {truncate(item.text, REASONING_MAX_CHARS)}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-/** 工具块:名称 + 状态常显,参数/结果点击展开(结果摘要截断) */
-function ToolChip({ item }: { item: ToolTraceItem }) {
+/** 工具行:名称 + 状态常显(对勾/叉以描边画入),参数/结果点击展开(摘要截断) */
+function ToolRow({ item }: { item: ToolTraceItem }) {
   const [open, setOpen] = useState(false);
   const statusText =
-    item.status === "running" ? "运行中" : item.status === "error" ? "失败" : "完成";
+    item.status === "running"
+      ? "运行中"
+      : item.status === "error"
+        ? "失败"
+        : "完成";
   return (
-    <div className="tool-chip" data-status={item.status}>
+    <div
+      className="trace-row"
+      data-kind="tool"
+      data-status={item.status}
+      data-open={open}
+    >
       <button
         type="button"
-        className="tool-chip-header"
+        className="trace-header"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        {item.status === "running" ? (
-          <span className="tool-chip-spinner" aria-label="运行中" />
-        ) : item.status === "error" ? (
-          <span className="tool-chip-mark mark-error" aria-hidden="true">
-            ✕
-          </span>
-        ) : (
-          <span className="tool-chip-mark mark-ok" aria-hidden="true">
-            ✓
-          </span>
-        )}
-        <span className="tool-chip-name">{item.displayName ?? item.name}</span>
-        <span className="tool-chip-status">{statusText}</span>
-        <span className="trace-chevron" aria-hidden="true">
-          {open ? "▾" : "▸"}
+        <span className="trace-icon" aria-hidden="true">
+          {item.status === "running" ? (
+            <span className="trace-spinner" />
+          ) : item.status === "error" ? (
+            <svg
+              className="trace-mark mark-error"
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+            >
+              <path d="M3.2 3.2 8.8 8.8M8.8 3.2 3.2 8.8" />
+            </svg>
+          ) : (
+            <svg
+              className="trace-mark mark-ok"
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+            >
+              <path d="M2.6 6.4 4.9 8.7 9.4 3.4" />
+            </svg>
+          )}
+        </span>
+        <span className="trace-label">{item.displayName ?? item.name}</span>
+        <span className="trace-tail">
+          <span className="trace-status">{statusText}</span>
+          <ChevronIcon />
         </span>
       </button>
-      {open && (
-        <div className="tool-chip-body">
-          <div className="tool-chip-label">参数</div>
-          <pre className="tool-chip-pre">
+      <div className="trace-body-wrap">
+        <div className="trace-body">
+          <div className="trace-sec">参数</div>
+          <pre className="trace-pre">
             {item.args === undefined
               ? "(无)"
               : truncate(stringifyPreview(item.args), PREVIEW_CHARS)}
           </pre>
           {item.result !== undefined && (
             <>
-              <div className="tool-chip-label">
+              <div className="trace-sec">
                 {item.status === "error" ? "错误" : "结果"}
               </div>
-              <pre className="tool-chip-pre">
+              <pre className="trace-pre">
                 {truncate(stringifyPreview(item.result), PREVIEW_CHARS)}
               </pre>
             </>
           )}
         </div>
-      )}
+      </div>
     </div>
+  );
+}
+
+/** 四角星(SF Symbols sparkle 风):思考过程的图标 */
+function SparkleIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 2.75C8.6 5.4 10.6 7.4 13.25 8 10.6 8.6 8.6 10.6 8 13.25 7.4 10.6 5.4 8.6 2.75 8 5.4 7.4 7.4 5.4 8 2.75Z" />
+    </svg>
+  );
+}
+
+/** 折叠指示箭头:单个 SVG,开合沿同一路径旋转(CSS 接管 transform) */
+function ChevronIcon() {
+  return (
+    <svg
+      className="trace-chevron"
+      width="10"
+      height="10"
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+    >
+      <path d="M4.5 2.75 8.25 6 4.5 9.25" />
+    </svg>
   );
 }
 
@@ -662,6 +780,24 @@ function stringifyPreview(v: unknown): string {
   } catch {
     return String(v);
   }
+}
+
+/** ticker 单行容量(按显示宽度估算:CJK≈1 单位,西文≈0.55;≈220px @12px) */
+const TAIL_WIDTH_UNITS = 17;
+
+/** 思考 ticker:从尾部按显示宽度截取最近的单行内容,越界时前缀 … 标记截断 */
+function tailSlice(s: string): string {
+  let units = 0;
+  let i = s.length;
+  while (i > 0) {
+    const cp = s.codePointAt(i - 1)!;
+    const w = cp > 0x2e7f ? 1 : 0.55; // CJK 及全角记 1,其余记约半宽
+    if (units + w > TAIL_WIDTH_UNITS) break;
+    units += w;
+    i -= cp > 0xffff ? 2 : 1;
+  }
+  const tail = s.slice(i).replace(/\s+$/, "");
+  return i > 0 && tail ? `…${tail}` : tail;
 }
 
 /** 超长文本截断,尾部标注总字数 */

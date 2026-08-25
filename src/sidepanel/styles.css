@@ -11,6 +11,7 @@
   --accent-strong: #12833c;
   --accent-soft: #e8f6ee;
   --danger: #dc2626;
+  --danger-soft: #fdecec;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
   --spring-enter: cubic-bezier(0.16, 1, 0.3, 1);
@@ -239,9 +240,9 @@ body {
   }
 }
 
-/* ---- Agent 执行轨迹(思考块 + 工具块) ----
-   与 .settings-card 同族:近实心白 + 发丝边框 + 轻投影;
-   是「过程性信息」,视觉层级刻意低于消息气泡(小一号、muted 色) */
+/* ---- Agent 执行轨迹(思考行 + 工具行) ----
+   单一轨迹面,settings-card 同族(近实心白 + 发丝边框 + 轻投影 + blur),
+   行间内凹发丝分隔线;是「过程性信息」,视觉层级刻意低于消息气泡(小一号、muted 色) */
 
 /* keyframes 留在级联层外(同 settings-in 的约定) */
 @keyframes trace-spin {
@@ -249,119 +250,307 @@ body {
     transform: rotate(360deg);
   }
 }
+@keyframes trace-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@keyframes trace-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes trace-icon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes trace-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+/* 状态翻转瞬间在行上轻扫一层色再退回:反馈「刚完成 / 刚失败」 */
+@keyframes trace-row-ok {
+  from {
+    background-color: var(--accent-soft);
+  }
+}
+@keyframes trace-row-err {
+  from {
+    background-color: var(--danger-soft);
+  }
+}
 
 @layer components {
-  .reasoning-block,
-  .tool-chip {
+  .trace {
     max-width: 100%;
     border: 0.5px solid rgba(0, 0, 0, 0.06);
-    border-radius: 10px;
+    border-radius: 12px;
     background: rgba(255, 255, 255, 0.78);
     backdrop-filter: blur(10px) saturate(150%);
     -webkit-backdrop-filter: blur(10px) saturate(150%);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    box-shadow: var(--shadow-sm);
     overflow: hidden;
   }
 
-  /* 头部行:折叠/展开的点击热区,整行可点 */
-  .reasoning-header,
-  .tool-chip-header {
+  /* 新行入场:轻微浮升;done/error 追加一次性色扫(同名动画不重启,见 CSS 动画名匹配规则) */
+  .trace-row {
+    position: relative;
+    animation: trace-row-in 180ms var(--spring-enter);
+  }
+  .trace-row + .trace-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 12px;
+    right: 0;
+    height: 0.5px;
+    background: rgba(0, 0, 0, 0.06);
+  }
+  .trace-row[data-status="done"] {
+    animation:
+      trace-row-in 180ms var(--spring-enter),
+      trace-row-ok 700ms ease-out;
+  }
+  .trace-row[data-status="error"] {
+    animation:
+      trace-row-in 180ms var(--spring-enter),
+      trace-row-err 700ms ease-out;
+  }
+
+  /* 行内横排布局:头部行(可点)与思考 ticker 行(展示)共用 */
+  .trace-header,
+  .trace-line {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     width: 100%;
-    padding: 5px 10px;
+    padding: 6px 12px;
     font-size: 12px;
     color: var(--muted);
+  }
+  /* 头部行:整行热区可点,按下即反馈 */
+  .trace-header {
     transition:
       background 120ms ease,
       color 120ms ease;
   }
-  .reasoning-header:hover,
-  .tool-chip-header:hover {
-    background: rgba(0, 0, 0, 0.04);
+  .trace-header:hover {
+    background: rgba(0, 0, 0, 0.035);
+    color: var(--ink);
+  }
+  .trace-header:active {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .trace-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    color: var(--muted);
+  }
+  /* 思考中:图标与 shimmer 标题同周期呼吸(harmony) */
+  .trace-row[data-active="true"] .trace-icon {
+    animation: trace-icon-pulse 1.6s ease-in-out infinite;
+  }
+
+  .trace-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--muted);
+  }
+  .trace-row[data-kind="tool"] .trace-label {
     color: var(--ink);
   }
 
-  .reasoning-icon {
-    font-size: 11px;
-    line-height: 1;
-  }
-  .reasoning-label {
-    font-weight: 500;
+  /* 思考中的标题:高光横扫 */
+  .trace-shimmer {
+    background: linear-gradient(
+      100deg,
+      var(--muted) 35%,
+      var(--ink) 50%,
+      var(--muted) 65%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: trace-shimmer 1.6s linear infinite;
   }
 
-  .tool-chip-name {
-    font-weight: 500;
-    color: var(--ink);
+  /* 尾部(状态 + chevron)整体右对齐 */
+  .trace-tail {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .tool-chip-status {
+  .trace-status {
     font-size: 11px;
+    color: var(--muted);
   }
-  .tool-chip[data-status="error"] .tool-chip-status {
+  .trace-row[data-status="error"] .trace-status {
     color: var(--danger);
   }
 
-  /* chevron 靠右收口 */
+  /* chevron:单个 SVG 沿同一路径旋转(spatial consistency),不换字形 */
   .trace-chevron {
-    margin-left: auto;
-    font-size: 10px;
     color: var(--muted);
     opacity: 0.7;
+    transform: rotate(0deg);
+    transition: transform 220ms var(--spring-enter);
+  }
+  .trace-chevron path,
+  .trace-mark path {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .trace-chevron path {
+    stroke-width: 1.4;
+  }
+  .trace-row[data-open="true"] .trace-chevron {
+    transform: rotate(90deg);
   }
 
   /* 运行中 spinner */
-  .tool-chip-spinner {
-    flex-shrink: 0;
-    width: 10px;
-    height: 10px;
+  .trace-spinner {
+    width: 12px;
+    height: 12px;
     border-radius: 999px;
     border: 1.5px solid var(--line);
     border-top-color: var(--accent);
     animation: trace-spin 700ms linear infinite;
   }
 
-  .tool-chip-mark {
-    flex-shrink: 0;
-    font-size: 10px;
-    line-height: 1;
-  }
-  .tool-chip-mark.mark-ok {
-    color: var(--accent);
-  }
-  .tool-chip-mark.mark-error {
-    color: var(--danger);
+  /* 四角星 */
+  .trace-icon > svg > path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
-  /* 思考块展开区:缩进与 header 文字起始对齐;pre-wrap 保留模型换行 */
-  .reasoning-body {
-    padding: 2px 10px 8px 26px;
+  /* 对勾/叉:状态翻转时以描边「画」出来 */
+  .trace-mark {
+    color: var(--accent);
+  }
+  .trace-mark path {
+    stroke-width: 1.6;
+  }
+  .trace-mark.mark-ok path {
+    stroke-dasharray: 11;
+    stroke-dashoffset: 11;
+    animation: trace-draw 240ms 40ms var(--spring-enter) forwards;
+  }
+  .trace-mark.mark-error {
+    color: var(--danger);
+  }
+  .trace-mark.mark-error path {
+    stroke-dasharray: 16.5;
+    stroke-dashoffset: 16.5;
+    animation: trace-draw 240ms 40ms var(--spring-enter) forwards;
+  }
+
+  /* 展开区:grid 行高 0fr→1fr 过渡 + 淡入;visibility 延迟隐藏防读屏读到折叠内容;
+     padding 与 border 同步过渡,补齐收起时的残余高度 */
+  .trace-body-wrap {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s 260ms;
+  }
+  .trace-row[data-open="true"] .trace-body-wrap {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s;
+  }
+  .trace-body {
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 12px;
+    border-top: 0.5px solid transparent;
+    transition:
+      padding 260ms var(--spring-enter),
+      border-color 200ms ease;
+  }
+  .trace-row[data-open="true"] .trace-body {
+    padding: 2px 12px 8px;
+    border-top-color: rgba(0, 0, 0, 0.05);
+  }
+
+  /* 思考流式文本:pre-wrap 保留模型换行 */
+  .reasoning-text {
     font-size: 12px;
-    line-height: 1.55;
+    line-height: 1.6;
     color: var(--muted);
     white-space: pre-wrap;
     word-break: break-word;
   }
 
-  /* 工具块展开区:参数 / 结果 */
-  .tool-chip-body {
-    padding: 2px 10px 8px;
-    border-top: 0.5px solid rgba(0, 0, 0, 0.06);
+  /* 思考中 ticker:只显示最近内容的单行尾部(截断在 JS 侧按宽度完成),
+     行高恒定 → 流式期间不推挤后续消息、不触发滚动抖动 */
+  .trace-tail-text {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* JS 截宽的兜底:极窄面板下不再加 …,直接右裁 */
+    color: var(--muted);
+    opacity: 0.85;
   }
-  .tool-chip-label {
-    margin-top: 5px;
-    font-size: 10.5px;
-    letter-spacing: 0.05em;
+
+  /* 工具参数/结果 */
+  .trace-sec {
+    margin: 5px 0 2px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
     color: var(--muted);
   }
-  .tool-chip-pre {
-    margin: 2px 0 4px;
+  .trace-pre {
+    margin: 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 11px;
     line-height: 1.5;
     color: var(--ink);
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+/* reduced motion:shimmer/呼吸静态降级(渐变文字在逐帧步进下会残留花屏) */
+@media (prefers-reduced-motion: reduce) {
+  .trace-shimmer {
+    background: none;
+    color: var(--muted);
+  }
+  .trace-row[data-active="true"] .trace-icon {
+    animation: none;
   }
 }
 
@@ -650,8 +839,7 @@ body {
   .input-pill,
   .settings-sheet,
   .settings-card,
-  .reasoning-block,
-  .tool-chip {
+  .trace {
     background: var(--surface);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
