@@ -1,6 +1,5 @@
 // 工具注册表 - agent loop 可调用的工具
 
-import type { AgentEvent } from "../shared/messages";
 import { callContentTool, getActiveTabId } from "../shared/contentTools";
 import { getToolExecutionContext } from "./toolContext";
 import type { ToolSchema } from "../shared/toolTypes";
@@ -22,10 +21,6 @@ export function getTool(name: string): Tool | undefined {
   return registry.find((t) => t.name === name);
 }
 
-export function getAllTools(): readonly Tool[] {
-  return registry;
-}
-
 // 导出为 provider 需要的 function calling schema
 // Tool 继承了 ToolSchema,直接返回即可(多余的 execute 字段对消费方无影响)
 export function toProviderToolSchemas(): ToolSchema[] {
@@ -40,27 +35,35 @@ async function resolveTargetTabId(args?: { tabId?: number }): Promise<number> {
   return tabId;
 }
 
-// ---- 示例工具占位 ----
-registerTool<Record<string, never>, { url?: string; title?: string }>({
+// 标签页清单:<context> 里的 tab 列表是提交时快照,运行中会过期;
+// 工具报「tab 不存在 / 无法注入」时,LLM 靠它拿最新清单重新选 tabId
+registerTool<
+  Record<string, never>,
+  {
+    defaultTabId: number | null;
+    tabs: { tabId: number; title?: string; url?: string; active: boolean; default: boolean }[];
+  }
+>({
   type: "function",
-  name: "get_current_tab",
-  displayName: "获取当前页",
-  description: "获取当前激活 tab 的 URL 和标题",
+  name: "get_tabs",
+  displayName: "列出标签页",
+  description:
+    "列出当前窗口所有 tab(tabId、标题、URL),并标记每个 tab 是否为页面工具省略 tabId 时的默认作用页(default,即提交时的页面)与当前激活页(active)。<context> 里的 tab 清单是提交时的快照,运行中可能已变化(新开/关闭/切换);当工具报「tab 不存在」或「无法注入内容脚本」时,先调用本工具获取最新清单,再选正确的 tabId 重试。",
   parameters: { type: "object", properties: {} },
   execute: async () => {
-    // 优先用 run 作用域的 tab(提交时捕获),避免执行时切 tab 读错页面
+    const tabs = await chrome.tabs.query({ currentWindow: true });
     const ctx = getToolExecutionContext();
-    const tabId = ctx?.tabId;
-    if (tabId != null) {
-      const tab = await chrome.tabs.get(tabId);
-      return { url: tab?.url, title: tab?.title };
-    }
-    // 无 run 上下文(如 agent loop 外的直接调用)→ 退回实时激活 tab
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-    return { url: tab?.url, title: tab?.title };
+    const defaultTabId = ctx?.tabId ?? null;
+    return {
+      defaultTabId,
+      tabs: tabs.map((t) => ({
+        tabId: t.id ?? -1,
+        title: t.title,
+        url: t.url,
+        active: t.active,
+        default: t.id === defaultTabId,
+      })),
+    };
   },
 });
 
@@ -176,6 +179,7 @@ registerTool<
         description: "按元素类型过滤",
       },
       limit: { type: "number", description: "最多返回条数,默认 20,上限 50" },
+      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
     },
   },
   execute: async (args) => {
@@ -200,6 +204,7 @@ registerTool<{ selector: string; tabId?: number }, { clicked?: string }>({
     type: "object",
     properties: {
       selector: { type: "string", description: "目标元素的 CSS 绝对路径,来自 find_elements 的返回" },
+      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
     },
     required: ["selector"],
   },
@@ -225,6 +230,7 @@ registerTool<
       selector: { type: "string", description: "输入控件的 CSS 绝对路径,来自 find_elements 的返回" },
       text: { type: "string", description: "要写入的文本;对 select 表示要选中的 option 的 value 或可见文字" },
       pressEnterAfter: { type: "boolean", description: "写入后追加一次 Enter(keyCode=13),搜索框提交用;省略默认 false" },
+      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
     },
     required: ["selector", "text"],
   },
@@ -236,6 +242,3 @@ registerTool<
     };
   },
 });
-
-// 让 AgentEvent 被显式 import 时不被 tree-shake 误判
-export type { AgentEvent };
