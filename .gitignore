@@ -16,3 +16,6 @@ package-lock.json
 yarn.lock
 
 tests/
+
+.zcode/
+.claude/
