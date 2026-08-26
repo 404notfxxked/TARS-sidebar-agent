@@ -5,6 +5,14 @@ import type {
   ContentToolCall,
   ContentToolResultMsg,
 } from "../shared/contentTools";
+
+// 协议消息类型:与 shared/contentTools.ts 的导出保持一致。
+// 这里必须用本地字面量而非运行时导入:content 入口一旦与 background 共享运行时模块,
+// Rollup 会拆出共享 chunk,content.js 顶部出现 import 语句;
+// 而浏览器以经典脚本执行 content script(manifest 注入与 executeScript 皆然),
+// 顶层 import 直接 SyntaxError,listener 注册不上。
+const CONTENT_TOOL_MESSAGE = "execute_tool";
+const CONTENT_TOOL_RESULT = "tool_result";
 import {
   clickElement,
   dispatchEnter,
@@ -77,7 +85,7 @@ turndown.addRule("emptyLink", {
 
 chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
   const msg = raw as ContentToolCall;
-  if (msg?.type !== "execute_tool") return false;
+  if (msg?.type !== CONTENT_TOOL_MESSAGE) return false;
 
   const { callId, name, args } = msg;
 
@@ -85,7 +93,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
   runTool(name, args)
     .then((result) => {
       const response: ContentToolResultMsg = {
-        type: "tool_result",
+        type: CONTENT_TOOL_RESULT,
         callId,
         result,
       };
@@ -94,7 +102,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     .catch((err: unknown) => {
       const error = err instanceof Error ? err.message : String(err);
       const response: ContentToolResultMsg = {
-        type: "tool_result",
+        type: CONTENT_TOOL_RESULT,
         callId,
         error,
       };
