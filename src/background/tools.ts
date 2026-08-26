@@ -152,5 +152,90 @@ registerTool<
   },
 });
 
+// ---- 页面交互工具(观察 + 动作)----
+// 观察/动作分离:find_elements 定位(返回绝对 selector),click/fill 执行。
+// selector 来自最近一次 find_elements;页面重渲染后失效 → 重新 find_elements,不要原样重试。
+
+// 观察:定位可交互元素(selector 供 click_element / fill_input 使用)
+registerTool<
+  { text?: string; role?: string; limit?: number; tabId?: number },
+  { count?: number; returned?: number; truncated?: boolean; elements?: unknown[] }
+>({
+  type: "function",
+  name: "find_elements",
+  displayName: "查找元素",
+  description:
+    "在当前页面查找可交互元素(按钮/链接/输入框/下拉框/复选框/单选/开关/可编辑区),返回每个元素的 selector(CSS 绝对路径)、tag、role、label、state 和可见性,以及 count/returned/truncated 计数。\n何时用:需要在页面上点击、填写、勾选某个控件之前,先调用它定位目标元素;返回的 selector 直接传给 click_element / fill_input。尽量带 text(按文字模糊匹配)或 role(按类型)缩小范围,不要空手调用——truncated=true 说明还有 count-returned 个未列出,可用 text/role 进一步收窄再查。\n何时别用:不要用它读文档正文(用 get_page_content / get_page_structure / read_section);不要一次拉全页控件。返回的 selector 只是当前页面快照,页面异步加载或重渲染后可能失效;若后续 click/fill 报「元素未找到」,重新调用本工具取最新 selector。",
+  parameters: {
+    type: "object",
+    properties: {
+      text: { type: "string", description: "按文字/标签/当前值做模糊匹配(子串,忽略大小写),用于缩小范围" },
+      role: {
+        type: "string",
+        enum: ["button", "link", "input", "checkbox", "radio", "switch", "select", "textarea", "contenteditable"],
+        description: "按元素类型过滤",
+      },
+      limit: { type: "number", description: "最多返回条数,默认 20,上限 50" },
+    },
+  },
+  execute: async (args) => {
+    const tabId = await resolveTargetTabId(args);
+    return (await callContentTool(tabId, "find_elements", args)) as {
+      count?: number;
+      returned?: number;
+      truncated?: boolean;
+      elements?: unknown[];
+    };
+  },
+});
+
+// 动作:点击(完整指针事件序列,等价真实鼠标点击)
+registerTool<{ selector: string; tabId?: number }, { clicked?: string }>({
+  type: "function",
+  name: "click_element",
+  displayName: "点击元素",
+  description:
+    "点击页面上的一个元素,触发完整指针/鼠标事件序列(pointerover→pointerdown→mousedown→pointerup→mouseup→click),等价真实鼠标点击,React 等框架能正确感知。\n何时用:打开链接、展开折叠、切换 tab/开关、提交/取消按钮等需要模拟用户点击的操作。selector 必须来自最近一次 find_elements 的返回。\n何时别用:不要用它读内容;不要凭猜测拼 selector(页面重渲染后旧 selector 会失效)。若报「元素未找到」或「被遮挡」,重新 find_elements 定位,不要原样重试。",
+  parameters: {
+    type: "object",
+    properties: {
+      selector: { type: "string", description: "目标元素的 CSS 绝对路径,来自 find_elements 的返回" },
+    },
+    required: ["selector"],
+  },
+  execute: async (args) => {
+    const tabId = await resolveTargetTabId(args);
+    return (await callContentTool(tabId, "click_element", args)) as { clicked?: string };
+  },
+});
+
+// 动作:填写(含 select 选值、contenteditable、可选回车提交)
+registerTool<
+  { selector: string; text: string; pressEnterAfter?: boolean; tabId?: number },
+  { filled?: string; pressEnterAfter?: boolean }
+>({
+  type: "function",
+  name: "fill_input",
+  displayName: "填写输入",
+  description:
+    "向输入控件写入文本并触发 input/change 事件(React 受控组件能正确感知)。支持 input、textarea、select(选中某选项)、contenteditable(富文本);pressEnterAfter=true 时写入后追加一次 Enter 按键(keyCode=13),省去单独回车。\n何时用:填写搜索框、表单、评论框,或选择下拉选项。selector 来自 find_elements 的返回。\n何时别用:只用于可输入控件,不要对普通 div/button 调用;不要猜 selector。若报错,重新 find_elements 定位。",
+  parameters: {
+    type: "object",
+    properties: {
+      selector: { type: "string", description: "输入控件的 CSS 绝对路径,来自 find_elements 的返回" },
+      text: { type: "string", description: "要写入的文本;对 select 表示要选中的 option 的 value 或可见文字" },
+      pressEnterAfter: { type: "boolean", description: "写入后追加一次 Enter(keyCode=13),搜索框提交用;省略默认 false" },
+    },
+    required: ["selector", "text"],
+  },
+  execute: async (args) => {
+    const tabId = await resolveTargetTabId(args);
+    return (await callContentTool(tabId, "fill_input", args)) as {
+      filled?: string;
+      pressEnterAfter?: boolean;
+    };
+  },
+});
+
 // 让 AgentEvent 被显式 import 时不被 tree-shake 误判
 export type { AgentEvent };

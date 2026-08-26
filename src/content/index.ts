@@ -5,6 +5,13 @@ import type {
   ContentToolCall,
   ContentToolResultMsg,
 } from "../shared/contentTools";
+import {
+  clickElement,
+  dispatchEnter,
+  fillElement,
+  findInteractive,
+  normalizeRole,
+} from "./interact";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 
@@ -183,43 +190,56 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
       };
     }
 
-    case "extract_text": {
-      const sel = (args as { selector?: string })?.selector ?? "body";
-      const el = document.querySelector(sel);
-      return { text: el?.textContent?.slice(0, 8000) ?? "" };
+    // 观察:定位可交互元素,返回绝对 selector 供 click_element / fill_input 使用
+    case "find_elements": {
+      const a = args as { text?: unknown; role?: unknown; limit?: unknown };
+      const text = typeof a.text === "string" ? a.text : undefined;
+      const roleRaw = typeof a.role === "string" ? a.role : undefined;
+      const role = roleRaw ? (normalizeRole(roleRaw) ?? null) : undefined;
+      if (roleRaw && !role) {
+        throw new Error(
+          `find_elements: 未知 role "${roleRaw}",支持:button/link/input/checkbox/radio/switch/select/textarea/contenteditable`,
+        );
+      }
+      const limit =
+        typeof a.limit === "number" && Number.isFinite(a.limit)
+          ? a.limit
+          : undefined;
+      return findInteractive(document, { text, role: role ?? undefined, limit });
     }
 
+    // 动作:点击(完整指针事件序列,等价真实鼠标点击)
     case "click_element": {
       const sel = (args as { selector?: string })?.selector;
-      if (!sel) throw new Error("selector required");
-      const el = document.querySelector(sel) as HTMLElement | null;
-      if (!el) throw new Error(`element not found: ${sel}`);
-      el.click();
+      if (!sel) throw new Error("click_element 需要 selector(来自 find_elements 的返回)");
+      const el = document.querySelector(sel);
+      if (!el) {
+        throw new Error(
+          `元素未找到:${sel}。页面可能已变化(异步加载/重新渲染/切页),请重新调用 find_elements 定位该元素,取最新的 selector 再操作。`,
+        );
+      }
+      clickElement(el);
       return { clicked: sel };
     }
 
-    case "query_selector": {
-      const sel = (args as { selector?: string })?.selector;
-      if (!sel) throw new Error("selector required");
+    // 动作:填写(input/textarea/select/contenteditable),可附带回车
+    case "fill_input": {
+      const a = args as { selector?: string; text?: unknown; pressEnterAfter?: unknown };
+      const sel = a.selector;
+      if (!sel) throw new Error("fill_input 需要 selector(来自 find_elements 的返回)");
+      if (typeof a.text !== "string") throw new Error("fill_input 需要 text 参数");
       const el = document.querySelector(sel);
-      return {
-        found: !!el,
-        tag: el?.tagName,
-        text: el?.textContent?.slice(0, 500),
-      };
+      if (!el) {
+        throw new Error(
+          `元素未找到:${sel}。页面可能已变化,请重新调用 find_elements 定位该元素,取最新的 selector 再操作。`,
+        );
+      }
+      fillElement(el, a.text);
+      if (a.pressEnterAfter === true) {
+        dispatchEnter(el);
+      }
+      return { filled: sel, pressEnterAfter: a.pressEnterAfter === true };
     }
-
-    case "get_page_meta":
-      return {
-        title: document.title,
-        url: location.href,
-        referrer: document.referrer,
-        lang: document.documentElement.lang,
-        description:
-          document
-            .querySelector('meta[name="description"]')
-            ?.getAttribute("content") ?? null,
-      };
 
 
     default:
