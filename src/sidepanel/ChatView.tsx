@@ -1,6 +1,6 @@
 // 对话视图:经 port 连 SW,ReAct agent 的流式回复渲染
 
-import { useEffect, useRef, useState, type SubmitEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type SubmitEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
@@ -16,10 +16,11 @@ interface ChatMsg {
 
 type AgentStatus = "idle" | "thinking" | "streaming";
 
-// ---- 执行轨迹(trace):当前轮的思考块 + 工具块,按时间序混合 ----
-// 只属于「进行中这轮」,不持久化;新一轮(AGENT_STARTED / 提交)清空
+// ---- 本轮执行流(segments):思考段 / 文本段 / 工具段按到达顺序交错 ----
+// 事件流本身按时序经单一 port FIFO 送达,前端只需按序落段即可交错渲染。
+// 只属于「进行中 / 刚结束这轮」,不持久化;新一轮开始时文本段归档进 messages,过程段丢弃。
 
-type ToolTraceItem = {
+type ToolSeg = {
   kind: "tool";
   id: string;
   name: string;
@@ -27,15 +28,21 @@ type ToolTraceItem = {
   args?: unknown;
   status: "running" | "done" | "error";
   result?: unknown;
+  /** 创建时刻:过程卡分组计时用 */
+  t: number;
 };
-type ReasoningTraceItem = {
+type ReasoningSeg = {
   kind: "reasoning";
   text: string;
-  collapsed: boolean;
-  /** 仍在流式生成中:驱动 shimmer 标题与光标;阶段收口时置 false */
+  /** 仍在流式生成中:驱动 ticker;阶段收口时置 false */
   active: boolean;
+  /** settled 展开后的回看开关 */
+  open?: boolean;
+  t: number;
 };
-type TraceItem = ToolTraceItem | ReasoningTraceItem;
+type TextSeg = { kind: "text"; text: string; t: number };
+type RunSegment = ToolSeg | ReasoningSeg | TextSeg;
+type ProcessSeg = ToolSeg | ReasoningSeg;
 
 type ToolCallEvent = Extract<AgentEvent, { type: typeof MSG.AGENT_TOOL_CALL }>;
 type ToolResultEvent = Extract<
@@ -74,7 +81,25 @@ export default function ChatView({
   // 最近一次已加载历史的会话,防重复请求
   const lastLoadedSessionRef = useRef("");
 
-  const [trace, setTrace] = useState<TraceItem[]>([]);
+  // ---- 本轮执行流状态:segs + ref 镜像 ----
+  // ref 镜像让 port 事件回调(只注册一次)总是读到最新段序列,
+  // 且允许一次事件里连贯地「读 → 变 → 写」,避免函数式 setState 里嵌套副作用
+  const [runSegs, setRunSegs] = useState<RunSegment[]>([]);
+  const runSegsRef = useRef<RunSegment[]>([]);
+  const applySegs = (next: RunSegment[]) => {
+    runSegsRef.current = next;
+    setRunSegs(next);
+  };
+  /** live = 执行中(过程卡全展开);settled = 已结束(过程卡收成摘要 chip) */
+  const [runPhase, setRunPhase] = useState<"live" | "settled">("settled");
+  const runPhaseRef = useRef<"live" | "settled">("settled");
+  const setPhase = (p: "live" | "settled") => {
+    runPhaseRef.current = p;
+    setRunPhase(p);
+  };
+  const [runEndedAt, setRunEndedAt] = useState<number | null>(null);
+  /** 已展开回看的过程卡(以卡内首段在 segs 中的下标为 key,段序列只追加、下标即稳定身份) */
+  const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
 
   // ---- 思考流缓冲:delta 先进缓冲,按固定节拍合入状态 ----
   // 流式期间只渲染单行 ticker(尾部内容),行高恒定不推挤后续消息;
@@ -82,7 +107,7 @@ export default function ChatView({
   const reasoningBufRef = useRef("");
   const reasoningFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** 把缓冲同步合入最后一个活跃思考块(节拍到期 / 阶段收口前调用) */
+  /** 把缓冲同步合入最后一个活跃思考段(节拍到期 / 阶段收口前调用) */
   const flushReasoning = () => {
     if (reasoningFlushRef.current !== null) {
       clearTimeout(reasoningFlushRef.current);
@@ -91,16 +116,15 @@ export default function ChatView({
     const buf = reasoningBufRef.current;
     if (!buf) return;
     reasoningBufRef.current = "";
-    setTrace((ts) => {
-      const last = ts[ts.length - 1];
-      if (last?.kind === "reasoning" && last.active) {
-        return [...ts.slice(0, -1), { ...last, text: last.text + buf }];
-      }
-      return ts; // 活跃块已被收口(异常时序),缓冲无从归属,丢弃
-    });
+    const segs = runSegsRef.current;
+    const last = segs[segs.length - 1];
+    if (last?.kind === "reasoning" && last.active) {
+      applySegs([...segs.slice(0, -1), { ...last, text: last.text + buf }]);
+    }
+    // 活跃段已被收口(异常时序),缓冲无从归属,丢弃
   };
 
-  /** 直接丢弃缓冲(新一轮开始 / 清空对话:旧缓冲不属于任何块) */
+  /** 直接丢弃缓冲(新一轮开始 / 清空对话:旧缓冲不属于任何段) */
   const dropReasoningBuf = () => {
     if (reasoningFlushRef.current !== null) {
       clearTimeout(reasoningFlushRef.current);
@@ -109,40 +133,51 @@ export default function ChatView({
     reasoningBufRef.current = "";
   };
 
-  // reasoning delta → 入缓冲;无活跃思考块则先开块(行立即出现,文本由节拍供给)
+  // reasoning delta → 入缓冲;末段不是活跃思考段则先开新段(行立即出现,文本由节拍供给)
   const appendReasoning = (delta: string) => {
     reasoningBufRef.current += delta;
-    setTrace((ts) => {
-      const last = ts[ts.length - 1];
-      return last?.kind === "reasoning" && last.active
-        ? ts
-        : [
-            ...ts,
-            { kind: "reasoning", text: "", collapsed: false, active: true },
-          ];
-    });
+    const segs = runSegsRef.current;
+    const last = segs[segs.length - 1];
+    if (!(last?.kind === "reasoning" && last.active)) {
+      applySegs([
+        ...segs,
+        { kind: "reasoning", text: "", active: true, t: Date.now() },
+      ]);
+    }
     if (reasoningFlushRef.current === null) {
       reasoningFlushRef.current = setTimeout(flushReasoning, 100);
     }
   };
 
-  // 任何「下一阶段」事件(工具开始 / 内容开始)→ 先冲刷缓冲(别丢尾部字符),再收口所有思考块
+  // 任何「下一阶段」事件(工具开始 / 文本开始)→ 先冲刷缓冲(别丢尾部字符),再收口活跃思考段
   const collapseReasoning = () => {
     flushReasoning();
-    setTrace((ts) =>
-      ts.some((t) => t.kind === "reasoning" && (t.active || !t.collapsed))
-        ? ts.map((t) =>
-            t.kind === "reasoning"
-              ? { ...t, collapsed: true, active: false }
-              : t,
-          )
-        : ts,
-    );
+    const segs = runSegsRef.current;
+    if (segs.some((s) => s.kind === "reasoning" && s.active)) {
+      applySegs(
+        segs.map((s) =>
+          s.kind === "reasoning" && s.active ? { ...s, active: false } : s,
+        ),
+      );
+    }
   };
 
-  const pushTool = (evt: ToolCallEvent) =>
-    setTrace((ts) => [
-      ...ts,
+  /** 文本 delta:连续 delta 合并进末尾文本段,否则开新段(t 决定前一张过程卡的计时终点) */
+  const appendTextDelta = (delta: string) => {
+    const segs = runSegsRef.current;
+    const last = segs[segs.length - 1];
+    if (streamingRef.current && last?.kind === "text") {
+      applySegs([...segs.slice(0, -1), { ...last, text: last.text + delta }]);
+    } else {
+      streamingRef.current = true;
+      applySegs([...segs, { kind: "text", text: delta, t: Date.now() }]);
+    }
+  };
+
+  const pushTool = (evt: ToolCallEvent) => {
+    const segs = runSegsRef.current;
+    applySegs([
+      ...segs,
       {
         kind: "tool",
         id: evt.id,
@@ -150,46 +185,86 @@ export default function ChatView({
         displayName: evt.displayName,
         args: evt.args,
         status: "running",
+        t: Date.now(),
       },
     ]);
-
-  const applyToolResult = (evt: ToolResultEvent) =>
-    setTrace((ts) =>
-      ts.map((t) =>
-        t.kind === "tool" && t.id === evt.id
-          ? { ...t, status: evt.ok ? "done" : "error", result: evt.result }
-          : t,
-      ),
-    );
-
-  // 结束兜底:先冲刷缓冲,再把残留 running 工具归一为 done(防 spinner 卡死),思考块收口
-  const settleTrace = () => {
-    flushReasoning();
-    setTrace((ts) => {
-      let changed = false;
-      const next = ts.map((t) => {
-        if (t.kind === "reasoning" && (!t.collapsed || t.active)) {
-          changed = true;
-          return { ...t, collapsed: true, active: false };
-        }
-        if (t.kind === "tool" && t.status === "running") {
-          changed = true;
-          return { ...t, status: "done" as const };
-        }
-        return t;
-      });
-      return changed ? next : ts;
-    });
   };
 
-  const toggleReasoning = (index: number) =>
-    setTrace((ts) =>
-      ts.map((t, i) =>
-        t.kind === "reasoning" && i === index
-          ? { ...t, collapsed: !t.collapsed }
-          : t,
+  const applyToolResult = (evt: ToolResultEvent) => {
+    const segs = runSegsRef.current;
+    if (!segs.some((s) => s.kind === "tool" && s.id === evt.id)) return;
+    applySegs(
+      segs.map((s) =>
+        s.kind === "tool" && s.id === evt.id
+          ? { ...s, status: evt.ok ? "done" : "error", result: evt.result }
+          : s,
       ),
     );
+  };
+
+  /** 结束兜底:冲刷缓冲、归一残留 running 工具(防 spinner 卡死)、收口思考段、记录结束时刻 */
+  const settleRun = () => {
+    streamingRef.current = false;
+    flushReasoning();
+    const segs = runSegsRef.current;
+    const next = segs.map((s) => {
+      if (s.kind === "reasoning") return s.active ? { ...s, active: false } : s;
+      if (s.kind === "tool")
+        return s.status === "running" ? { ...s, status: "done" as const } : s;
+      return s;
+    });
+    applySegs(next);
+    setRunEndedAt(Date.now());
+    setPhase("settled");
+  };
+
+  /** 归档:把本轮文本段依序转成 assistant 消息落回 messages。
+   *  在追加下一条 user 消息之前调用,保证旧答案永远排在新问题之前;
+   *  过程段不归档(不持久化),由随后的 clearRun 丢弃 */
+  const flushRunTexts = () => {
+    flushReasoning();
+    streamingRef.current = false;
+    const segs = runSegsRef.current;
+    const texts = segs.filter((s): s is TextSeg => s.kind === "text");
+    if (texts.length === 0) return;
+    const sid = sessionRef.current;
+    setMessages((ms) => [
+      ...ms,
+      ...texts.map((s) => ({
+        role: "assistant" as const,
+        content: s.text,
+        sessionId: sid,
+      })),
+    ]);
+    applySegs(segs.filter((s) => s.kind !== "text"));
+  };
+
+  /** 新一轮:清空段序列与回看开关 */
+  const clearRun = () => {
+    dropReasoningBuf();
+    streamingRef.current = false;
+    applySegs([]);
+    setRunEndedAt(null);
+    setOpenGroups(new Set());
+    setPhase("live");
+  };
+
+  const toggleReasoning = (index: number) => {
+    const segs = runSegsRef.current;
+    const s = segs[index];
+    if (s?.kind !== "reasoning") return;
+    applySegs(
+      segs.map((x, i) => (i === index ? { ...x, open: !s.open } : x)),
+    );
+  };
+
+  const toggleGroup = (firstIdx: number) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(firstIdx)) next.delete(firstIdx);
+      else next.add(firstIdx);
+      return next;
+    });
 
   /** 会话全局唯一、与 tab 解耦;tabId 只随消息传递,作为工具执行的页面上下文 */
   const resolveContext = async (): Promise<{
@@ -209,37 +284,6 @@ export default function ChatView({
     console.log("[chat] port connected");
 
     // delta 顺序有保证:后台 readSSE 按序处理事件,port 单通道 FIFO 送达
-    const appendDelta = (delta: string) => {
-      if (!streamingRef.current) {
-        streamingRef.current = true;
-        setMessages((ms) => [
-          ...ms,
-          { role: "assistant", content: delta, sessionId: sessionRef.current },
-        ]);
-      } else {
-        setMessages((ms) => {
-          const last = ms[ms.length - 1];
-          if (last?.role === "assistant") {
-            return [
-              ...ms.slice(0, -1),
-              { ...last, content: last.content + delta },
-            ];
-          }
-          // 防御分支:正常流式时最后一条必是 assistant,走上面合并;走不到这里
-          return [
-            ...ms,
-            {
-              role: "assistant",
-              content: delta,
-              sessionId: sessionRef.current,
-            },
-          ];
-        });
-      }
-    };
-    const finalize = () => {
-      streamingRef.current = false;
-    };
 
     port.onMessage.addListener((evt: AgentEvent) => {
       switch (evt.type) {
@@ -248,29 +292,29 @@ export default function ChatView({
           console.log("[chat] agent started, sessionId:", evt.sessionId);
           setStatus("thinking");
           setUsage(null);
-          // 新一轮开始:上一轮轨迹不保留(过程不持久化),旧缓冲一并丢弃
-          dropReasoningBuf();
-          setTrace([]);
+          // 新一轮开始:文本段归档兜底(正常在 submit 已做),过程段丢弃
+          flushRunTexts();
+          clearRun();
           break;
         case MSG.AGENT_THINKING:
           console.log("[chat] agent thinking, turn:", evt.turn);
-          finalize();
+          streamingRef.current = false; // 切断文本段,下一 delta 开新段
           setStatus("thinking");
           break;
         case MSG.AGENT_REASONING:
           appendReasoning(evt.delta);
           break;
         case MSG.AGENT_MESSAGE:
-          // 内容开始 = 下一阶段:折叠思考块,再走现有流式逻辑
+          // 文本开始 = 下一阶段:先收口思考段,再进段流式
           collapseReasoning();
           setStatus("streaming");
-          appendDelta(evt.delta);
+          appendTextDelta(evt.delta);
           break;
         case MSG.AGENT_TOOL_CALL:
           console.log("[chat] tool call:", evt.name);
           collapseReasoning();
           pushTool(evt);
-          finalize();
+          streamingRef.current = false;
           setStatus("thinking");
           break;
         case MSG.AGENT_TOOL_RESULT:
@@ -278,14 +322,12 @@ export default function ChatView({
           break;
         case MSG.AGENT_DONE:
           console.log("[chat] agent done");
-          finalize();
-          settleTrace();
+          settleRun();
           setStatus("idle");
           break;
         case MSG.AGENT_ERROR:
           console.log("[chat] agent error:", evt.error);
-          finalize();
-          settleTrace();
+          settleRun();
           setStatus("idle");
           setMessages((ms) => [
             ...ms,
@@ -320,7 +362,9 @@ export default function ChatView({
       console.log("[chat] port disconnected");
       portRef.current = null;
       streamingRef.current = false;
-      // SW 休眠 / 刷新导致断开时,重置状态,避免 UI 卡在 thinking
+      // SW 休眠 / 刷新导致断开:run 已死,归一残留状态避免 UI 卡在 thinking;
+      // 已结束(settled)的展示不动,用户可能正在回看
+      if (runPhaseRef.current === "live") settleRun();
       setStatus("idle");
     });
 
@@ -350,11 +394,11 @@ export default function ChatView({
     };
   }, []);
 
-  // 新消息 / 轨迹更新自动滚到底
+  // 新消息 / 段更新自动滚到底
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, trace, status]);
+  }, [messages, runSegs, status]);
 
   const cancel = () => {
     console.log("[chat] cancel clicked, sessionId:", sessionRef.current);
@@ -377,8 +421,7 @@ export default function ChatView({
     setMessages([]);
     setInput("");
     setUsage(null);
-    dropReasoningBuf();
-    setTrace([]); // 对话清空,上一轮轨迹也不保留
+    clearRun(); // 对话清空,本轮执行流也不保留
     setCurrentSession("");
     // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
     sessionRef.current = "";
@@ -402,9 +445,11 @@ export default function ChatView({
       "tab:",
       tabId,
     );
+    // 先归档上一轮文本段(保证它排在本条 user 消息之前),再清空执行流开新一轮
+    flushRunTexts();
     setMessages((ms) => [...ms, { role: "user", content: text, sessionId }]);
     setInput("");
-    setTrace([]); // 新一轮:旧轨迹立即清掉(AGENT_STARTED 会再兜一次)
+    clearRun(); // AGENT_STARTED 会再兜一次
     connect().postMessage({
       type: MSG.USER_MESSAGE,
       payload: { text, sessionId, tabId },
@@ -454,25 +499,33 @@ export default function ChatView({
               ) : (
                 <AssistantBubble key={i} text={m.content} />
               );
-            return i === lastUserIdx && trace.length > 0
+            // 执行流插在最后一条 user 消息之后:按到达顺序交错渲染;
+            // 历史回放时 segs 为空不渲染
+            return i === lastUserIdx && runSegs.length > 0
               ? [
                   node,
-                  <TraceView
-                    key="trace"
-                    items={trace}
+                  <RunZone
+                    key="run-zone"
+                    segs={runSegs}
+                    phase={runPhase}
+                    endedAt={runEndedAt}
+                    openGroups={openGroups}
+                    onToggleGroup={toggleGroup}
                     onToggleReasoning={toggleReasoning}
                   />,
                 ]
               : [node];
           });
         })()}
-        {status === "thinking" && (
-          <div className="flex items-center gap-1.5 py-1 pl-1 text-[var(--muted)]">
-            <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
-            <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
-            <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
-          </div>
-        )}
+        {/* 网络等待等「无过程可看」时的活动指示;思考 ticker 存在时由 ticker 表达,不重复 */}
+        {status === "thinking" &&
+          !runSegs.some((s) => s.kind === "reasoning" && s.active) && (
+            <div className="flex items-center gap-1.5 py-1 pl-1 text-[var(--muted)]">
+              <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
+              <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
+              <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
+            </div>
+          )}
       </div>
 
       {usage && (
@@ -594,58 +647,157 @@ function EmptyState() {
   );
 }
 
-// ---- 执行轨迹组件 ----
+// ---- 执行流组件:内容 ⇆ 过程交错 ----
 
-/** 轨迹容器:单一卡片面(settings-card 同族),行序 = 时间序(思考行 + 工具行) */
-function TraceView({
-  items,
+/** 本轮执行流渲染:连续的过程段(思考/工具)聚成一张过程卡,文本段渲染为气泡 */
+function RunZone({
+  segs,
+  phase,
+  endedAt,
+  openGroups,
+  onToggleGroup,
   onToggleReasoning,
 }: {
-  items: TraceItem[];
+  segs: RunSegment[];
+  phase: "live" | "settled";
+  endedAt: number | null;
+  openGroups: Set<number>;
+  onToggleGroup: (firstIdx: number) => void;
   onToggleReasoning: (index: number) => void;
 }) {
+  const parts: ReactNode[] = [];
+  let group: { s: ProcessSeg; i: number }[] = [];
+  const closeGroup = (endT: number) => {
+    if (group.length === 0) return;
+    const firstIdx = group[0].i;
+    parts.push(
+      <ProcessCard
+        key={`g${firstIdx}`}
+        entries={group}
+        phase={phase}
+        durationMs={Math.max(0, endT - group[0].s.t)}
+        open={openGroups.has(firstIdx)}
+        onToggle={() => onToggleGroup(firstIdx)}
+        onToggleReasoning={onToggleReasoning}
+      />,
+    );
+    group = [];
+  };
+  segs.forEach((s, i) => {
+    if (s.kind === "text") {
+      closeGroup(s.t); // 文本段开始 = 前一张过程卡计时截止
+      parts.push(<AssistantBubble key={`t${i}`} text={s.text} />);
+    } else {
+      group.push({ s, i });
+    }
+  });
+  closeGroup(endedAt ?? Date.now());
+  return <>{parts}</>;
+}
+
+/** 过程卡:live 态展示工具行 + 活跃思考 ticker(已收口思考行隐藏,保紧凑);
+ * settled 态收拢为一行摘要 chip,点击展开完整行回看 */
+function ProcessCard({
+  entries,
+  phase,
+  durationMs,
+  open,
+  onToggle,
+  onToggleReasoning,
+}: {
+  entries: { s: ProcessSeg; i: number }[];
+  phase: "live" | "settled";
+  durationMs: number;
+  open: boolean;
+  onToggle: () => void;
+  onToggleReasoning: (index: number) => void;
+}) {
+  if (phase === "live") {
+    const rows = entries.filter(
+      (e) => e.s.kind === "tool" || (e.s.kind === "reasoning" && e.s.active),
+    );
+    return (
+      <div className="trace msg-in">
+        {rows.map((e) =>
+          e.s.kind === "reasoning" ? (
+            <TickerRow key={`r${e.i}`} item={e.s} />
+          ) : (
+            <ToolRow key={e.s.id} item={e.s} />
+          ),
+        )}
+      </div>
+    );
+  }
+  const tools = entries
+    .map((e) => e.s)
+    .filter((s): s is ToolSeg => s.kind === "tool");
+  const hasError = tools.some((t) => t.status === "error");
+  const meta = tools.length
+    ? `${tools.length} 步 · ${fmtDur(durationMs)}`
+    : `思考 · ${fmtDur(durationMs)}`;
+  const chain = summarizeChain(tools);
   return (
-    <div className="msg-in trace">
-      {items.map((t, i) =>
-        t.kind === "reasoning" ? (
-          <ReasoningRow
-            key={i}
-            item={t}
-            onToggle={() => onToggleReasoning(i)}
-          />
-        ) : (
-          <ToolRow key={t.id} item={t} />
-        ),
-      )}
+    <div className="trace msg-in" data-open={open}>
+      <button
+        type="button"
+        className="trace-header trace-summary"
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <span className="trace-icon" aria-hidden="true">
+          {hasError ? <MarkError /> : <MarkOk />}
+        </span>
+        <span className="trace-summary-meta">{meta}</span>
+        {chain && <span className="trace-summary-chain">{chain}</span>}
+        <span className="trace-tail">
+          <ChevronIcon />
+        </span>
+      </button>
+      <div className="trace-rows-wrap">
+        <div className="trace-rows">
+          {entries.map((e) =>
+            e.s.kind === "reasoning" ? (
+              <ReasoningRow
+                key={`r${e.i}`}
+                item={e.s}
+                onToggle={() => onToggleReasoning(e.i)}
+              />
+            ) : (
+              <ToolRow key={e.s.id} item={e.s} />
+            ),
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-/** 思考行:流式时是单行 ticker(只显示最近的尾部内容,节流刷新,不推挤布局);
- * 阶段结束后折叠为一行,点击展开完整文本回看 */
+/** 思考中 ticker:单行,只显示最近的尾部内容(节流刷新,不推挤布局) */
+function TickerRow({ item }: { item: ReasoningSeg }) {
+  return (
+    <div className="trace-row" data-kind="reasoning" data-active="true">
+      <div className="trace-line">
+        <span className="trace-icon" aria-hidden="true">
+          <SparkleIcon />
+        </span>
+        <span className="trace-label trace-shimmer">思考中</span>
+        <span className="trace-tail-text" aria-hidden="true">
+          {tailSlice(item.text)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** 已收口的思考行(settled 展开区内):一行「思考过程」,点击展开完整文本回看 */
 function ReasoningRow({
   item,
   onToggle,
 }: {
-  item: ReasoningTraceItem;
+  item: ReasoningSeg;
   onToggle: () => void;
 }) {
-  if (item.active) {
-    return (
-      <div className="trace-row" data-kind="reasoning" data-active="true">
-        <div className="trace-line">
-          <span className="trace-icon" aria-hidden="true">
-            <SparkleIcon />
-          </span>
-          <span className="trace-label trace-shimmer">思考中</span>
-          <span className="trace-tail-text" aria-hidden="true">
-            {tailSlice(item.text)}
-          </span>
-        </div>
-      </div>
-    );
-  }
-  const open = !item.collapsed;
+  const open = !!item.open;
   return (
     <div className="trace-row" data-kind="reasoning" data-open={open}>
       <button
@@ -674,7 +826,7 @@ function ReasoningRow({
 }
 
 /** 工具行:名称 + 状态常显(对勾/叉以描边画入),参数/结果点击展开(摘要截断) */
-function ToolRow({ item }: { item: ToolTraceItem }) {
+function ToolRow({ item }: { item: ToolSeg }) {
   const [open, setOpen] = useState(false);
   const statusText =
     item.status === "running"
@@ -699,23 +851,9 @@ function ToolRow({ item }: { item: ToolTraceItem }) {
           {item.status === "running" ? (
             <span className="trace-spinner" />
           ) : item.status === "error" ? (
-            <svg
-              className="trace-mark mark-error"
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-            >
-              <path d="M3.2 3.2 8.8 8.8M8.8 3.2 3.2 8.8" />
-            </svg>
+            <MarkError />
           ) : (
-            <svg
-              className="trace-mark mark-ok"
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-            >
-              <path d="M2.6 6.4 4.9 8.7 9.4 3.4" />
-            </svg>
+            <MarkOk />
           )}
         </span>
         <span className="trace-label">{item.displayName ?? item.name}</span>
@@ -746,6 +884,53 @@ function ToolRow({ item }: { item: ToolTraceItem }) {
       </div>
     </div>
   );
+}
+
+function MarkOk() {
+  return (
+    <svg
+      className="trace-mark mark-ok"
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+    >
+      <path d="M2.6 6.4 4.9 8.7 9.4 3.4" />
+    </svg>
+  );
+}
+
+function MarkError() {
+  return (
+    <svg
+      className="trace-mark mark-error"
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+    >
+      <path d="M3.2 3.2 8.8 8.8M8.8 3.2 3.2 8.8" />
+    </svg>
+  );
+}
+
+/** 毫秒 → 「5s」「1m03s」(下限 1s,避免闪 0s) */
+function fmtDur(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+}
+
+/** 工具链摘要:连续同名合并 ×n,「查找元素 → 点击元素 → 读取章节×2」 */
+function summarizeChain(tools: ToolSeg[]): string {
+  const runs: { name: string; n: number }[] = [];
+  for (const t of tools) {
+    const name = t.displayName ?? t.name;
+    const last = runs[runs.length - 1];
+    if (last?.name === name) last.n += 1;
+    else runs.push({ name, n: 1 });
+  }
+  return runs.map((r) => (r.n > 1 ? `${r.name}×${r.n}` : r.name)).join(" → ");
 }
 
 /** 四角星(SF Symbols sparkle 风):思考过程的图标 */
