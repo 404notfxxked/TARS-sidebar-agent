@@ -541,6 +541,53 @@ body {
     white-space: pre-wrap;
     word-break: break-word;
   }
+
+  /* ---- settled 收拢:过程卡收成一行摘要 chip,点击展开完整行 ---- */
+  .trace-summary-meta {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    font-feature-settings: "tnum";
+    color: var(--ink);
+  }
+  .trace-summary-chain {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* 摘要展开区:与行内展开同一套 grid 0fr→1fr 过渡 */
+  .trace-rows-wrap {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s 260ms;
+  }
+  .trace[data-open="true"] .trace-rows-wrap {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s;
+  }
+  .trace-rows {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .trace[data-open="true"] .trace-rows {
+    border-top: 0.5px solid rgba(0, 0, 0, 0.05);
+  }
 }
 
 /* reduced motion:shimmer/呼吸静态降级(渐变文字在逐帧步进下会残留花屏) */
