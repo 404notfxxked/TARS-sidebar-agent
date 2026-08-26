@@ -61,6 +61,7 @@ export function callContentTool(
       }, timeoutMs);
 
       chrome.tabs.sendMessage(tabId, message, (raw: unknown) => {
+        console.log("[content tool] - 发送消息", tabId, message, raw);
         clearTimeout(timer);
         if (chrome.runtime.lastError) {
           const e =
@@ -72,7 +73,7 @@ export function callContentTool(
           return;
         }
         const msg = raw as ContentToolResultMsg | undefined;
-        if (!msg || msg.callId !== callId) {
+        if (!msg || msg.type !== CONTENT_TOOL_RESULT || msg.callId !== callId) {
           reject(new Error("invalid content tool response"));
           return;
         }
@@ -84,11 +85,15 @@ export function callContentTool(
   // 先直接发;若因 content script 未注入失败,动态注入后重试一次
   return sendOnce().catch(async (err) => {
     if (!isNoReceiverError(err)) throw err;
-    console.log("[content tool] - content script 未注入,executeScript 兜底注入后重试");
+    console.log(
+      "[content tool] - content script 未注入,executeScript 兜底注入后重试",
+    );
     try {
       await injectContentScript(tabId);
     } catch {
-      throw new Error(`目标页面(${tabId})无法注入内容脚本(可能是浏览器内置页或受限页面)`);
+      throw new Error(
+        `目标页面(tabId=${tabId})无法注入内容脚本,可能是浏览器内置页(chrome://)或受限页面`,
+      );
     }
     return sendOnce();
   });
@@ -97,7 +102,7 @@ export function callContentTool(
 /** 把 sendMessage 的底层错误转成语义化中文(供模型理解,别甩英文) */
 function humanizeTabError(tabId: number, raw: string): string {
   if (raw.includes("No tab with id")) {
-    return `目标 tab(${tabId})不存在或已关闭,请用 <context> 里的 tab 清单重新选择`;
+    return `目标 tab(${tabId})不存在或已关闭,<context> 清单可能已过期;用 get_tabs 获取最新清单重新选择`;
   }
   return raw;
 }
