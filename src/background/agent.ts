@@ -9,8 +9,11 @@ import {
 import { getTool, toProviderToolSchemas } from "./tools";
 import { getChatProvider, type InternalMsg } from "./provider";
 import { loadConfig } from "../shared/configStore";
+import { createLogger } from "../shared/logger";
 import { loadHistory, saveHistory } from "./sessionHistory";
 import { setToolExecutionContext } from "./toolContext";
+
+const log = createLogger({ ctx: "bg" });
 
 const MAX_TURNS = 10;
 
@@ -45,6 +48,9 @@ export async function runAgentLoop(
     type: MSG.AGENT_STARTED,
     sessionId: payload.sessionId ?? "",
   });
+
+  /** 正在执行的轮次(作用域在 try 外,catch 里报错时要带上下文) */
+  let turnNo = 0;
 
   try {
     // 从 storage 读配置 → 按配置构建对应的 provider 适配器
@@ -88,7 +94,8 @@ export async function runAgentLoop(
     };
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
-      console.log("[agent] turn", turn + 1, "/", MAX_TURNS);
+      turnNo = turn + 1;
+      log.debug("agent", `turn ${turn + 1}/${MAX_TURNS}`);
       port.postMessage({ type: MSG.AGENT_THINKING, turn });
 
       const result = await provider.chat({
@@ -124,7 +131,7 @@ export async function runAgentLoop(
         });
 
         for (const tc of result.toolCalls) {
-          console.log("[agent] dispatching tool:", tc.name);
+          const startedAt = Date.now();
           port.postMessage({
             type: MSG.AGENT_TOOL_CALL,
             id: tc.id,
@@ -135,19 +142,23 @@ export async function runAgentLoop(
 
           // 工具失败不中断整个 agent:把错误文本作为观察结果回填,
           // 让模型看到失败原因后换工具 / 换参数 / 直接回答
+          // 结果原文进日志(截断脱敏由 logger 负责),供事后排查对比
           let toolResult: unknown;
           let ok = true;
           try {
             toolResult = await dispatchToolCall(tc.name, tc.args);
-            console.log(
-              "[agent] tool result:",
-              tc.name,
-              stringifyResult(toolResult),
-            );
+            log.info("tool", `${tc.name} 完成`, {
+              ms: Date.now() - startedAt,
+              result: stringifyResult(toolResult),
+            });
           } catch (err) {
-            console.log("[agent] tool error:", tc.name, err);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            log.error("tool", `${tc.name} 失败`, {
+              ms: Date.now() - startedAt,
+              error: errMsg,
+            });
             ok = false;
-            toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
+            toolResult = `Error: ${errMsg}`;
           }
 
           port.postMessage({
@@ -185,7 +196,9 @@ export async function runAgentLoop(
       try {
         await saveHistory(payload.sessionId, messages.slice(1));
       } catch (err) {
-        console.warn("[agent] save history failed:", err);
+        log.warn("agent", "save history failed", {
+          stack: err instanceof Error ? err.stack : String(err),
+        });
       }
     }
 
@@ -193,10 +206,18 @@ export async function runAgentLoop(
   } catch (err) {
     // 用户取消 → 静默结束,不算错误(wrapPort 也会拒绝再发事件)
     if (signal?.aborted) {
-      console.log("[agent] aborted by user — exiting silently");
+      log.info("agent", "aborted by user — exiting silently", {
+        sessionId: payload.sessionId,
+        turn: turnNo,
+      });
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
+    log.error("agent", message, {
+      sessionId: payload.sessionId,
+      turn: turnNo,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     port.postMessage({ type: MSG.AGENT_ERROR, error: message });
   }
 }
