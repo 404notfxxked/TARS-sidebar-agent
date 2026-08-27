@@ -1,6 +1,7 @@
 // 工具注册表 - agent loop 可调用的工具
 
 import { callContentTool, getActiveTabId } from "../shared/contentTools";
+import { callOffscreenTool, ensureOffscreenDocument } from "../shared/docBridge";
 import { getToolExecutionContext } from "./toolContext";
 import type { ToolSchema } from "../shared/toolTypes";
 
@@ -68,9 +69,19 @@ registerTool<
 });
 
 // ---- 页面读取工具(page_outline / page_find / page_read)----
-// 整页提取一次成快照,读/找/大纲全是内存操作。三个工具的偏移体系互通:
-// page_find 的 pos、page_outline 的 offset 都是 page_read 的续读参数;
-// 快照随页面导航自然失效,SPA 换路由由模型传 refresh 显式重建。
+// 整页 HTML 采样后由 offscreen document 解析成虚拟文档快照(离开目标页面主
+// 线程),读/找/大纲全是内存操作。三个工具的偏移体系互通:page_find 的 pos、
+// page_outline 的 offset 都是 page_read 的续读参数。快照失效:
+// 导航/tab 关闭由 SW 的 tabs 事件自动清理,SPA 换路由由模型传 refresh 显式重建。
+/** page_* 工具公共执行体:解析 tabId → 确保 offscreen 就绪 → 转发调用 */
+async function runPageTool<R>(
+  name: "page_read" | "page_find" | "page_outline",
+  args: { refresh?: boolean; tabId?: number },
+): Promise<R> {
+  const tabId = await resolveTargetTabId(args);
+  await ensureOffscreenDocument();
+  return (await callOffscreenTool(name, args, tabId, args?.refresh === true)) as R;
+}
 
 registerTool<
   { offset?: number; chars?: number; refresh?: boolean; tabId?: number },
@@ -108,9 +119,8 @@ registerTool<
       tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
     },
   },
-  execute: async (args) => {
-    const tabId = await resolveTargetTabId(args);
-    return (await callContentTool(tabId, "page_read", args)) as {
+  execute: (args) =>
+    runPageTool<{
       title?: string;
       url?: string;
       offset?: number;
@@ -121,8 +131,7 @@ registerTool<
       truncated_total?: boolean;
       headings?: { level: number; title: string }[];
       text?: string;
-    };
-  },
+    }>("page_read", args),
 });
 
 registerTool<
@@ -156,9 +165,8 @@ registerTool<
     },
     required: ["query"],
   },
-  execute: async (args) => {
-    const tabId = await resolveTargetTabId(args);
-    return (await callContentTool(tabId, "page_find", args)) as {
+  execute: (args) =>
+    runPageTool<{
       query?: string;
       total_matches?: number;
       matches?: {
@@ -167,8 +175,7 @@ registerTool<
         headings?: { level: number; title: string }[];
         score: number;
       }[];
-    };
-  },
+    }>("page_find", args),
 });
 
 registerTool<
@@ -200,9 +207,8 @@ registerTool<
       tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
     },
   },
-  execute: async (args) => {
-    const tabId = await resolveTargetTabId(args);
-    return (await callContentTool(tabId, "page_outline", args)) as {
+  execute: (args) =>
+    runPageTool<{
       title?: string;
       url?: string;
       total_chars?: number;
@@ -212,8 +218,7 @@ registerTool<
       cutoff_level?: number;
       items?: { offset: number; level: number; title: string; descendant_headings?: number }[];
       hint?: string;
-    };
-  },
+    }>("page_outline", args),
 });
 
 

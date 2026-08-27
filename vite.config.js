@@ -7,6 +7,8 @@ import tailwindcss from "@tailwindcss/vite";
 //   - sidepanel  (HTML 入口) → dist/sidepanel.html + 关联 JS/CSS
 //   - background (JS 入口)   → dist/background.js（service worker, 单文件, ESM）
 //   - content    (JS 入口)   → dist/content.js（content script, 必须自包含经典脚本）
+//   - offscreen  (HTML 入口) → dist/offscreen.html + offscreen.js(扩展私有页面,
+//                              chrome.offscreen 创建的常驻 DOM 环境,page_* 快照管线)
 // public/ 下的 manifest.json 原样拷贝
 export default defineConfig({
   plugins: [
@@ -42,11 +44,13 @@ export default defineConfig({
         sidepanel: resolve(__dirname, 'sidepanel.html'),
         background: resolve(__dirname, 'src/background/index.ts'),
         content: resolve(__dirname, 'src/content/index.ts'),
+        offscreen: resolve(__dirname, 'src/offscreen/offscreen.html'),
       },
       output: {
         entryFileNames: (chunk) => {
           if (chunk.name === "background") return "background.js"
           if (chunk.name === "content") return "content.js"
+          if (chunk.name === "offscreen" || chunk.name === "offscreen_main") return "offscreen.js"
           return "assets/[name]-[hash].js"
         },
         chunkFileNames: "assets/[name]-[hash].js",
