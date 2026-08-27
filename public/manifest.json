@@ -3,8 +3,17 @@
   "name": "sidebar helper",
   "version": "1.0.0",
   "description": "基于 React 19 + service worker agent loop 的 Chrome 侧边栏",
-  "permissions": ["sidePanel", "tabs", "activeTab", "scripting", "storage"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "sidePanel",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "storage",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "side_panel": {
     "default_path": "sidepanel.html"
   },
@@ -17,10 +26,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
-  ]
+  ],
+  "minimum_chrome_version": "109"
 }
