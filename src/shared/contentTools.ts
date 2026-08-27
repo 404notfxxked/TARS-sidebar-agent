@@ -1,6 +1,12 @@
 // 跨 context 共享：直接调用 content script 的工具
 // background（agent loop 用）和 side panel（UI 直接调用）都通过这里
 
+import { createLogger } from "./logger";
+
+// 本模块在 SW(无 window)与 offscreen 页面(有 window)里都会执行,
+// 日志按宿主上下文归档,便于导出合并时分清来源
+const log = createLogger({ ctx: typeof window === "undefined" ? "bg" : "off" });
+
 export const CONTENT_TOOL_MESSAGE = "execute_tool";
 export const CONTENT_TOOL_RESULT = "tool_result";
 
@@ -45,7 +51,8 @@ export function callContentTool(
   args?: unknown,
   timeoutMs = 10_000,
 ): Promise<unknown> {
-  console.log("[content tool] - 接收调用", tabId, name, args);
+  // 只记 name+tabId 不记 args:args 可能是待填写的表单文本或大请求体
+  log.debug("cstool", `${name} → tab ${tabId}`);
   const callId = nextCallId();
   const message: ContentToolCall = {
     type: CONTENT_TOOL_MESSAGE,
@@ -61,14 +68,13 @@ export function callContentTool(
       }, timeoutMs);
 
       chrome.tabs.sendMessage(tabId, message, (raw: unknown) => {
-        console.log("[content tool] - 发送消息", tabId, message, raw);
         clearTimeout(timer);
         if (chrome.runtime.lastError) {
           const e =
             typeof chrome.runtime.lastError === "string"
               ? chrome.runtime.lastError
               : (chrome.runtime.lastError.message ?? "sendMessage failed");
-          console.error("[content tool] - 发送消息失败", e);
+          log.error("cstool", `${name} 消息发送失败(tab ${tabId})`, { error: e });
           reject(new Error(humanizeTabError(tabId, e)));
           return;
         }
@@ -85,9 +91,7 @@ export function callContentTool(
   // 先直接发;若因 content script 未注入失败,动态注入后重试一次
   return sendOnce().catch(async (err) => {
     if (!isNoReceiverError(err)) throw err;
-    console.log(
-      "[content tool] - content script 未注入,executeScript 兜底注入后重试",
-    );
+    log.info("cstool", `content script 未注入,兜底注入后重试(tab ${tabId})`);
     try {
       await injectContentScript(tabId);
     } catch {

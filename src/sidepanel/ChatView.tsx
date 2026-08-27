@@ -5,7 +5,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
 import { getActiveTabId } from "../shared/contentTools";
+import { createLogger } from "../shared/logger";
 import { getOrCreateSessionId } from "../shared/sessionStore";
+
+// 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
+const log = createLogger({ ctx: "panel" });
 
 interface ChatMsg {
   role: "user" | "assistant";
@@ -281,7 +285,6 @@ export default function ChatView({
 
     const port = chrome.runtime.connect({ name: PORT_NAME });
     portRef.current = port;
-    console.log("[chat] port connected");
 
     // delta 顺序有保证:后台 readSSE 按序处理事件,port 单通道 FIFO 送达
 
@@ -289,7 +292,6 @@ export default function ChatView({
       switch (evt.type) {
         case MSG.AGENT_STARTED:
           sessionRef.current = evt.sessionId;
-          console.log("[chat] agent started, sessionId:", evt.sessionId);
           setStatus("thinking");
           setUsage(null);
           // 新一轮开始:文本段归档兜底(正常在 submit 已做),过程段丢弃
@@ -297,7 +299,6 @@ export default function ChatView({
           clearRun();
           break;
         case MSG.AGENT_THINKING:
-          console.log("[chat] agent thinking, turn:", evt.turn);
           streamingRef.current = false; // 切断文本段,下一 delta 开新段
           setStatus("thinking");
           break;
@@ -311,7 +312,6 @@ export default function ChatView({
           appendTextDelta(evt.delta);
           break;
         case MSG.AGENT_TOOL_CALL:
-          console.log("[chat] tool call:", evt.name);
           collapseReasoning();
           pushTool(evt);
           streamingRef.current = false;
@@ -321,12 +321,11 @@ export default function ChatView({
           applyToolResult(evt);
           break;
         case MSG.AGENT_DONE:
-          console.log("[chat] agent done");
           settleRun();
           setStatus("idle");
           break;
         case MSG.AGENT_ERROR:
-          console.log("[chat] agent error:", evt.error);
+          // 错误详情由后台日志记录,面板只负责呈现
           settleRun();
           setStatus("idle");
           setMessages((ms) => [
@@ -359,7 +358,7 @@ export default function ChatView({
     });
 
     port.onDisconnect.addListener(() => {
-      console.log("[chat] port disconnected");
+      log.warn("chat", "port disconnected");
       portRef.current = null;
       streamingRef.current = false;
       // SW 休眠 / 刷新导致断开:run 已死,归一残留状态避免 UI 卡在 thinking;
@@ -401,7 +400,7 @@ export default function ChatView({
   }, [messages, runSegs, status]);
 
   const cancel = () => {
-    console.log("[chat] cancel clicked, sessionId:", sessionRef.current);
+    log.info("chat", "cancel clicked", { sessionId: sessionRef.current });
     if (!sessionRef.current) return;
     connect().postMessage({
       type: MSG.CANCEL_RUN,
@@ -414,7 +413,7 @@ export default function ChatView({
   const resetConversation = () => {
     if (status !== "idle") return; // 运行中不允许打断
     const old = sessionRef.current;
-    console.log("[chat] new conversation, old session:", old);
+    log.debug("chat", "new conversation", { old });
     if (old) {
       connect().postMessage({ type: MSG.CLEAR_HISTORY, sessionId: old });
     }
@@ -437,14 +436,7 @@ export default function ChatView({
     const { tabId, sessionId } = await resolveContext();
     sessionRef.current = sessionId;
     setCurrentSession(sessionId);
-    console.log(
-      "[chat] submit, text:",
-      text,
-      "session:",
-      sessionId,
-      "tab:",
-      tabId,
-    );
+    log.info("chat", "submit", { text, sessionId, tabId });
     // 先归档上一轮文本段(保证它排在本条 user 消息之前),再清空执行流开新一轮
     flushRunTexts();
     setMessages((ms) => [...ms, { role: "user", content: text, sessionId }]);

@@ -14,6 +14,11 @@ import {
   forgetApiKey,
   type ProviderName,
 } from "../shared/configStore";
+import {
+  clearAllLogs,
+  readAllLogEntries,
+  toJsonl,
+} from "../shared/logger";
 
 type SaveStatus = "none" | "saved" | "session";
 type FlashState = "saving" | "saved" | "error" | null;
@@ -41,6 +46,9 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<SaveStatus>("none");
   const [flash, setFlash] = useState<FlashState>(null);
   const [closing, setClosing] = useState(false);
+  // ── 诊断日志 ──
+  const [logCount, setLogCount] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const flashTimer = useRef<number | null>(null);
   const segRef = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState({ left: 0, width: 0 });
@@ -76,6 +84,44 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
       if (flashTimer.current) clearTimeout(flashTimer.current);
     };
   }, [requestClose]);
+
+  useEffect(() => {
+    readAllLogEntries()
+      .then((es) => setLogCount(es.length))
+      .catch(() => setLogCount(-1));
+  }, []);
+
+  const copyLogs = async () => {
+    try {
+      const entries = await readAllLogEntries();
+      await navigator.clipboard.writeText(toJsonl(entries));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* 剪贴板被拒等:静默 */
+    }
+  };
+
+  const downloadLogs = async () => {
+    const entries = await readAllLogEntries();
+    const blob = new Blob([toJsonl(entries)], {
+      type: "application/x-ndjson",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sidebar-logs-${new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, "-")}.jsonl`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const clearLogs = async () => {
+    await clearAllLogs();
+    setLogCount(0);
+  };
 
   const save = async () => {
     setFlash("saving");
@@ -310,6 +356,48 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
           <p className="settings-group-footer">
             不勾选则仅本次会话有效，关闭浏览器后失效。
+          </p>
+
+          {/* ── 诊断 ── */}
+          <h3 className="settings-eyebrow mx-4 mb-1.5 mt-4">诊断</h3>
+          <div className="settings-card">
+            <div className="settings-cell">
+              <span className="settings-cell-label">运行日志</span>
+              <span className="flex-1 text-right font-mono text-[12px] text-[var(--muted)]">
+                {logCount === null
+                  ? "读取中…"
+                  : logCount < 0
+                    ? "读取失败"
+                    : `${logCount} 条`}
+              </span>
+            </div>
+          </div>
+          <div className="mx-5 mt-2 flex items-center gap-4">
+            <button
+              type="button"
+              onClick={copyLogs}
+              className="text-[13px] text-[var(--accent)] transition-opacity hover:opacity-70"
+            >
+              {copied ? "已复制 ✓" : "复制 JSONL"}
+            </button>
+            <button
+              type="button"
+              onClick={downloadLogs}
+              className="text-[13px] text-[var(--accent)] transition-opacity hover:opacity-70"
+            >
+              下载日志
+            </button>
+            <button
+              type="button"
+              onClick={clearLogs}
+              className="text-[13px] text-[var(--muted)] transition-colors hover:text-[var(--danger)]"
+            >
+              清空
+            </button>
+          </div>
+          <p className="settings-group-footer">
+            记录各上下文最近 400 条执行与报错。排查问题时：点「下载日志」，把文件放进项目
+            .logs/ 目录，然后让助手读它分析。
           </p>
         </div>
 
