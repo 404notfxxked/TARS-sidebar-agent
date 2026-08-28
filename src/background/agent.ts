@@ -7,7 +7,7 @@ import {
   type UserMessagePayload,
 } from "../shared/messages";
 import { getTool, toProviderToolSchemas } from "./tools";
-import { getChatProvider, type InternalMsg } from "./provider";
+import { OpenAIAdapter, type InternalMsg } from "./provider";
 import { loadConfig } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
 import { loadHistory, saveHistory } from "./sessionHistory";
@@ -63,7 +63,7 @@ export async function runAgentLoop(
       return;
     }
 
-    const provider = getChatProvider(config);
+    const provider = new OpenAIAdapter(config);
     const tools = toProviderToolSchemas();
 
     const history = await loadHistory(payload.sessionId ?? "");

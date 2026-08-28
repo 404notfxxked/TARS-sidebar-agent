@@ -1,0 +1,237 @@
+/* ---- 设置整页(分组堆叠表单,自动保存) ----
+   标签在上、控件全宽在下;分组卡片 = 实心表面 + 1px 边框。
+   控件级通用件(分段/开关/图标钮)沿用,颜色全部走令牌 */
+
+/* 整页切入:轻右移淡入(退出即卸载,不做对称动画) */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@layer components {
+  .view-in {
+    animation: page-in 240ms var(--spring-enter);
+  }
+}
+
+@layer components {
+  /* 大写小标签(标题眉题 / 分组标题共用) */
+  .settings-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* 分组卡片:实心表面 */
+  .settings-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 2px 14px 10px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* 堆叠字段:标签在上,控件全宽在下 */
+  .field-label {
+    display: block;
+    margin: 10px 0 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .field-input {
+    width: 100%;
+    padding: 7px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    font-size: 13px;
+    color: var(--ink);
+    caret-color: var(--accent);
+    outline: none;
+    transition:
+      border-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+  .field-input::placeholder {
+    color: var(--muted);
+    opacity: 0.65;
+  }
+  .field-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .field-hint {
+    margin: 6px 0 2px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+
+  /* 模型建议面板:与输入框同宽对齐(left/right 0),手填输入框 + 补全建议 */
+  .combo-pop {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow-md);
+  }
+  .combo-option {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    padding: 6px 10px;
+    border-radius: 7px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .combo-option:hover,
+  .combo-option[data-active="true"] {
+    background: var(--surface-2);
+  }
+
+  /* 分段控件:选中滑块测量定位,弹簧滑动 */
+  .segmented {
+    position: relative;
+    display: flex;
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 2px;
+  }
+  .segmented-thumb {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: 0;
+    width: 0;
+    background: var(--surface);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+    transition:
+      left 240ms cubic-bezier(0.16, 1, 0.3, 1),
+      width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .segmented button {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    padding: 6px 6px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    white-space: nowrap;
+    transition: color 150ms ease;
+  }
+  .segmented button.selected {
+    color: var(--ink);
+  }
+
+  /* 开关:on 变 accent,旋钮弹簧位移 */
+  .switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 42px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--line-strong);
+    transition: background 200ms ease;
+  }
+  .switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: var(--on-accent);
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.22),
+      0 0 1px rgba(0, 0, 0, 0.1);
+    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .switch[aria-checked="true"] {
+    background: var(--accent);
+  }
+  .switch[aria-checked="true"] .switch-knob {
+    transform: translateX(16px);
+  }
+
+  /* 图标按钮(返回 / 显隐):反馈在按下瞬间 */
+  .settings-icon-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    color: var(--muted);
+    transition:
+      color 120ms ease,
+      background 120ms ease,
+      transform 120ms ease;
+  }
+  .settings-icon-btn:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .settings-icon-btn:active {
+    transform: scale(0.92);
+  }
+
+  /* 眼睛按钮:浮在 input 右缘内部,不占布局 */
+  .settings-eye-btn {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    color: var(--muted);
+    transition:
+      color 120ms ease,
+      background 120ms ease,
+      transform 120ms ease;
+  }
+  .settings-eye-btn:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .settings-eye-btn:active {
+    transform: translateY(-50%) scale(0.92);
+  }
+  .field-input.has-eye {
+    padding-right: 36px; /* 给浮在右缘的眼睛按钮留位 */
+  }
+
+  /* 分组脚注 */
+  .settings-group-footer {
+    margin: 6px 2px 0;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+}

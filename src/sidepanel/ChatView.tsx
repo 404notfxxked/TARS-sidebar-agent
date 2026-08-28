@@ -1,8 +1,36 @@
 // 对话视图:经 port 连 SW,ReAct agent 的流式回复渲染
 
-import { useEffect, useRef, useState, type ReactNode, type SubmitEvent } from "react";
-import ReactMarkdown from "react-markdown";
+import {
+  useEffect,
+  useRef,
+  useState,
+  isValidElement,
+  memo,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+  type SubmitEvent,
+} from "react";
+import ReactMarkdown, {
+  type Options as MarkdownOptions,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+// 常用语言子集,替代 rehype-highlight 默认的全量 common 集(37 种),控制产物体积;
+// 各语法自带的别名(js/ts/py/sh…)仍随注册生效,未注册语言的代码块保持纯文本
+import bash from "highlight.js/lib/languages/bash";
+import cpp from "highlight.js/lib/languages/cpp";
+import css from "highlight.js/lib/languages/css";
+import diff from "highlight.js/lib/languages/diff";
+import go from "highlight.js/lib/languages/go";
+import java from "highlight.js/lib/languages/java";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
 import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
 import { getActiveTabId } from "../shared/contentTools";
 import { createLogger } from "../shared/logger";
@@ -16,6 +44,8 @@ interface ChatMsg {
   content: string;
   /** 所属会话:全局单会话,与 tab 解耦(见 sessionStore) */
   sessionId: string;
+  /** 后台报错:以 ErrorBubble 呈现,不走 markdown */
+  error?: boolean;
 }
 
 type AgentStatus = "idle" | "thinking" | "streaming";
@@ -40,8 +70,6 @@ type ReasoningSeg = {
   text: string;
   /** 仍在流式生成中:驱动 ticker;阶段收口时置 false */
   active: boolean;
-  /** settled 展开后的回看开关 */
-  open?: boolean;
   t: number;
 };
 type TextSeg = { kind: "text"; text: string; t: number };
@@ -54,8 +82,9 @@ type ToolResultEvent = Extract<
   { type: typeof MSG.AGENT_TOOL_RESULT }
 >;
 
-// 展开预览的截断阈值(字符):工具结果可达 12k,思考过程整段也不短,不整段渲染
-const PREVIEW_CHARS = 200;
+// 展开预览的截断阈值(字符):工具结果可达 12k,思考过程整段也不短,不整段渲染;
+// 展开区配「复制」按钮,完整内容可取出
+const PREVIEW_CHARS = 500;
 const REASONING_MAX_CHARS = 2000;
 
 function formatTokens(n: number): string {
@@ -111,6 +140,11 @@ export default function ChatView({
   const reasoningBufRef = useRef("");
   const reasoningFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ---- 正文流缓冲:同一节拍策略。否则每个 delta 全量重解析该段 markdown,
+  // 长回答是 O(n²) 重复解析;合帧到 ~10Hz 后,重解析频率与段长解耦 ----
+  const textBufRef = useRef("");
+  const textFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   /** 把缓冲同步合入最后一个活跃思考段(节拍到期 / 阶段收口前调用) */
   const flushReasoning = () => {
     if (reasoningFlushRef.current !== null) {
@@ -137,6 +171,32 @@ export default function ChatView({
     reasoningBufRef.current = "";
   };
 
+  /** 把缓冲同步合入最后一个文本段(节拍到期 / 阶段收口前调用);
+   *  末段已不是文本段(时序异常)时缓冲无从归属,丢弃 */
+  const flushText = () => {
+    if (textFlushRef.current !== null) {
+      clearTimeout(textFlushRef.current);
+      textFlushRef.current = null;
+    }
+    const buf = textBufRef.current;
+    if (!buf) return;
+    textBufRef.current = "";
+    const segs = runSegsRef.current;
+    const last = segs[segs.length - 1];
+    if (last?.kind === "text") {
+      applySegs([...segs.slice(0, -1), { ...last, text: last.text + buf }]);
+    }
+  };
+
+  /** 直接丢弃正文缓冲(同 dropReasoningBuf) */
+  const dropTextBuf = () => {
+    if (textFlushRef.current !== null) {
+      clearTimeout(textFlushRef.current);
+      textFlushRef.current = null;
+    }
+    textBufRef.current = "";
+  };
+
   // reasoning delta → 入缓冲;末段不是活跃思考段则先开新段(行立即出现,文本由节拍供给)
   const appendReasoning = (delta: string) => {
     reasoningBufRef.current += delta;
@@ -153,9 +213,10 @@ export default function ChatView({
     }
   };
 
-  // 任何「下一阶段」事件(工具开始 / 文本开始)→ 先冲刷缓冲(别丢尾部字符),再收口活跃思考段
+  // 任何「下一阶段」事件(工具开始 / 文本开始)→ 先冲刷两种缓冲(别丢尾部字符),再收口活跃思考段
   const collapseReasoning = () => {
     flushReasoning();
+    flushText();
     const segs = runSegsRef.current;
     if (segs.some((s) => s.kind === "reasoning" && s.active)) {
       applySegs(
@@ -166,19 +227,24 @@ export default function ChatView({
     }
   };
 
-  /** 文本 delta:连续 delta 合并进末尾文本段,否则开新段(t 决定前一张过程卡的计时终点) */
+  /** 文本 delta:已在文本段则入缓冲按节拍合入;否则开新段(首 delta 立即上屏) */
   const appendTextDelta = (delta: string) => {
     const segs = runSegsRef.current;
     const last = segs[segs.length - 1];
     if (streamingRef.current && last?.kind === "text") {
-      applySegs([...segs.slice(0, -1), { ...last, text: last.text + delta }]);
+      textBufRef.current += delta;
+      if (textFlushRef.current === null) {
+        textFlushRef.current = setTimeout(flushText, 100);
+      }
     } else {
+      flushText(); // 防御:残留缓冲仍归属上一个文本段
       streamingRef.current = true;
       applySegs([...segs, { kind: "text", text: delta, t: Date.now() }]);
     }
   };
 
   const pushTool = (evt: ToolCallEvent) => {
+    flushText(); // 正文缓冲归属前一段,先落盘再追加工具段
     const segs = runSegsRef.current;
     applySegs([
       ...segs,
@@ -210,6 +276,7 @@ export default function ChatView({
   const settleRun = () => {
     streamingRef.current = false;
     flushReasoning();
+    flushText();
     const segs = runSegsRef.current;
     const next = segs.map((s) => {
       if (s.kind === "reasoning") return s.active ? { ...s, active: false } : s;
@@ -227,9 +294,13 @@ export default function ChatView({
    *  过程段不归档(不持久化),由随后的 clearRun 丢弃 */
   const flushRunTexts = () => {
     flushReasoning();
+    flushText();
     streamingRef.current = false;
     const segs = runSegsRef.current;
-    const texts = segs.filter((s): s is TextSeg => s.kind === "text");
+    // 空白文本段与渲染侧同规则跳过:不归档成空气消息
+    const texts = segs.filter(
+      (s): s is TextSeg => s.kind === "text" && s.text.trim().length > 0,
+    );
     if (texts.length === 0) return;
     const sid = sessionRef.current;
     setMessages((ms) => [
@@ -251,15 +322,6 @@ export default function ChatView({
     setRunEndedAt(null);
     setOpenGroups(new Set());
     setPhase("live");
-  };
-
-  const toggleReasoning = (index: number) => {
-    const segs = runSegsRef.current;
-    const s = segs[index];
-    if (s?.kind !== "reasoning") return;
-    applySegs(
-      segs.map((x, i) => (i === index ? { ...x, open: !s.open } : x)),
-    );
   };
 
   const toggleGroup = (firstIdx: number) =>
@@ -325,15 +387,16 @@ export default function ChatView({
           setStatus("idle");
           break;
         case MSG.AGENT_ERROR:
-          // 错误详情由后台日志记录,面板只负责呈现
+          // 错误详情由后台日志记录,面板只负责呈现(独立错误样式,不走 markdown)
           settleRun();
           setStatus("idle");
           setMessages((ms) => [
             ...ms,
             {
               role: "assistant",
-              content: `⚠ ${evt.error}`,
+              content: evt.error,
               sessionId: sessionRef.current,
+              error: true,
             },
           ]);
           break;
@@ -388,15 +451,29 @@ export default function ChatView({
     return () => {
       streamingRef.current = false;
       dropReasoningBuf();
+      dropTextBuf();
       port.disconnect();
       portRef.current = null;
     };
   }, []);
 
-  // 新消息 / 段更新自动滚到底
+  // 近底跟随:流式新内容只在用户本就位于底部附近时才拽底;
+  // 上翻回看即暂停(scroll 事件解除 pinned),滚回底部自动恢复跟随。
+  // 展开收起思考行/工具行不再经过 runSegs,不会触发这里
+  const pinnedRef = useRef(true);
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const onScroll = () => {
+      pinnedRef.current =
+        el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+  useEffect(() => {
+    const el = listRef.current;
+    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, runSegs, status]);
 
   const cancel = () => {
@@ -455,7 +532,7 @@ export default function ChatView({
           type="button"
           onClick={resetConversation}
           aria-label="开始新对话"
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-all duration-150 hover:bg-[var(--line)] hover:text-[var(--ink)] active:scale-90"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90"
         >
           <PlusIcon />
         </button>
@@ -463,7 +540,7 @@ export default function ChatView({
           type="button"
           onClick={onOpenSettings}
           aria-label="打开设置"
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-[var(--muted)] transition-all duration-150 hover:bg-[var(--line)] hover:text-[var(--ink)] active:scale-90"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90"
         >
           <SettingsIcon />
         </button>
@@ -488,6 +565,8 @@ export default function ChatView({
             const node =
               m.role === "user" ? (
                 <UserBubble key={i} text={m.content} />
+              ) : m.error ? (
+                <ErrorBubble key={i} text={m.content} />
               ) : (
                 <AssistantBubble key={i} text={m.content} />
               );
@@ -503,7 +582,6 @@ export default function ChatView({
                     endedAt={runEndedAt}
                     openGroups={openGroups}
                     onToggleGroup={toggleGroup}
-                    onToggleReasoning={toggleReasoning}
                   />,
                 ]
               : [node];
@@ -512,7 +590,7 @@ export default function ChatView({
         {/* 网络等待等「无过程可看」时的活动指示;思考 ticker 存在时由 ticker 表达,不重复 */}
         {status === "thinking" &&
           !runSegs.some((s) => s.kind === "reasoning" && s.active) && (
-            <div className="flex items-center gap-1.5 py-1 pl-1 text-[var(--muted)]">
+            <div className="flex items-center gap-1.5 py-1 pl-1 text-muted">
               <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
@@ -545,7 +623,7 @@ export default function ChatView({
 
       <form
         onSubmit={submit}
-        className="input-pill mx-3 mb-3 rounded-2xl border border-[var(--line)] bg-white/75 shadow-md transition-all duration-200 focus-within:border-[var(--accent)] focus-within:shadow-lg"
+        className="mx-3 mb-3 rounded-2xl border border-line bg-surface shadow-md transition-all duration-200 focus-within:border-accent focus-within:shadow-lg"
       >
         <div className="flex items-center gap-2 px-3.5 py-2.5">
           <input
@@ -554,14 +632,14 @@ export default function ChatView({
             placeholder="读到什么，想问什么？"
             aria-label="提问"
             disabled={status !== "idle"}
-            className="flex-1 bg-transparent py-1.5 text-[13px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)] disabled:opacity-50"
+            className="flex-1 bg-transparent py-1.5 text-[13px] text-ink outline-none placeholder:text-muted disabled:opacity-50"
           />
           {status === "idle" ? (
             <button
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-[13px] leading-none text-white transition-all duration-150 hover:bg-[var(--accent-strong)] active:scale-90 disabled:opacity-25 disabled:scale-100"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] leading-none text-on-accent transition-all duration-150 hover:bg-accent-strong active:scale-90 disabled:opacity-25 disabled:scale-100"
             >
               ↑
             </button>
@@ -570,7 +648,7 @@ export default function ChatView({
               type="button"
               onClick={cancel}
               aria-label="停止"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--danger)] text-white transition-all duration-150 hover:opacity-85 active:scale-90"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger text-on-danger transition-all duration-150 hover:opacity-85 active:scale-90"
             >
               <svg
                 width="10"
@@ -630,7 +708,7 @@ function SettingsIcon() {
 function EmptyState() {
   return (
     <div className="px-2 py-10 text-center">
-      <p className="mx-auto max-w-[220px] text-[16px] leading-relaxed text-[var(--muted)]">
+      <p className="mx-auto max-w-[220px] text-[16px] leading-relaxed text-muted">
         读到什么，想问什么，就在这里问。
         <br />
         我可以读取当前页面并回答。
@@ -648,14 +726,12 @@ function RunZone({
   endedAt,
   openGroups,
   onToggleGroup,
-  onToggleReasoning,
 }: {
   segs: RunSegment[];
   phase: "live" | "settled";
   endedAt: number | null;
   openGroups: Set<number>;
   onToggleGroup: (firstIdx: number) => void;
-  onToggleReasoning: (index: number) => void;
 }) {
   const parts: ReactNode[] = [];
   let group: { s: ProcessSeg; i: number }[] = [];
@@ -670,13 +746,15 @@ function RunZone({
         durationMs={Math.max(0, endT - group[0].s.t)}
         open={openGroups.has(firstIdx)}
         onToggle={() => onToggleGroup(firstIdx)}
-        onToggleReasoning={onToggleReasoning}
       />,
     );
     group = [];
   };
   segs.forEach((s, i) => {
     if (s.kind === "text") {
+      // 空白文本段(模型在工具调用间隙常吐空/换行 content):
+      // 渲染即空气泡,还会切断过程卡分组,把一轮过程拆成「1 步」卡串 —— 跳过
+      if (!s.text.trim()) return;
       closeGroup(s.t); // 文本段开始 = 前一张过程卡计时截止
       parts.push(<AssistantBubble key={`t${i}`} text={s.text} />);
     } else {
@@ -695,14 +773,12 @@ function ProcessCard({
   durationMs,
   open,
   onToggle,
-  onToggleReasoning,
 }: {
   entries: { s: ProcessSeg; i: number }[];
   phase: "live" | "settled";
   durationMs: number;
   open: boolean;
   onToggle: () => void;
-  onToggleReasoning: (index: number) => void;
 }) {
   if (phase === "live") {
     const rows = entries.filter(
@@ -749,11 +825,7 @@ function ProcessCard({
         <div className="trace-rows">
           {entries.map((e) =>
             e.s.kind === "reasoning" ? (
-              <ReasoningRow
-                key={`r${e.i}`}
-                item={e.s}
-                onToggle={() => onToggleReasoning(e.i)}
-              />
+              <ReasoningRow key={`r${e.i}`} item={e.s} />
             ) : (
               <ToolRow key={e.s.id} item={e.s} />
             ),
@@ -781,21 +853,17 @@ function TickerRow({ item }: { item: ReasoningSeg }) {
   );
 }
 
-/** 已收口的思考行(settled 展开区内):一行「思考过程」,点击展开完整文本回看 */
-function ReasoningRow({
-  item,
-  onToggle,
-}: {
-  item: ReasoningSeg;
-  onToggle: () => void;
-}) {
-  const open = !!item.open;
+/** 已收口的思考行(settled 展开区内):一行「思考过程」,点击展开完整文本回看。
+ *  展开态是行内局部状态 —— 与 ToolRow 一致,不进 runSegs,
+ *  否则会触发近底跟随的段更新 effect(旧版正是这样被拽底的) */
+function ReasoningRow({ item }: { item: ReasoningSeg }) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="trace-row" data-kind="reasoning" data-open={open}>
       <button
         type="button"
         className="trace-header"
-        onClick={onToggle}
+        onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
         <span className="trace-icon" aria-hidden="true">
@@ -856,25 +924,46 @@ function ToolRow({ item }: { item: ToolSeg }) {
       </button>
       <div className="trace-body-wrap">
         <div className="trace-body">
-          <div className="trace-sec">参数</div>
-          <pre className="trace-pre">
-            {item.args === undefined
-              ? "(无)"
-              : truncate(stringifyPreview(item.args), PREVIEW_CHARS)}
-          </pre>
+          <CopyableSection
+            label="参数"
+            text={
+              item.args === undefined ? "(无)" : stringifyPreview(item.args)
+            }
+          />
           {item.result !== undefined && (
-            <>
-              <div className="trace-sec">
-                {item.status === "error" ? "错误" : "结果"}
-              </div>
-              <pre className="trace-pre">
-                {truncate(stringifyPreview(item.result), PREVIEW_CHARS)}
-              </pre>
-            </>
+            <CopyableSection
+              label={item.status === "error" ? "错误" : "结果"}
+              text={stringifyPreview(item.result)}
+            />
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+/** 参数/结果小节:标题行带「复制」(取完整内容);预览截断展示 */
+function CopyableSection({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* 剪贴板被拒等:静默 */
+    }
+  };
+  return (
+    <>
+      <div className="trace-sec-row">
+        <span className="trace-sec">{label}</span>
+        <button type="button" onClick={copy} className="trace-copy-btn">
+          {copied ? "已复制 ✓" : "复制"}
+        </button>
+      </div>
+      <pre className="trace-pre">{truncate(text, PREVIEW_CHARS)}</pre>
+    </>
   );
 }
 
@@ -982,20 +1071,138 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…(共 ${s.length} 字)` : s;
 }
 
-function UserBubble({ text }: { text: string }) {
+// markdown 渲染配置:引用保持稳定,配合 memo 让历史消息不因无关状态重渲染/重解析
+const MD_REMARK: NonNullable<MarkdownOptions["remarkPlugins"]> = [remarkGfm];
+const MD_REHYPE: NonNullable<MarkdownOptions["rehypePlugins"]> = [
+  [
+    rehypeHighlight,
+    {
+      languages: {
+        bash,
+        cpp,
+        css,
+        diff,
+        go,
+        java,
+        javascript,
+        json,
+        python,
+        rust,
+        sql,
+        typescript,
+        xml,
+        yaml,
+      },
+    },
+  ],
+];
+const MD_COMPONENTS: NonNullable<MarkdownOptions["components"]> = {
+  pre: CodeBlock,
+};
+
+const UserBubble = memo(function UserBubble({ text }: { text: string }) {
   return (
-    <div className="msg-in ml-auto w-fit max-w-[86%] rounded-xl rounded-br-md bg-[var(--accent-soft)] px-3.5 py-2 text-[13px] leading-relaxed shadow-[var(--shadow-sm)]">
+    <div className="msg-in ml-auto w-fit max-w-[86%] whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-accent-soft px-3.5 py-2 text-[13px] leading-relaxed shadow-[var(--shadow-sm)]">
       {text}
     </div>
   );
-}
+});
 
-function AssistantBubble({ text }: { text: string }) {
+const AssistantBubble = memo(function AssistantBubble({
+  text,
+}: {
+  text: string;
+}) {
   return (
-    <div className="msg-in w-fit max-w-[86%] pl-3 text-[13px] leading-relaxed">
-      <div className="markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-      </div>
+    <div className="markdown msg-in pl-3 text-[13px] leading-relaxed">
+      <ReactMarkdown
+        remarkPlugins={MD_REMARK}
+        rehypePlugins={MD_REHYPE}
+        components={MD_COMPONENTS}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
+});
+
+const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
+  return (
+    <div className="msg-in flex w-full items-start gap-2 rounded-xl border border-danger/25 bg-danger-soft px-3.5 py-2.5 text-[13px] leading-relaxed text-danger">
+      <WarnIcon />
+      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+        {text}
+      </span>
+    </div>
+  );
+});
+
+/** 警示三角(错误消息) */
+function WarnIcon() {
+  return (
+    <svg
+      className="mt-0.5 shrink-0"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 2.2 14.6 13.4H1.4L8 2.2Z" />
+      <path d="M8 6.4v3" />
+      <path d="M8 11.7h.01" />
+    </svg>
+  );
+}
+
+/** 代码块容器:顶部条(语言 + 复制)+ 横向滚动代码体。
+ *  容器锁 max-width,长行靠 pre 的 overflow-x 滚动,不再撑破消息宽度 */
+function CodeBlock({
+  node: _node,
+  children,
+  ...rest
+}: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) {
+  const first = Array.isArray(children) ? children[0] : children;
+  const lang = isValidElement(first)
+    ? (/language-([\w+-]+)/.exec(
+        String((first.props as { className?: string }).className ?? ""),
+      )?.[1] ?? "")
+    : "";
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(nodeText(children));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* 剪贴板被拒等:静默 */
+    }
+  };
+  return (
+    <figure className="code-block">
+      <figcaption className="code-block-head">
+        <span>{lang || "代码"}</span>
+        <button type="button" onClick={copy} className="code-copy-btn">
+          {copied ? "已复制 ✓" : "复制"}
+        </button>
+      </figcaption>
+      <pre {...rest}>{children}</pre>
+    </figure>
+  );
+}
+
+/** ReactNode → 纯文本(复制代码块用,穿透 hljs 的高亮 span 树) */
+function nodeText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number")
+    return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join("");
+  if (isValidElement(node)) {
+    return nodeText((node.props as { children?: ReactNode }).children);
+  }
+  return "";
 }

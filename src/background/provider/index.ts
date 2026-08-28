@@ -1,16 +1,14 @@
-// 工厂:按配置返回对应的 provider 适配器
+// 出口:只支持 OpenAI 兼容协议(DeepSeek/Kimi/OpenRouter/vLLM/Ollama 等通用),
+// 内部契约(InternalMsg)本就是 OpenAI 扁平形状,无需多适配器工厂
 
-import { OpenAIAdapter } from './openai'
-import { AnthropicAdapter } from './anthropic'
-import type { ProviderConfig, ChatProvider } from './types'
-
-export function getChatProvider(config: ProviderConfig): ChatProvider {
-  switch (config.provider) {
-    case 'openai':
-      return new OpenAIAdapter(config)
-    case 'anthropic':
-      return new AnthropicAdapter(config)
-  }
-}
-
-export type { ProviderConfig, ChatProvider, ChatRequest, ChatResult, InternalMsg, ToolSchema, ToolCall } from './types'
+export { OpenAIAdapter } from "./openai";
+export { fetchModels } from "./models";
+export type {
+  ProviderConfig,
+  ChatProvider,
+  ChatRequest,
+  ChatResult,
+  InternalMsg,
+  ToolSchema,
+  ToolCall,
+} from "./types";

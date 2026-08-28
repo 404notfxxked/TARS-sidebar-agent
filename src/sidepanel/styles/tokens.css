@@ -1,0 +1,83 @@
+/* ---- 设计令牌(唯一事实源) ----
+   所有颜色从这里出;Tailwind 经 @theme inline 映射为原生工具类
+   (bg-surface / text-muted …),深浅色只靠 [data-theme] 翻转变量值 */
+
+:root {
+  color-scheme: light;
+
+  --paper: #f7f8f7;
+  --surface: #ffffff;
+  --surface-2: #f1f3f2; /* 次级表面:hover 底、嵌套填充 */
+  --ink: #1a1f1c;
+  --muted: #6c7571;
+  --line: #e5e9e6;
+  --line-strong: #d8ded9; /* hover 边框 / 开关 off 底 */
+
+  --accent: #16a34a;
+  --accent-strong: #12833c;
+  --accent-soft: #e8f6ee;
+  --on-accent: #ffffff; /* 强调色之上的内容(文字/开关旋钮) */
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
+  --on-danger: #ffffff; /* 危险色之上的内容 */
+  --warning: #f0a040;
+
+  --code-bg: #f4f6f5;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+
+  --spring-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --spring-exit: cubic-bezier(0.3, 0, 1, 1);
+}
+
+/* 深色:同一套语义槽位换灰绿暗面 */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #1a1d1b;
+  --surface: #242826;
+  --surface-2: #2d322f;
+  --ink: #e6eae7;
+  --muted: #98a29b;
+  --line: #343937;
+  --line-strong: #454b48;
+
+  --accent: #3ecf7a;
+  --accent-strong: #63d994;
+  --accent-soft: rgba(62, 207, 122, 0.14);
+  --on-accent: #0b120d;
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --on-danger: #140c0c;
+  --warning: #f5b04d;
+
+  --code-bg: #1e221f;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+/* 令牌 → Tailwind 原生工具类。inline 让 utility 直接内联 var(--) 引用,
+   而非指向静态的 @theme 变量 —— 深浅色翻转时所有 bg-surface/text-muted 自动跟随 */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-on-danger: var(--on-danger);
+  --color-warning: var(--warning);
+  --color-code-bg: var(--code-bg);
+}
+
+/* dark: 变体跟随 data-theme 属性(而非媒体查询),与令牌翻转同机制 */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

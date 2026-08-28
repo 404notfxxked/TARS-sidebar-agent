@@ -1,0 +1,438 @@
+/* ---- 上下文用量条 ----
+   critically damped spring(width) + opacity 入场,
+   颜色按阈值三级(accent → warning → danger) */
+
+@layer components {
+  .usage-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: usage-in 250ms ease-out;
+  }
+  @keyframes usage-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .usage-bar-track {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--line);
+    overflow: hidden;
+  }
+
+  .usage-bar-fill {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent);
+    transition:
+      width 400ms cubic-bezier(0.2, 0, 0, 1),
+      background-color 300ms ease;
+  }
+  .usage-bar-fill[data-usage-level="mid"] {
+    background: var(--warning);
+  }
+  .usage-bar-fill[data-usage-level="high"] {
+    background: var(--danger);
+  }
+
+  .usage-bar-label {
+    flex-shrink: 0;
+    font-size: 11px;
+    letter-spacing: 0.01em;
+    font-feature-settings: "tnum";
+    color: var(--muted);
+  }
+}
+
+/* reduced motion: 宽度跳变,仅 opacity 柔化 */
+@media (prefers-reduced-motion: reduce) {
+  .usage-bar-fill {
+    transition: opacity 200ms ease;
+  }
+}
+
+/* ---- Agent 执行轨迹(思考行 + 工具行) ----
+   实心表面 + 1px 边框 + 轻投影,行间内凹发丝分隔线;
+   是「过程性信息」,视觉层级刻意低于消息正文(小一号、muted 色) */
+
+/* keyframes 留在级联层外(动画名解析不受 layer 影响) */
+@keyframes trace-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes trace-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@keyframes trace-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes trace-icon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes trace-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+/* 状态翻转瞬间在行上轻扫一层色再退回:反馈「刚完成 / 刚失败」 */
+@keyframes trace-row-ok {
+  from {
+    background-color: var(--accent-soft);
+  }
+}
+@keyframes trace-row-err {
+  from {
+    background-color: var(--danger-soft);
+  }
+}
+
+@layer components {
+  .trace {
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  /* 新行入场:轻微浮升;done/error 追加一次性色扫 */
+  .trace-row {
+    position: relative;
+    animation: trace-row-in 180ms var(--spring-enter);
+  }
+  .trace-row + .trace-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 12px;
+    right: 0;
+    height: 1px;
+    background: var(--line);
+  }
+  .trace-row[data-status="done"] {
+    animation:
+      trace-row-in 180ms var(--spring-enter),
+      trace-row-ok 700ms ease-out;
+  }
+  .trace-row[data-status="error"] {
+    animation:
+      trace-row-in 180ms var(--spring-enter),
+      trace-row-err 700ms ease-out;
+  }
+
+  /* 行内横排布局:头部行(可点)与思考 ticker 行(展示)共用 */
+  .trace-header,
+  .trace-line {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  /* 头部行:整行热区可点,按下即反馈 */
+  .trace-header {
+    transition:
+      background 120ms ease,
+      color 120ms ease;
+  }
+  .trace-header:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .trace-header:active {
+    background: var(--line);
+  }
+
+  .trace-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    color: var(--muted);
+  }
+  /* 思考中:图标与 shimmer 标题同周期呼吸(harmony) */
+  .trace-row[data-active="true"] .trace-icon {
+    animation: trace-icon-pulse 1.6s ease-in-out infinite;
+  }
+
+  .trace-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--muted);
+  }
+  .trace-row[data-kind="tool"] .trace-label {
+    color: var(--ink);
+  }
+
+  /* 思考中的标题:高光横扫 */
+  .trace-shimmer {
+    background: linear-gradient(
+      100deg,
+      var(--muted) 35%,
+      var(--ink) 50%,
+      var(--muted) 65%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: trace-shimmer 1.6s linear infinite;
+  }
+
+  /* 尾部(状态 + chevron)整体右对齐 */
+  .trace-tail {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .trace-status {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .trace-row[data-status="error"] .trace-status {
+    color: var(--danger);
+  }
+
+  /* chevron:单个 SVG 沿同一路径旋转(spatial consistency),不换字形 */
+  .trace-chevron {
+    color: var(--muted);
+    opacity: 0.7;
+    transform: rotate(0deg);
+    transition: transform 220ms var(--spring-enter);
+  }
+  .trace-chevron path,
+  .trace-mark path {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .trace-chevron path {
+    stroke-width: 1.4;
+  }
+  .trace-row[data-open="true"] .trace-chevron,
+  .trace[data-open="true"] .trace-chevron {
+    transform: rotate(90deg);
+  }
+
+  /* 运行中 spinner */
+  .trace-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    border-top-color: var(--accent);
+    animation: trace-spin 700ms linear infinite;
+  }
+
+  /* 四角星 */
+  .trace-icon > svg > path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* 对勾/叉:状态翻转时以描边「画」出来 */
+  .trace-mark {
+    color: var(--accent);
+  }
+  .trace-mark path {
+    stroke-width: 1.6;
+  }
+  .trace-mark.mark-ok path {
+    stroke-dasharray: 11;
+    stroke-dashoffset: 11;
+    animation: trace-draw 240ms 40ms var(--spring-enter) forwards;
+  }
+  .trace-mark.mark-error {
+    color: var(--danger);
+  }
+  .trace-mark.mark-error path {
+    stroke-dasharray: 16.5;
+    stroke-dashoffset: 16.5;
+    animation: trace-draw 240ms 40ms var(--spring-enter) forwards;
+  }
+
+  /* 展开区:grid 行高 0fr→1fr 过渡 + 淡入;visibility 延迟隐藏防读屏读到折叠内容 */
+  .trace-body-wrap {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s 260ms;
+  }
+  .trace-row[data-open="true"] .trace-body-wrap {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s;
+  }
+  .trace-body {
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 12px;
+    border-top: 1px solid transparent;
+    transition:
+      padding 260ms var(--spring-enter),
+      border-color 200ms ease;
+  }
+  .trace-row[data-open="true"] .trace-body {
+    padding: 2px 12px 8px;
+    border-top-color: var(--line);
+  }
+
+  /* 展开区小节标题 + 复制全文按钮 */
+  .trace-sec-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .trace-sec {
+    margin: 5px 0 2px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+  .trace-copy-btn {
+    flex-shrink: 0;
+    margin: 4px 0 2px;
+    padding: 1px 7px;
+    border-radius: 5px;
+    font-size: 10.5px;
+    color: var(--muted);
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+  .trace-copy-btn:hover {
+    background: var(--line);
+    color: var(--ink);
+  }
+  .trace-pre {
+    margin: 0;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* 思考流式文本:pre-wrap 保留模型换行 */
+  .reasoning-text {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* 思考中 ticker:只显示最近内容的单行尾部(截断在 JS 侧按宽度完成),
+     行高恒定 → 流式期间不推挤后续消息、不触发滚动抖动 */
+  .trace-tail-text {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* JS 截宽的兜底:极窄面板下不再加 …,直接右裁 */
+    color: var(--muted);
+    opacity: 0.85;
+  }
+
+  /* ---- settled 收拢:过程卡收成一行摘要 chip,点击展开完整行 ---- */
+  .trace-summary-meta {
+    flex-shrink: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    font-feature-settings: "tnum";
+    color: var(--ink);
+  }
+  .trace-summary-chain {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* 摘要展开区:与行内展开同一套 grid 0fr→1fr 过渡 */
+  .trace-rows-wrap {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s 260ms;
+  }
+  .trace[data-open="true"] .trace-rows-wrap {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows 260ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s;
+  }
+  .trace-rows {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .trace[data-open="true"] .trace-rows {
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* reduced motion:shimmer/呼吸静态降级(渐变文字在逐帧步进下会残留花屏) */
+@media (prefers-reduced-motion: reduce) {
+  .trace-shimmer {
+    background: none;
+    color: var(--muted);
+  }
+  .trace-row[data-active="true"] .trace-icon {
+    animation: none;
+  }
+}

@@ -1,17 +1,19 @@
-// 主布局:header(新对话 / 设置入口)在 ChatView 内,这里只保留设置面板的开关与遮罩
+// 主布局:设置与对话是互斥的两个整页视图,这里只负责切换
 
 import { useState } from "react";
 import ChatView from "./ChatView";
-import SettingsPanel from "./SettingsPanel";
+import SettingsView from "./SettingsView";
 
 export default function App() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
-    <div className="relative flex h-full flex-col">
-      <ChatView onOpenSettings={() => setSettingsOpen(true)} />
-
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+    <div className="flex h-full min-h-0 flex-col">
+      {showSettings ? (
+        <SettingsView onBack={() => setShowSettings(false)} />
+      ) : (
+        <ChatView onOpenSettings={() => setShowSettings(true)} />
+      )}
     </div>
   );
 }

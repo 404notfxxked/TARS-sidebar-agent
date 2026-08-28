@@ -1,0 +1,206 @@
+/* ---- markdown 渲染(组件类) ---- */
+
+@layer components {
+  .markdown > *:first-child {
+    margin-top: 0;
+  }
+  .markdown > *:last-child {
+    margin-bottom: 0;
+  }
+  .markdown p {
+    margin: 0.4em 0;
+    line-height: 1.55;
+  }
+  .markdown h1,
+  .markdown h2,
+  .markdown h3 {
+    margin: 0.7em 0 0.3em;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+  .markdown h1 {
+    font-size: 1.08em;
+  }
+  .markdown h2 {
+    font-size: 1em;
+  }
+  .markdown h3 {
+    font-size: 0.93em;
+    color: var(--muted);
+  }
+  .markdown ul,
+  .markdown ol {
+    margin: 0.4em 0;
+    padding-left: 1.3em;
+  }
+  .markdown li {
+    margin: 0.15em 0;
+  }
+  .markdown a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .markdown a:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* 行内 code(pre 内的由 .code-block 重置) */
+  .markdown :not(pre) > code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    background: var(--accent-soft);
+  }
+
+  .markdown blockquote {
+    margin: 0.5em 0;
+    padding-left: 0.75em;
+    border-left: 2px solid var(--line);
+    color: var(--muted);
+  }
+  .markdown table {
+    margin: 0.5em 0;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .markdown th,
+  .markdown td {
+    padding: 0.3em 0.6em;
+    border: 1px solid var(--line);
+  }
+  .markdown th {
+    background: var(--surface-2);
+    font-weight: 600;
+  }
+  .markdown hr {
+    margin: 0.7em 0;
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  /* ---- 代码块:顶部条(语言 + 复制)+ 横向滚动代码体 ----
+     由 ChatView 的 <pre> 自定义渲染产出;容器锁 max-width,
+     长行靠 pre 的 overflow-x 滚动,不再撑破消息宽度 */
+  .code-block {
+    margin: 0.5em 0;
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--code-bg);
+    overflow: hidden;
+  }
+  .code-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 6px 4px 12px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .code-copy-btn {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+  .code-copy-btn:hover {
+    background: var(--line);
+    color: var(--ink);
+  }
+  .code-block pre {
+    margin: 0;
+    padding: 0.6em 0.75em;
+    overflow-x: auto;
+  }
+  .code-block pre code {
+    display: block;
+    padding: 0;
+    background: none;
+    color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+}
+
+/* ---- 代码高亮配色(rehype-highlight / highlight.js) ----
+   与主题同机制的令牌:浅色定义在 :root,深色随 [data-theme] 翻转 */
+
+:root {
+  --hl-comment: #93a098;
+  --hl-keyword: #1a7f4b;
+  --hl-string: #b45309;
+  --hl-number: #2563eb;
+  --hl-title: #0f766e;
+  --hl-attr: #8a5a00;
+}
+[data-theme="dark"] {
+  --hl-comment: #7d8781;
+  --hl-keyword: #52d687;
+  --hl-string: #e8a356;
+  --hl-number: #6ea8fe;
+  --hl-title: #4dd0c4;
+  --hl-attr: #d9b36a;
+}
+
+.markdown .hljs-comment,
+.markdown .hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.markdown .hljs-keyword,
+.markdown .hljs-selector-tag,
+.markdown .hljs-literal,
+.markdown .hljs-doctag,
+.markdown .hljs-name,
+.markdown .hljs-type,
+.markdown .hljs-meta .hljs-keyword {
+  color: var(--hl-keyword);
+}
+.markdown .hljs-string,
+.markdown .hljs-regexp,
+.markdown .hljs-addition {
+  color: var(--hl-string);
+}
+.markdown .hljs-number,
+.markdown .hljs-symbol,
+.markdown .hljs-bullet,
+.markdown .hljs-link {
+  color: var(--hl-number);
+}
+.markdown .hljs-title,
+.markdown .hljs-title.function_,
+.markdown .hljs-title.class_,
+.markdown .hljs-built_in {
+  color: var(--hl-title);
+}
+.markdown .hljs-attr,
+.markdown .hljs-attribute,
+.markdown .hljs-variable,
+.markdown .hljs-template-variable,
+.markdown .hljs-params {
+  color: var(--hl-attr);
+}
+.markdown .hljs-strong {
+  font-weight: 600;
+}
+.markdown .hljs-emphasis {
+  font-style: italic;
+}
+.markdown .hljs-deletion {
+  color: var(--danger);
+}
