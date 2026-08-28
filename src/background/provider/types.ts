@@ -4,13 +4,9 @@
 import type { ToolSchema } from "../../shared/toolTypes";
 
 export interface ProviderConfig {
-  // provider 是「厂商」(openai/anthropic),决定走哪个 adapter;
-  // 与 protocol(wire 格式)是两回事,但当前阶段厂商与协议一一对应,合并成一个字段即可。
-  // 若未来出现「厂商与协议错位」(如 OpenAI key 走 Anthropic 协议的代理)再拆成 protocol。
-  provider: "openai" | "anthropic";
   apiKey: string;
   model: string;
-  baseUrl?: string; // 测试用覆盖,如 DeepSeek 用 https://api.deepseek.com/v1
+  baseUrl?: string; // OpenAI 兼容端点,约定含 /v1,如 DeepSeek 用 https://api.deepseek.com/v1;缺省用官方地址
 }
 
 // ToolSchema 已在 shared/toolTypes.ts 定义,这里再导出供 provider 层消费

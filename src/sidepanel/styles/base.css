@@ -1,0 +1,70 @@
+/* ---- 基础层:文档、焦点、滚动条、全局动效降级 ---- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 键盘焦点 — soft ring, skip inputs (they get per-component focus styles) */
+:focus-visible:not(input):not(textarea) {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--accent);
+  border-radius: 3px;
+}
+
+/* 入场动效 — spring-like curves */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@layer components {
+  .msg-in {
+    animation: msg-in 200ms var(--spring-enter);
+  }
+}
+
+/* 尊重 reduced motion — cross-fade instead of motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    animation-timing-function: step-end !important;
+    transition-timing-function: step-end !important;
+  }
+}
+
+/* ---- 滚动条(WebKit) ---- */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
