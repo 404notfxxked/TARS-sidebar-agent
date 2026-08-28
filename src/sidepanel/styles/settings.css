@@ -75,12 +75,9 @@
     color: var(--muted);
   }
 
-  /* 模型建议面板:与输入框同宽对齐(left/right 0),手填输入框 + 补全建议 */
+  /* 浮层基座(聊天区模型选择弹层):吸附在锚点旁的自然小弹窗 */
   .combo-pop {
     position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
     z-index: 20;
     max-height: 180px;
     overflow-y: auto;
@@ -89,6 +86,14 @@
     border: 1px solid var(--line);
     border-radius: 10px;
     box-shadow: var(--shadow-md);
+  }
+  /* 从锚点上方弹出;宽度随内容,封顶防溢出面板(超长 ID 截断) */
+  .combo-pop--up {
+    bottom: calc(100% + 6px);
+    left: 0;
+    width: max-content;
+    min-width: 150px;
+    max-width: min(280px, calc(100vw - 40px));
   }
   .combo-option {
     display: block;
@@ -104,8 +109,12 @@
     color: var(--ink);
   }
   .combo-option:hover,
-  .combo-option[data-active="true"] {
+  .combo-option[data-active="true"],
+  .combo-option[aria-selected="true"] {
     background: var(--surface-2);
+  }
+  .combo-option[aria-selected="true"] {
+    color: var(--accent); /* 选中项高亮:长 ID 被截断时 ✓ 不可见,靠颜色兜底 */
   }
 
   /* 分段控件:选中滑块测量定位,弹簧滑动 */
@@ -233,5 +242,109 @@
     font-size: 11px;
     line-height: 1.45;
     color: var(--muted);
+  }
+
+  /* ---- 模型列表行:收起态一行,点击展开每模型配置 ---- */
+  .model-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .model-row + .model-row {
+    border-top: 1px solid var(--line);
+  }
+  .model-row-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    text-align: left;
+    transition: background 120ms ease;
+  }
+  .model-row-head:hover {
+    background: var(--surface-2);
+  }
+  .model-row-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .model-badge {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+  .model-row-chevron {
+    flex-shrink: 0;
+    color: var(--muted);
+    transition: transform 200ms var(--spring-enter);
+  }
+  .model-row-head[aria-expanded="true"] .model-row-chevron {
+    transform: rotate(90deg);
+  }
+  /* 展开动画:grid 0fr→1fr(与 trace 折叠行同一套手法) */
+  .model-row-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows 240ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s 240ms;
+  }
+  .model-row-body[data-open="true"] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      grid-template-rows 240ms var(--spring-enter),
+      opacity 200ms ease,
+      visibility 0s;
+  }
+  .model-row-body-inner {
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 10px;
+    transition: padding 240ms var(--spring-enter);
+  }
+  .model-row-body[data-open="true"] .model-row-body-inner {
+    padding: 2px 10px 10px;
+  }
+  .model-row-id {
+    margin: 4px 0 0;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .model-row-action {
+    padding: 0;
+    font-size: 12.5px;
+    color: var(--accent);
+    transition: opacity 120ms ease;
+  }
+  .model-row-action:hover {
+    opacity: 0.7;
+  }
+  .model-row-action-danger,
+  .model-row-action-danger:hover {
+    color: var(--danger);
+    opacity: 1;
   }
 }

@@ -2,13 +2,13 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   isValidElement,
   memo,
   type ComponentPropsWithoutRef,
   type ReactNode,
-  type SubmitEvent,
 } from "react";
 import ReactMarkdown, {
   type Options as MarkdownOptions,
@@ -33,6 +33,7 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
 import { getActiveTabId } from "../shared/contentTools";
+import { loadConfig, savePrefs, type ModelEntry } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
 import { getOrCreateSessionId } from "../shared/sessionStore";
 
@@ -113,6 +114,12 @@ export default function ChatView({
   const listRef = useRef<HTMLDivElement | null>(null);
   // 最近一次已加载历史的会话,防重复请求
   const lastLoadedSessionRef = useRef("");
+
+  // ---- 模型选择:列表来自设置页持久化的 models,切换即写回默认模型 ----
+  const [modelList, setModelList] = useState<ModelEntry[]>([]);
+  const [modelId, setModelId] = useState("");
+  const [modelPopOpen, setModelPopOpen] = useState(false);
+  const modelPopRef = useRef<HTMLDivElement | null>(null);
 
   // ---- 本轮执行流状态:segs + ref 镜像 ----
   // ref 镜像让 port 事件回调(只注册一次)总是读到最新段序列,
@@ -448,6 +455,11 @@ export default function ChatView({
       sessionRef.current = sessionId;
       loadSessionHistory(sessionId);
     });
+    // 设置页与聊天页互斥挂载,进聊天页重读一次配置即与设置改动同步
+    loadConfig().then((c) => {
+      setModelList(c.models);
+      setModelId(c.model);
+    });
     return () => {
       streamingRef.current = false;
       dropReasoningBuf();
@@ -456,6 +468,33 @@ export default function ChatView({
       portRef.current = null;
     };
   }, []);
+
+  // 模型选择器打开期间:点外 / Esc 关闭
+  useEffect(() => {
+    if (!modelPopOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!modelPopRef.current?.contains(e.target as Node))
+        setModelPopOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModelPopOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [modelPopOpen]);
+
+  /** 切换默认模型:只写偏好,后台每轮 run 重读配置,下一轮生效 */
+  const pickModel = (id: string) => {
+    setModelId(id);
+    setModelPopOpen(false);
+    savePrefs({ model: id }).catch((err) =>
+      log.warn("chat", "save model pref failed", { error: String(err) }),
+    );
+  };
 
   // 近底跟随:流式新内容只在用户本就位于底部附近时才拽底;
   // 上翻回看即暂停(scroll 事件解除 pinned),滚回底部自动恢复跟随。
@@ -505,8 +544,19 @@ export default function ChatView({
     lastLoadedSessionRef.current = "";
   };
 
-  const submit = async (e: SubmitEvent) => {
-    e.preventDefault();
+  // ---- 输入区:textarea 随内容自增高(封顶约 5 行,超出内部滚动) ----
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto"; // 先收回再按内容撑开,才能正确收缩
+    const h = Math.min(el.scrollHeight, 116);
+    el.style.height = `${h}px`;
+    // 未到上限不给滚动条,避免 height 追赶 scrollHeight 一帧内出现的幽灵滚动条
+    el.style.overflowY = el.scrollHeight > 116 ? "auto" : "hidden";
+  }, [input]);
+
+  const submit = async () => {
     const text = input.trim();
     if (!text || status !== "idle") return;
     // 会话全局唯一;tabId 记录本次提问的页面上下文(工具去该 tab 执行)
@@ -622,24 +672,94 @@ export default function ChatView({
       )}
 
       <form
-        onSubmit={submit}
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
         className="mx-3 mb-3 rounded-2xl border border-line bg-surface shadow-md transition-all duration-200 focus-within:border-accent focus-within:shadow-lg"
       >
-        <div className="flex items-center gap-2 px-3.5 py-2.5">
-          <input
+        <div className="px-3.5 pt-2">
+          <textarea
+            ref={inputRef}
+            rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              // 输入法组词中的 Enter 是确认候选词,不当作发送
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                submit();
+              }
+            }}
             placeholder="读到什么，想问什么？"
             aria-label="提问"
             disabled={status !== "idle"}
-            className="flex-1 bg-transparent py-1.5 text-[13px] text-ink outline-none placeholder:text-muted disabled:opacity-50"
+            className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:opacity-50"
           />
+        </div>
+        <div className="flex items-center gap-2 px-2 pb-2 pt-0.5">
+          {modelList.length > 0 && (
+            <div ref={modelPopRef} className="relative min-w-0">
+              <button
+                type="button"
+                onClick={() => setModelPopOpen((o) => !o)}
+                aria-haspopup="listbox"
+                aria-expanded={modelPopOpen}
+                aria-label="选择模型"
+                className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-[12px] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+              >
+                <span className="min-w-0 truncate">
+                  {modelList.find((m) => m.id === modelId)?.alias ||
+                    modelId ||
+                    "选择模型"}
+                </span>
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className="shrink-0"
+                >
+                  <path d="m3 6 5 5 5-5" />
+                </svg>
+              </button>
+              {modelPopOpen && (
+                <div
+                  role="listbox"
+                  aria-label="可选模型"
+                  className="combo-pop combo-pop--up"
+                >
+                  {modelList.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      role="option"
+                      aria-selected={m.id === modelId}
+                      className="combo-option"
+                      onClick={() => pickModel(m.id)}
+                    >
+                      {(m.alias || m.id) + (m.id === modelId ? " ✓" : "")}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {status === "idle" ? (
             <button
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] leading-none text-on-accent transition-all duration-150 hover:bg-accent-strong active:scale-90 disabled:opacity-25 disabled:scale-100"
+              className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] leading-none text-on-accent transition-all duration-150 hover:bg-accent-strong active:scale-90 disabled:opacity-25 disabled:scale-100"
             >
               ↑
             </button>
@@ -648,7 +768,7 @@ export default function ChatView({
               type="button"
               onClick={cancel}
               aria-label="停止"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger text-on-danger transition-all duration-150 hover:opacity-85 active:scale-90"
+              className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger text-on-danger transition-all duration-150 hover:opacity-85 active:scale-90"
             >
               <svg
                 width="10"

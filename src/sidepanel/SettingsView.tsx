@@ -13,6 +13,7 @@ import {
   saveConfig,
   savePrefs,
   forgetApiKey,
+  type ModelEntry,
   type ThemePref,
 } from "../shared/configStore";
 import { fetchModels } from "../background/provider";
@@ -76,25 +77,162 @@ function Segmented<T extends string>({
   );
 }
 
+/** 模型行:收起态 = 别名/ID + 默认标记 + chevron,点击展开每模型配置 */
+function ModelRow({
+  entry,
+  isDefault,
+  open,
+  confirming,
+  onToggle,
+  onPatch,
+  onCommit,
+  onSetDefault,
+  onRemove,
+}: {
+  entry: ModelEntry;
+  isDefault: boolean;
+  open: boolean;
+  confirming: boolean;
+  onToggle: () => void;
+  onPatch: (patch: Partial<ModelEntry>, save?: boolean) => void;
+  onCommit: () => void;
+  onSetDefault: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="model-row">
+      <button
+        type="button"
+        className="model-row-head"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="model-row-name">{entry.alias || entry.id}</span>
+        {isDefault && <span className="model-badge">默认</span>}
+        <svg
+          className="model-row-chevron"
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 3 5 5-5 5" />
+        </svg>
+      </button>
+      <div className="model-row-body" data-open={open}>
+        <div className="model-row-body-inner">
+          {entry.alias && <p className="model-row-id">{entry.id}</p>}
+          <label className="field-label" htmlFor={`model-alias-${entry.id}`}>
+            别名<span className="font-normal text-muted">（选填）</span>
+          </label>
+          <input
+            id={`model-alias-${entry.id}`}
+            type="text"
+            value={entry.alias ?? ""}
+            onChange={(e) => onPatch({ alias: e.target.value })}
+            onBlur={onCommit}
+            placeholder="聊天区选择器显示用"
+            autoComplete="off"
+            spellCheck={false}
+            className="field-input"
+          />
+          <div className="mt-2.5 flex items-center justify-between">
+            <span className="text-[12.5px] font-medium text-ink">多模态</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!!entry.vision}
+              aria-label={`${entry.alias || entry.id} 多模态`}
+              onClick={() => onPatch({ vision: !entry.vision }, true)}
+              className="switch"
+            >
+              <span className="switch-knob" />
+            </button>
+          </div>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            <div>
+              <label className="field-label" htmlFor={`model-ctx-${entry.id}`}>
+                上下文窗口
+              </label>
+              <input
+                id={`model-ctx-${entry.id}`}
+                type="number"
+                value={entry.contextTokens || ""}
+                onChange={(e) =>
+                  onPatch({ contextTokens: Number(e.target.value) || 0 })
+                }
+                onBlur={onCommit}
+                placeholder="如 128000"
+                autoComplete="off"
+                className="field-input font-mono"
+              />
+            </div>
+            <div>
+              <label className="field-label" htmlFor={`model-max-${entry.id}`}>
+                最大输出
+              </label>
+              <input
+                id={`model-max-${entry.id}`}
+                type="number"
+                value={entry.maxTokens || ""}
+                onChange={(e) =>
+                  onPatch({ maxTokens: Number(e.target.value) || 0 })
+                }
+                onBlur={onCommit}
+                placeholder="如 8192"
+                autoComplete="off"
+                className="field-input font-mono"
+              />
+            </div>
+          </div>
+          <div className="mb-1 mt-2 flex items-center gap-3">
+            {!isDefault && (
+              <button
+                type="button"
+                className="model-row-action"
+                onClick={onSetDefault}
+              >
+                设为默认
+              </button>
+            )}
+            <button
+              type="button"
+              className={`model-row-action${
+                confirming ? " model-row-action-danger" : ""
+              }`}
+              onClick={onRemove}
+            >
+              {confirming ? "确认删除" : "删除"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsView({ onBack }: { onBack: () => void }) {
   const [cfgName, setCfgName] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [remember, setRemember] = useState(true);
   const [model, setModel] = useState("");
-  const [maxCtx, setMaxCtx] = useState(0);
   const [baseUrl, setBaseUrl] = useState("");
   const [theme, setTheme] = useState<ThemePref>("system");
+  // ── 模型列表(持久化):拉取 merge、手动添加、每模型独立配置 ──
+  const [modelList, setModelList] = useState<ModelEntry[]>([]);
+  const [newId, setNewId] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   // ── 模型列表拉取(仅手动) ──
-  const [models, setModels] = useState<string[]>([]);
   const [fetchState, setFetchState] = useState<FetchState>("idle");
   const [fetchError, setFetchError] = useState("");
   const fetchAbortRef = useRef<AbortController | null>(null);
-  // ── 模型建议面板(combobox):与输入框同宽对齐,支持键盘上下/回车/Esc ──
-  const [comboOpen, setComboOpen] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(-1);
-  const modelInputRef = useRef<HTMLInputElement>(null);
-  const comboBlurTimer = useRef<number | null>(null);
   // ── 保存反馈 ──
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -131,7 +269,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
       setApiKey(c.apiKey);
       setRemember(c.remember);
       setModel(c.model);
-      setMaxCtx(c.maxContextTokens);
+      setModelList(c.models);
       setBaseUrl(c.baseUrl);
       setTheme(c.theme);
     });
@@ -143,21 +281,25 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
-  // 卸载时中止进行中的拉取、收掉 blur 定时器
+  // 卸载时中止进行中的拉取
   useEffect(
     () => () => {
       fetchAbortRef.current?.abort();
-      if (comboBlurTimer.current !== null) clearTimeout(comboBlurTimer.current);
     },
     [],
   );
 
-  // 忘记确认 3s 未跟进则自动复位,避免按钮一直停在「危险态」
+  // 忘记 / 删除确认 3s 未跟进则自动复位,避免按钮一直停在「危险态」
   useEffect(() => {
     if (!confirmForget) return;
     const t = window.setTimeout(() => setConfirmForget(false), 3000);
     return () => clearTimeout(t);
   }, [confirmForget]);
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const t = window.setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteId]);
 
   /** apiKey / remember 变更:走 saveConfig 的 session/local 分流 */
   const saveKeyState = (key: string, rememberNext: boolean) =>
@@ -167,14 +309,15 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         apiKey: key.trim(),
         remember: rememberNext,
         model,
+        models: modelList,
         baseUrl,
-        maxContextTokens: maxCtx,
         theme,
       }),
     );
 
   /** 手动拉取模型列表:用当前输入的 Base URL + Key(未保存的也算)。
-   *  成功后进 datalist 建议;模型名为空时顺手填入第一个,避免「拉完还得手选」 */
+   *  结果与现有列表按 id merge —— 已有条目保留每模型配置,新 ID 追加;
+   *  默认模型为空时顺手设为第一项,避免「拉完还得手选」 */
   const fetchList = async () => {
     if (fetchState === "loading") return;
     const key = apiKey.trim();
@@ -190,17 +333,71 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     setFetchError("");
     try {
       const list = await fetchModels(baseUrl.trim() || DEFAULT_BASE_URL, key, ctl.signal);
-      setModels(list);
-      setFetchState("idle");
-      if (!model.trim() && list.length > 0) {
-        setModel(list[0]);
-        run(savePrefs({ model: list[0] }));
+      const map = new Map(modelList.map((m) => [m.id, m]));
+      for (const id of list) if (!map.has(id)) map.set(id, { id });
+      const next = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
+      setModelList(next);
+      const ops: Promise<void>[] = [savePrefs({ models: next })];
+      if (!model && next.length > 0) {
+        setModel(next[0].id);
+        ops.push(savePrefs({ model: next[0].id }));
       }
+      run(Promise.all(ops).then(() => {}));
+      setFetchState("idle");
     } catch (e) {
       if (ctl.signal.aborted) return;
       setFetchState("error");
       setFetchError(e instanceof Error ? e.message.slice(0, 120) : String(e));
     }
+  };
+
+  /** 局部更新一个模型条目;save=true 即时落盘(开关类),
+   *  文本/数字类 onChange 只改本地,失焦时 commitModels 统一落盘 */
+  const patchModel = (id: string, patch: Partial<ModelEntry>, save = false) => {
+    const next = modelList.map((m) => (m.id === id ? { ...m, ...patch } : m));
+    setModelList(next);
+    if (save) run(savePrefs({ models: next }));
+  };
+
+  /** 文本/数字字段的失焦落盘(闭包里的 modelList 即当前最新值) */
+  const commitModels = () => run(savePrefs({ models: modelList }));
+
+  const addModel = () => {
+    const id = newId.trim();
+    if (!id) return;
+    setNewId("");
+    if (modelList.some((m) => m.id === id)) return; // 重复 ID 忽略
+    const next = [...modelList, { id }].sort((a, b) => a.id.localeCompare(b.id));
+    setModelList(next);
+    const ops: Promise<void>[] = [savePrefs({ models: next })];
+    if (!model) {
+      setModel(id);
+      ops.push(savePrefs({ model: id }));
+    }
+    run(Promise.all(ops).then(() => {}));
+  };
+
+  const setDefaultModel = (id: string) => {
+    setModel(id);
+    run(savePrefs({ model: id }));
+  };
+
+  /** 两段确认删除;删的是默认模型时,默认回退到剩余第一项(空则清空) */
+  const removeModel = (id: string) => {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    setConfirmDeleteId(null);
+    const next = modelList.filter((m) => m.id !== id);
+    setModelList(next);
+    const ops: Promise<void>[] = [savePrefs({ models: next })];
+    if (model === id) {
+      const fallback = next[0]?.id ?? "";
+      setModel(fallback);
+      ops.push(savePrefs({ model: fallback }));
+    }
+    run(Promise.all(ops).then(() => {}));
   };
 
   const copyLogs = async () => {
@@ -233,31 +430,6 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   const clearLogs = async () => {
     await clearAllLogs();
     setLogCount(0);
-  };
-
-  /** 建议项 = 拉取到的完整列表,不做输入过滤(输入框留给人手填,面板只负责展示候选) */
-  const modelSuggestions = models;
-
-  const openCombo = () => {
-    if (models.length === 0) return;
-    if (comboBlurTimer.current !== null) {
-      clearTimeout(comboBlurTimer.current);
-      comboBlurTimer.current = null;
-    }
-    setActiveIdx(-1);
-    setComboOpen(true);
-  };
-
-  const selectModel = (m: string) => {
-    setModel(m);
-    setComboOpen(false);
-    run(savePrefs({ model: m }));
-  };
-
-  const clearModel = () => {
-    setModel("");
-    run(savePrefs({ model: "" }));
-    modelInputRef.current?.focus(); // 清空后留在输入框,建议面板随之展开全部
   };
 
   const forget = async () => {
@@ -430,109 +602,8 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
             不开启则仅本次会话有效，关闭浏览器后失效。
           </p>
 
-          <label className="field-label" htmlFor="settings-model">
-            模型名
-          </label>
-          <div className="flex items-center gap-2">
-            <div className="relative min-w-0 flex-1">
-              <input
-                ref={modelInputRef}
-                id="settings-model"
-                type="text"
-                value={model}
-                onChange={(e) => {
-                  setModel(e.target.value);
-                  openCombo(); // 输入即(重新)展开建议 —— 选中后面板已收起,再改时不触发 onFocus
-                }}
-                onFocus={openCombo}
-                onBlur={() => {
-                  // 延迟收起:让建议项的 mousedown(已 preventDefault)先完成选择
-                  comboBlurTimer.current = window.setTimeout(
-                    () => setComboOpen(false),
-                    120,
-                  );
-                  run(savePrefs({ model: model.trim() }));
-                }}
-                onKeyDown={(e) => {
-                  const n = modelSuggestions.length;
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    if (!comboOpen) {
-                      if (n > 0) {
-                        openCombo();
-                        setActiveIdx(e.key === "ArrowDown" ? 0 : n - 1);
-                      }
-                      return;
-                    }
-                    setActiveIdx((i) =>
-                      e.key === "ArrowDown"
-                        ? Math.min(i + 1, n - 1)
-                        : Math.max(i - 1, 0),
-                    );
-                  } else if (e.key === "Enter") {
-                    if (comboOpen && activeIdx >= 0 && modelSuggestions[activeIdx]) {
-                      e.preventDefault();
-                      selectModel(modelSuggestions[activeIdx]);
-                    }
-                  } else if (e.key === "Escape") {
-                    setComboOpen(false);
-                  }
-                }}
-                placeholder="从建议选择或手动填写"
-                autoComplete="off"
-                role="combobox"
-                aria-expanded={comboOpen && modelSuggestions.length > 0}
-                aria-controls="settings-model-combo"
-                spellCheck={false}
-                className="field-input has-eye font-mono"
-              />
-              {model && (
-                <button
-                  type="button"
-                  onClick={clearModel}
-                  aria-label="清空模型名"
-                  className="settings-eye-btn"
-                >
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 12 12"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
-                  </svg>
-                </button>
-              )}
-              {comboOpen && modelSuggestions.length > 0 && (
-                <div
-                  id="settings-model-combo"
-                  role="listbox"
-                  aria-label="可选模型"
-                  className="combo-pop"
-                >
-                  {modelSuggestions.map((m, i) => (
-                    <button
-                      key={m}
-                      type="button"
-                      role="option"
-                      aria-selected={m === model}
-                      data-active={i === activeIdx || undefined}
-                      className="combo-option"
-                      onMouseDown={(e) => {
-                        e.preventDefault(); // 输入框不失焦,选择在 blur 收起前完成
-                        selectModel(m);
-                      }}
-                      onMouseEnter={() => setActiveIdx(i)}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-[12.5px] font-medium text-ink">模型</span>
             <button
               type="button"
               onClick={fetchList}
@@ -542,17 +613,63 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               {fetchState === "loading" ? "拉取中…" : "获取列表"}
             </button>
           </div>
-          {fetchState === "error" ? (
-            <p className="field-hint text-danger">
-              获取失败：{fetchError}。可手动填写模型名。
-            </p>
-          ) : models.length > 0 ? (
-            <p className="field-hint">
-              已拉取 {models.length} 个模型，聚焦输入框从建议中选择，也可直接输入。
-            </p>
+          {fetchState === "error" && (
+            <p className="field-hint text-danger">获取失败：{fetchError}</p>
+          )}
+          {modelList.length > 0 ? (
+            <div className="model-list">
+              {modelList.map((m) => (
+                <ModelRow
+                  key={m.id}
+                  entry={m}
+                  isDefault={m.id === model}
+                  open={expandedId === m.id}
+                  confirming={confirmDeleteId === m.id}
+                  onToggle={() =>
+                    setExpandedId(expandedId === m.id ? null : m.id)
+                  }
+                  onPatch={(patch, save) => patchModel(m.id, patch, save)}
+                  onCommit={commitModels}
+                  onSetDefault={() => setDefaultModel(m.id)}
+                  onRemove={() => removeModel(m.id)}
+                />
+              ))}
+            </div>
           ) : (
             <p className="field-hint">
-              手动填写即可；点「获取列表」按当前 Base URL 与 Key 拉取可选模型。
+              还没有模型：点「获取列表」按当前 Base URL 与 Key
+              拉取，或在下方手动添加。
+            </p>
+          )}
+
+          {/* 手动添加:有些端点不提供 /models,或只想加一个 */}
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="text"
+              value={newId}
+              onChange={(e) => setNewId(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addModel();
+                }
+              }}
+              placeholder="手动添加模型 ID，如 deepseek-chat"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input font-mono"
+            />
+            <button
+              type="button"
+              onClick={addModel}
+              className="shrink-0 rounded-[10px] border border-line px-3 py-[7px] text-[12px] text-ink transition-colors hover:bg-surface-2"
+            >
+              添加
+            </button>
+          </div>
+          {modelList.length > 0 && (
+            <p className="field-hint">
+              点模型行展开配置；带「默认」标记的是对话使用的模型。
             </p>
           )}
         </div>
@@ -573,25 +690,6 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               }}
             />
           </div>
-        </div>
-
-        {/* ── 高级 ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">高级</h3>
-        <div className="settings-card">
-          <label className="field-label" htmlFor="settings-maxctx">
-            最大上下文（tokens）
-          </label>
-          <input
-            id="settings-maxctx"
-            type="number"
-            value={maxCtx || ""}
-            onChange={(e) => setMaxCtx(Number(e.target.value) || 0)}
-            onBlur={() => run(savePrefs({ maxContextTokens: maxCtx }))}
-            placeholder="选填，如 128000"
-            autoComplete="off"
-            className="field-input font-mono"
-          />
-          <p className="field-hint">填后开启对话顶部的上下文用量显示。</p>
         </div>
 
         {/* ── 诊断 ── */}

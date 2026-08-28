@@ -62,8 +62,21 @@ export async function runAgentLoop(
       });
       return;
     }
-
-    const provider = new OpenAIAdapter(config);
+    if (!config.model) {
+      port.postMessage({
+        type: MSG.AGENT_ERROR,
+        error: "请先在设置里添加并选择模型",
+      });
+      return;
+    }
+    // 当前默认模型对应的列表条目:提供每模型配置(最大输出 / 上下文窗口)
+    const modelEntry = config.models.find((m) => m.id === config.model);
+    const provider = new OpenAIAdapter({
+      apiKey: config.apiKey,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      maxTokens: modelEntry?.maxTokens,
+    });
     const tools = toProviderToolSchemas();
 
     const history = await loadHistory(payload.sessionId ?? "");
@@ -110,12 +123,13 @@ export async function runAgentLoop(
         signal,
       });
 
-      // 上下文用量:仅当用户在设置里填了 maxContextTokens 且 API 返回了 usage 时才推送
-      if (result.usage && config.maxContextTokens > 0) {
+      // 上下文用量:仅当模型条目配了上下文窗口且 API 返回了 usage 时才推送
+      const ctxMax = modelEntry?.contextTokens ?? 0;
+      if (result.usage && ctxMax > 0) {
         port.postMessage({
           type: MSG.AGENT_USAGE,
           used: result.usage.totalTokens,
-          max: config.maxContextTokens,
+          max: ctxMax,
         });
       }
 

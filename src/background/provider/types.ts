@@ -7,6 +7,7 @@ export interface ProviderConfig {
   apiKey: string;
   model: string;
   baseUrl?: string; // OpenAI 兼容端点,约定含 /v1,如 DeepSeek 用 https://api.deepseek.com/v1;缺省用官方地址
+  maxTokens?: number; // 单次回复上限;设置才发 max_tokens,缺省交给服务端默认
 }
 
 // ToolSchema 已在 shared/toolTypes.ts 定义,这里再导出供 provider 层消费

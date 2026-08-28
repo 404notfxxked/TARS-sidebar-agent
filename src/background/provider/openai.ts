@@ -37,7 +37,12 @@ type SSEChunk = {
 
 export class OpenAIAdapter implements ChatProvider {
   constructor(
-    private cfg: { apiKey: string; model: string; baseUrl?: string },
+    private cfg: {
+      apiKey: string;
+      model: string;
+      baseUrl?: string;
+      maxTokens?: number;
+    },
   ) {}
 
   async chat(req: ChatRequest): Promise<ChatResult> {
@@ -49,6 +54,7 @@ export class OpenAIAdapter implements ChatProvider {
         model: this.cfg.model,
         messages: toWireMessages(req.messages),
         ...(req.tools?.length ? { tools: req.tools.map(toWireTool) } : {}),
+        ...(this.cfg.maxTokens ? { max_tokens: this.cfg.maxTokens } : {}),
         stream: true,
         stream_options: { include_usage: true },
       },
