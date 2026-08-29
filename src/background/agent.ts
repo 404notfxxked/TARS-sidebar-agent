@@ -8,7 +8,7 @@ import {
 } from "../shared/messages";
 import { getTool, toProviderToolSchemas } from "./tools";
 import { OpenAIAdapter, type InternalMsg } from "./provider";
-import { loadConfig } from "../shared/configStore";
+import { loadConfig, inferMaxTokensField } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
 import { loadHistory, saveHistory } from "./sessionHistory";
 import { setToolExecutionContext } from "./toolContext";
@@ -16,6 +16,10 @@ import { setToolExecutionContext } from "./toolContext";
 const log = createLogger({ ctx: "bg" });
 
 const MAX_TURNS = 10;
+
+// 步数耗尽后的收尾指令:只随最后一次「无工具」请求发送,不写入持久化历史。
+// 目的:让模型向用户交代进展与剩余步骤,而不是被无声砍断在工具调用中间。
+const WRAP_UP_NUDGE = `<system-note>本轮可用的推理步数已用完,工具调用已停用。请直接向用户说明:目前完成了什么、还剩什么没做。不要调用工具。用户发送「继续」后,你可以从当前进度接着做。</system-note>`;
 
 // 注意:SYSTEM_PROMPT 保持静态,不要往里拼每轮变化的上下文 —— 会破坏 prompt cache 命中。
 // 本轮变化的上下文(如划选提示)走 user message / tool result。
@@ -76,14 +80,23 @@ export async function runAgentLoop(
       model: config.model,
       baseUrl: config.baseUrl,
       maxTokens: modelEntry?.maxTokens,
+      maxTokensField:
+        modelEntry?.maxTokensField ?? inferMaxTokensField(config.model),
     });
     const tools = toProviderToolSchemas();
 
     const history = await loadHistory(payload.sessionId ?? "");
+    const userContent = await buildUserContent(payload.text);
     const messages: InternalMsg[] = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...history,
-      { role: "user", content: await buildUserContent(payload.text) },
+      // 溢出防护:估算超窗时丢弃最早的整轮对话(仅 contextTokens 配置了才生效)
+      ...trimHistoryForWindow(history, {
+        contextTokens: modelEntry?.contextTokens,
+        maxTokens: modelEntry?.maxTokens,
+        currentEstimate:
+          estimateTokens(SYSTEM_PROMPT) + estimateTokens(userContent),
+      }),
+      { role: "user", content: userContent },
     ];
 
     // 工具分发:注册表里的工具统一在这里执行。
@@ -106,6 +119,9 @@ export async function runAgentLoop(
       }
     };
 
+    /** 循环是否以最终回答收束;false = 步数耗尽,循环外做收尾兜底 */
+    let completed = false;
+
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       turnNo = turn + 1;
       log.debug("agent", `turn ${turn + 1}/${MAX_TURNS}`);
@@ -123,16 +139,6 @@ export async function runAgentLoop(
         signal,
       });
 
-      // 上下文用量:仅当模型条目配了上下文窗口且 API 返回了 usage 时才推送
-      const ctxMax = modelEntry?.contextTokens ?? 0;
-      if (result.usage && ctxMax > 0) {
-        port.postMessage({
-          type: MSG.AGENT_USAGE,
-          used: result.usage.totalTokens,
-          max: ctxMax,
-        });
-      }
-
       // 模型要调用工具 → 执行并回填观察结果,进入下一轮
       if (result.toolCalls.length > 0) {
         messages.push({
@@ -142,6 +148,7 @@ export async function runAgentLoop(
           ...(result.reasoning_content !== undefined
             ? { reasoning_content: result.reasoning_content }
             : {}),
+          model: config.model,
         });
 
         for (const tc of result.toolCalls) {
@@ -198,13 +205,45 @@ export async function runAgentLoop(
         ...(result.reasoning_content !== undefined
           ? { reasoning_content: result.reasoning_content }
           : {}),
+        model: config.model,
       });
+      completed = true;
       break;
+    }
+
+    // 步数耗尽且没得到最终回答(最后一轮仍是工具调用)→ 强制一次「无工具」收尾。
+    // 收尾指令只进这一次请求、不持久化;产出的 assistant 总结会写入历史,
+    // 历史因此以 assistant 结尾 —— 下一条 user 消息直接接上,不会留下
+    // tool 消息悬在历史末尾的非法结构(严格端点会拒收)。
+    if (!completed) {
+      log.warn("agent", `max turns (${MAX_TURNS}) reached — wrapping up`, {
+        sessionId: payload.sessionId,
+      });
+      port.postMessage({ type: MSG.AGENT_THINKING, turn: MAX_TURNS - 1 });
+      const wrap = await provider.chat({
+        messages: [...messages, { role: "user", content: WRAP_UP_NUDGE }],
+        // 故意不传 tools:收尾轮禁止再调工具
+        onDelta: (delta) =>
+          port.postMessage({ type: MSG.AGENT_MESSAGE, delta }),
+        onReasoningDelta: (delta) =>
+          port.postMessage({ type: MSG.AGENT_REASONING, delta }),
+        signal,
+      });
+      messages.push({
+        role: "assistant",
+        content: wrap.content,
+        ...(wrap.reasoning_content !== undefined
+          ? { reasoning_content: wrap.reasoning_content }
+          : {}),
+        model: config.model,
+      });
     }
 
     // 本轮结束:把完整 messages 写回 storage,供下一条消息续接
     // (tools 消息也一并保存,保证下次提问时 LLM 有完整上下文)
     // 注意 slice(1) 排除 system —— 下次加载时由 runAgentLoop 重新拼 system,避免重复
+    // 若本轮发生过溢出裁剪,写回的是裁剪后的历史:被裁的最早几轮就此丢弃
+    // (storage 本就只在浏览器会话内存活,可接受的有损降级)
     // 写盘失败不打断本轮回答:历史丢了,但这次回复仍然送达
     if (payload.sessionId) {
       try {
@@ -216,7 +255,10 @@ export async function runAgentLoop(
       }
     }
 
-    port.postMessage({ type: MSG.AGENT_DONE });
+    port.postMessage({
+      type: MSG.AGENT_DONE,
+      reason: completed ? "complete" : "max-turns",
+    });
   } catch (err) {
     // 用户取消 → 静默结束,不算错误(wrapPort 也会拒绝再发事件)
     if (signal?.aborted) {
@@ -267,4 +309,74 @@ function stringifyResult(r: unknown): string {
   } catch {
     return String(r);
   }
+}
+
+// ---- 上下文溢出防护(轻量) ----
+// 仅当模型条目配了 contextTokens 时生效;目标是挡住「长历史 + 小窗模型」时
+// 必现的 400,不求精确 —— token 只做量级估算,精确记账等将来真需要时再引入。
+// 丢弃单位是「整轮对话」(一条 user 起,到下一条 user 前):保证留下的 tool
+// 消息总和它的 assistant 配对在同一轮里,不会裁出非法消息结构。
+
+/** 粗估 token 数:CJK≈1.1 token/字,西文≈4 字符/token,向上取整 */
+function estimateTokens(text: string): number {
+  let cjk = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.codePointAt(i)! > 0x2e7f) cjk++;
+  }
+  return Math.ceil(cjk * 1.1 + (text.length - cjk) / 4);
+}
+
+/** 消息的估量文本:assistant 的工具调用参数(JSON)也计入 */
+function messageText(m: InternalMsg): string {
+  if (m.role === "assistant") {
+    return (
+      (m.content ?? "") + (m.toolCalls ? JSON.stringify(m.toolCalls) : "")
+    );
+  }
+  return m.content; // system / user / tool 的 content 都是字符串
+}
+
+function trimHistoryForWindow(
+  history: InternalMsg[],
+  opts: {
+    contextTokens?: number;
+    maxTokens?: number;
+    /** 本轮固定开销的估算(system + 即将拼入的 user 消息) */
+    currentEstimate: number;
+  },
+): InternalMsg[] {
+  const { contextTokens, maxTokens } = opts;
+  if (!contextTokens || history.length === 0) return history;
+  // 预留输出上限 + 20% 余量;下限 1/4 窗口,防 contextTokens 配小后把历史裁到只剩一轮
+  const limit = Math.max(
+    contextTokens - (maxTokens ?? 4096) - Math.floor(contextTokens * 0.2),
+    Math.floor(contextTokens / 4),
+  );
+  const sum = (from: number) => {
+    let n = opts.currentEstimate;
+    for (let i = from; i < history.length; i++) {
+      n += estimateTokens(messageText(history[i]));
+    }
+    return n;
+  };
+  if (sum(0) <= limit) return history;
+  // 每轮起始 = user 消息的下标;从最旧的一轮开始整轮丢弃,直到塞得下或只剩最后一轮
+  const roundStarts: number[] = [];
+  history.forEach((m, i) => {
+    if (m.role === "user") roundStarts.push(i);
+  });
+  let dropIdx = 0;
+  while (
+    dropIdx < roundStarts.length - 1 &&
+    sum(roundStarts[dropIdx]) > limit
+  ) {
+    dropIdx++;
+  }
+  if (dropIdx === 0) return history; // 单轮就超限:保底全发,交给 API 报错
+  log.warn("agent", "history overflow — dropped oldest round(s)", {
+    droppedTurns: dropIdx,
+    keptMsgs: history.length - roundStarts[dropIdx],
+    limitTokens: limit,
+  });
+  return history.slice(roundStarts[dropIdx]);
 }

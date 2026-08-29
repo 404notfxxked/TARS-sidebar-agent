@@ -19,7 +19,6 @@ export const MSG = {
   AGENT_MESSAGE: 'agent_message',
   AGENT_DONE: 'agent_done',
   AGENT_ERROR: 'agent_error',
-  AGENT_USAGE: 'agent_usage',
   HISTORY: 'history',
 } as const
 
@@ -57,7 +56,7 @@ export interface ChatRecord {
 export type AgentEvent =
   | { type: typeof MSG.AGENT_STARTED; sessionId: string }
   | { type: typeof MSG.AGENT_THINKING; turn: number }
-  /** 思考过程增量(DeepSeek reasoning_content,流式);先于 content 到达 */
+  /** 思考过程增量(reasoning_content / reasoning 方言,流式);先于 content 到达 */
   | { type: typeof MSG.AGENT_REASONING; delta: string }
   | {
       type: typeof MSG.AGENT_TOOL_CALL;
@@ -74,7 +73,7 @@ export type AgentEvent =
       result: unknown;
     }
   | { type: typeof MSG.AGENT_MESSAGE; delta: string }
-  | { type: typeof MSG.AGENT_DONE }
+  /** reason 缺省 = 兜底/取消路径发的 DONE(如 index.ts 的 finally);"max-turns" = 步数耗尽后收尾 */
+  | { type: typeof MSG.AGENT_DONE; reason?: "complete" | "max-turns" }
   | { type: typeof MSG.AGENT_ERROR; error: string }
-  | { type: typeof MSG.AGENT_USAGE; used: number; max: number }
   | { type: typeof MSG.HISTORY; messages: ChatRecord[] }

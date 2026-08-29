@@ -190,6 +190,34 @@ function ModelRow({
               />
             </div>
           </div>
+          <div className="mt-1">
+            <label
+              className="field-label"
+              htmlFor={`model-mtf-${entry.id}`}
+            >
+              输出上限字段
+            </label>
+            <select
+              id={`model-mtf-${entry.id}`}
+              value={entry.maxTokensField ?? ""}
+              onChange={(e) =>
+                onPatch(
+                  {
+                    maxTokensField: (e.target.value ||
+                      undefined) as ModelEntry["maxTokensField"],
+                  },
+                  true,
+                )
+              }
+              className="field-input"
+            >
+              <option value="">自动（按模型名推断）</option>
+              <option value="max_tokens">max_tokens（兼容端点）</option>
+              <option value="max_completion_tokens">
+                max_completion_tokens（OpenAI 推理模型）
+              </option>
+            </select>
+          </div>
           <div className="mb-1 mt-2 flex items-center gap-3">
             {!isDefault && (
               <button
