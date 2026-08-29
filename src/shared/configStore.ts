@@ -16,10 +16,23 @@ export interface ModelEntry {
   vision?: boolean;
   /** 上下文窗口 tokens:仅用作对话顶部用量条的分子/分母;0/缺省 = 不展示 */
   contextTokens?: number;
-  /** 单次回复上限:设置后才作为 max_tokens 随请求发送 */
+  /** 单次回复上限:设置后才作为请求发送(字段见 maxTokensField) */
   maxTokens?: number;
+  /** maxTokens 的请求字段名;缺省按模型名推断(见 inferMaxTokensField),仅 OpenAI
+   *  推理模型等不认 max_tokens 的端点需要手动改 */
+  maxTokensField?: "max_tokens" | "max_completion_tokens";
   // 未来规划:推理模型标记。各家请求参数碎片化(reasoning_effort / enable_thinking /
   // thinking.type / chat_template_kwargs),没有可移植语义,暂不引入
+}
+
+/** 按模型名推断 maxTokens 请求字段:OpenAI o 系列 / gpt-5 只认 max_completion_tokens。
+ *  兼容 OpenRouter 风格带厂商前缀的 id("openai/o3-mini:free");其余返回 undefined(用 max_tokens) */
+export function inferMaxTokensField(
+  id: string,
+): "max_completion_tokens" | undefined {
+  return /(^|\/)(o[134](?:-|\b)|gpt-5)/.test(id)
+    ? "max_completion_tokens"
+    : undefined;
 }
 
 export interface AppConfig {

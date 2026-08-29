@@ -19,7 +19,10 @@ type SSEChunk = {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      // 思考内容的两种方言:DeepSeek 系(DeepSeek/Qwen/GLM/SiliconFlow…)用
+      // reasoning_content;OpenRouter / 新版 vLLM / Together 用扁平的 reasoning
       reasoning_content?: string;
+      reasoning?: string;
       tool_calls?: Array<{
         index: number;
         id?: string;
@@ -42,6 +45,7 @@ export class OpenAIAdapter implements ChatProvider {
       model: string;
       baseUrl?: string;
       maxTokens?: number;
+      maxTokensField?: "max_tokens" | "max_completion_tokens";
     },
   ) {}
 
@@ -54,7 +58,12 @@ export class OpenAIAdapter implements ChatProvider {
         model: this.cfg.model,
         messages: toWireMessages(req.messages),
         ...(req.tools?.length ? { tools: req.tools.map(toWireTool) } : {}),
-        ...(this.cfg.maxTokens ? { max_tokens: this.cfg.maxTokens } : {}),
+        ...(this.cfg.maxTokens
+          ? {
+              [this.cfg.maxTokensField ?? "max_tokens"]:
+                this.cfg.maxTokens,
+            }
+          : {}),
         stream: true,
         stream_options: { include_usage: true },
       },
@@ -86,10 +95,16 @@ export class OpenAIAdapter implements ChatProvider {
         content += delta.content;
         req.onDelta(delta.content);
       }
+      // 两种方言都可能有(实际一家只会用其一),归并进同一缓冲
       if (typeof delta.reasoning_content === "string") {
         reasoning += delta.reasoning_content;
         hasReasoning = true;
         req.onReasoningDelta?.(delta.reasoning_content);
+      }
+      if (typeof delta.reasoning === "string") {
+        reasoning += delta.reasoning;
+        hasReasoning = true;
+        req.onReasoningDelta?.(delta.reasoning);
       }
       for (const tc of delta.tool_calls ?? []) {
         toolAcc[tc.index] ??= { id: "", name: "", args: "" };

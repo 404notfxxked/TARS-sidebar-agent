@@ -47,6 +47,8 @@ interface ChatMsg {
   sessionId: string;
   /** 后台报错:以 ErrorBubble 呈现,不走 markdown */
   error?: boolean;
+  /** 系统运行提示(如步数耗尽):以 NoticeBubble 呈现 */
+  notice?: boolean;
 }
 
 type AgentStatus = "idle" | "thinking" | "streaming";
@@ -88,13 +90,6 @@ type ToolResultEvent = Extract<
 const PREVIEW_CHARS = 500;
 const REASONING_MAX_CHARS = 2000;
 
-function formatTokens(n: number): string {
-  if (n >= 1_000_000)
-    return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
-  return String(n);
-}
-
 export default function ChatView({
   onOpenSettings,
 }: {
@@ -103,9 +98,6 @@ export default function ChatView({
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
-  const [usage, setUsage] = useState<{ used: number; max: number } | null>(
-    null,
-  );
   const [currentSession, setCurrentSession] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const streamingRef = useRef(false);
@@ -362,7 +354,6 @@ export default function ChatView({
         case MSG.AGENT_STARTED:
           sessionRef.current = evt.sessionId;
           setStatus("thinking");
-          setUsage(null);
           // 新一轮开始:文本段归档兜底(正常在 submit 已做),过程段丢弃
           flushRunTexts();
           clearRun();
@@ -392,6 +383,18 @@ export default function ChatView({
         case MSG.AGENT_DONE:
           settleRun();
           setStatus("idle");
+          // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示
+          if (evt.reason === "max-turns") {
+            setMessages((ms) => [
+              ...ms,
+              {
+                role: "assistant",
+                content: "",
+                sessionId: sessionRef.current,
+                notice: true,
+              },
+            ]);
+          }
           break;
         case MSG.AGENT_ERROR:
           // 错误详情由后台日志记录,面板只负责呈现(独立错误样式,不走 markdown)
@@ -406,9 +409,6 @@ export default function ChatView({
               error: true,
             },
           ]);
-          break;
-        case MSG.AGENT_USAGE:
-          setUsage({ used: evt.used, max: evt.max });
           break;
         case MSG.HISTORY:
           // 后端回的历史 → 填入该会话。
@@ -535,7 +535,6 @@ export default function ChatView({
     }
     setMessages([]);
     setInput("");
-    setUsage(null);
     clearRun(); // 对话清空,本轮执行流也不保留
     setCurrentSession("");
     // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
@@ -617,6 +616,8 @@ export default function ChatView({
                 <UserBubble key={i} text={m.content} />
               ) : m.error ? (
                 <ErrorBubble key={i} text={m.content} />
+              ) : m.notice ? (
+                <NoticeBubble key={i} />
               ) : (
                 <AssistantBubble key={i} text={m.content} />
               );
@@ -647,29 +648,6 @@ export default function ChatView({
             </div>
           )}
       </div>
-
-      {usage && (
-        <div className="usage-bar px-4 py-1">
-          <div className="usage-bar-track">
-            <div
-              className="usage-bar-fill"
-              style={{
-                width: `${Math.min((usage.used / usage.max) * 100, 100)}%`,
-              }}
-              data-usage-level={
-                usage.used / usage.max < 0.5
-                  ? "low"
-                  : usage.used / usage.max < 0.8
-                    ? "mid"
-                    : "high"
-              }
-            />
-          </div>
-          <span className="usage-bar-label">
-            {formatTokens(usage.used)} / {formatTokens(usage.max)}
-          </span>
-        </div>
-      )}
 
       <form
         onSubmit={(e) => {
@@ -1256,6 +1234,40 @@ const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
     </div>
   );
 });
+
+/** 系统运行提示条(非错误):步数耗尽等状态说明,视觉层级低于错误 */
+const NoticeBubble = memo(function NoticeBubble() {
+  return (
+    <div className="msg-in flex w-full items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-muted">
+      <InfoIcon />
+      <span className="min-w-0 flex-1">
+        本轮已达到步数上限,任务未完成 —— 发送「继续」可以接着做。
+      </span>
+    </div>
+  );
+});
+
+/** 信息圆标(系统提示条) */
+function InfoIcon() {
+  return (
+    <svg
+      className="mt-0.5 shrink-0"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M8 7.5v3.2" />
+      <path d="M8 5h.01" />
+    </svg>
+  );
+}
 
 /** 警示三角(错误消息) */
 function WarnIcon() {
