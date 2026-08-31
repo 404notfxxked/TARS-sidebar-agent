@@ -46,6 +46,8 @@ export interface AppConfig {
   models: ModelEntry[];
   baseUrl: string; // 空 = 用 OpenAI 官方地址;约定含 /v1,如 https://api.deepseek.com/v1
   theme: ThemePref;
+  /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 开 */
+  webSearch: boolean;
 }
 
 export async function loadConfig(): Promise<AppConfig> {
@@ -58,6 +60,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "baseUrl",
     "maxContextTokens",
     "theme",
+    "webSearch",
   ]);
 
   const apiKey = s.apiKey ?? l.apiKey ?? "";
@@ -76,6 +79,8 @@ export async function loadConfig(): Promise<AppConfig> {
     models,
     baseUrl: l.baseUrl ?? "",
     theme: l.theme ?? "system",
+    // 旧版本没有这个 key:undefined 视为开启(能力默认可用,开关只做显式关闭)
+    webSearch: l.webSearch !== false,
   };
 }
 
@@ -83,7 +88,7 @@ export async function loadConfig(): Promise<AppConfig> {
  *  自动保存的各控件按字段调用,避免整包重写 apiKey 相关存储 */
 export async function savePrefs(
   prefs: Partial<
-    Pick<AppConfig, "name" | "model" | "models" | "baseUrl" | "theme">
+    Pick<AppConfig, "name" | "model" | "models" | "baseUrl" | "theme" | "webSearch">
   >,
 ): Promise<void> {
   await chrome.storage.local.set(prefs);
