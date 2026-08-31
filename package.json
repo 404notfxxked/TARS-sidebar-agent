@@ -13,6 +13,7 @@
     "build": "tsc --noEmit && vite build && node scripts/postbuild-offscreen.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
+    "icons:export": "node scripts/export-icons.mjs",
     "tokens:m3": "node scripts/generate-m3.mjs"
   },
   "dependencies": {

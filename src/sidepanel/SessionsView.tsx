@@ -133,7 +133,7 @@ export default function SessionsView({
           type="button"
           onClick={onBack}
           aria-label="返回对话"
-          className="settings-icon-btn h-7 w-7"
+          className="icon-btn"
         >
           <svg
             width="14"
@@ -149,15 +149,13 @@ export default function SessionsView({
             <path d="M10 3 5 8l5 5" />
           </svg>
         </button>
-        <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em] text-ink">
-          历史会话
-        </h2>
+        <h2 className="m-0 text-[16px] font-medium text-on-surface">历史会话</h2>
         <button
           type="button"
           onClick={onNew}
           aria-label="发起新对话"
           title="发起新对话"
-          className="settings-icon-btn ml-auto h-7 w-7"
+          className="icon-btn ml-auto"
         >
           <svg
             width="14"
@@ -186,7 +184,7 @@ export default function SessionsView({
             strokeWidth="1.5"
             strokeLinecap="round"
             aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
           >
             <circle cx="7" cy="7" r="4.5" />
             <path d="m10.5 10.5 3 3" />
@@ -205,7 +203,7 @@ export default function SessionsView({
             aria-label="搜索会话"
             autoComplete="off"
             spellCheck={false}
-            className="field-input py-1.5 pl-8 text-[12.5px]"
+            className="search-bar"
           />
         </div>
       </div>
@@ -216,7 +214,7 @@ export default function SessionsView({
         ) : sessions.length === 0 ? (
           <EmptyState onNew={onNew} />
         ) : groups.length === 0 ? (
-          <p className="px-1 py-8 text-center text-[12.5px] text-muted">
+          <p className="px-1 py-8 text-center text-[12.5px] text-on-surface-variant">
             没有找到匹配「{query.trim()}」的会话
           </p>
         ) : (
@@ -264,8 +262,8 @@ function SessionRow({
   return (
     <li className="sessions-row-in" style={{ animationDelay: `${delay}ms` }}>
       <div
-        className={`group flex items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
-          active ? "bg-accent-soft" : "hover:bg-ink/5"
+        className={`group flex items-center gap-1 rounded-md px-2 py-2 transition-colors duration-150 ${
+          active ? "bg-secondary-container" : "hover:bg-on-surface/8"
         }`}
       >
         <button
@@ -274,12 +272,16 @@ function SessionRow({
           className="min-w-0 flex-1 cursor-pointer text-left"
         >
           <span className="flex items-center gap-1.5">
-            <span className="min-w-0 truncate text-[13px] leading-snug text-ink">
+            <span className="min-w-0 truncate text-[13px] leading-snug text-on-surface">
               {s.title}
             </span>
-            {active && <span className="model-badge shrink-0">当前</span>}
+            {active && (
+              <span className="shrink-0 rounded-full bg-primary px-2 py-px text-[10.5px] font-medium text-on-primary">
+                当前
+              </span>
+            )}
           </span>
-          <span className="mt-0.5 block text-[11px] text-muted">
+          <span className="mt-0.5 block text-[11px] text-on-surface-variant">
             {shortTime(s.updatedAt)} · {s.msgCount} 条
           </span>
         </button>
@@ -291,10 +293,10 @@ function SessionRow({
               ? `再点一次确认删除「${s.title}」`
               : `删除会话「${s.title}」`
           }
-          className={`shrink-0 rounded-md p-1.5 transition-colors ${
+          className={`shrink-0 rounded-full p-1.5 transition-colors duration-150 ${
             confirming
-              ? "text-[11px] leading-none text-danger"
-              : "text-muted opacity-0 hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
+              ? "text-[11px] font-medium leading-none text-error"
+              : "text-on-surface-variant opacity-0 hover:bg-error/8 hover:text-error focus-visible:opacity-100 group-hover:opacity-100"
           }`}
         >
           {confirming ? "确认删除" : <TrashIcon />}
@@ -330,8 +332,11 @@ function SkeletonRows() {
     <div className="space-y-4 px-2 pt-3" aria-hidden="true">
       {[72, 55, 63, 46].map((w, i) => (
         <div key={i} className="animate-pulse space-y-1.5">
-          <div className="h-3 rounded bg-line" style={{ width: `${w}%` }} />
-          <div className="h-2 w-2/5 rounded bg-line" />
+          <div
+            className="h-3 rounded bg-surface-container-highest"
+            style={{ width: `${w}%` }}
+          />
+          <div className="h-2 w-2/5 rounded bg-surface-container-highest" />
         </div>
       ))}
     </div>
@@ -351,18 +356,16 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden="true"
-        className="text-muted opacity-60"
+        className="text-on-surface-variant opacity-60"
       >
         <path d="M3 12a9 9 0 1 0 3-6.7" />
         <path d="M3 4v4h4" />
         <path d="M12 7v5l3 2" />
       </svg>
-      <p className="m-0 text-[13px] text-muted">还没有历史会话</p>
-      <button
-        type="button"
-        onClick={onNew}
-        className="rounded-full border border-outline px-4 py-1.5 text-[12.5px] font-medium text-accent transition-colors hover:bg-accent/8"
-      >
+      <p className="m-0 text-[13px] text-on-surface-variant">
+        还没有历史会话
+      </p>
+      <button type="button" onClick={onNew} className="settings-btn">
         发起新对话
       </button>
     </div>

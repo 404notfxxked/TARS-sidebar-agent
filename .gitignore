@@ -24,3 +24,4 @@ tests/
 
 # 本地项目记忆(路线图/决策笔记;README「路线图」指向它,不进仓库)
 memory/
+design/
