@@ -807,9 +807,9 @@ function EmptyState() {
   return (
     <div className="px-2 py-10 text-center">
       <p className="mx-auto max-w-[220px] text-[16px] leading-relaxed text-muted">
-        TARS 在此，诚实度 90%，幽默值 75%。
+        有什么问题，直接问。
         <br />
-        你读你的，问就行：读页、联网查、点按填写都可以交给我。
+        我可以读取当前页面、联网搜索，也能帮你点按、填写。
       </p>
     </div>
   );
