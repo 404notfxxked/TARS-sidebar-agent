@@ -3,6 +3,8 @@
 import { callContentTool, getActiveTabId } from "../shared/contentTools";
 import { callOffscreenTool, ensureOffscreenDocument } from "../shared/docBridge";
 import { getToolExecutionContext } from "./toolContext";
+import { runWebSearch, type WebSearchArgs, type WebSearchResult } from "./webSearch";
+import { runWebFetch, type WebFetchArgs, type WebFetchResult } from "./webFetch";
 import type { ToolSchema } from "../shared/toolTypes";
 
 /** 工具定义:注册表条目 = 共享的 ToolSchema(纯 schema)+ 可执行的 execute */
@@ -219,6 +221,72 @@ registerTool<
       items?: { offset: number; level: number; title: string; descendant_headings?: number }[];
       hint?: string;
     }>("page_outline", args),
+});
+
+// ---- 联网搜索 ----
+// 无 Key 方案:SW fetch 搜索引擎 HTML(host_permissions 覆盖)→ offscreen
+// DOMParser 解析。引擎编排与兜底在 background/webSearch.ts,此处只做注册。
+registerTool<WebSearchArgs, WebSearchResult>({
+  type: "function",
+  name: "web_search",
+  displayName: "网络搜索",
+  description:
+    "联网搜索公开网页,返回按相关度排序的结果列表(标题、URL、摘要)。\n何时用:需要最新信息(新闻、版本发布、价格、天气)、当前打开的页面内容不足以回答、或用户明确要求搜索。\n何时别用:当前页面或自身知识足以回答时;在某个页面内定位内容用 page_find。\n注意:query 用精炼的核心关键词组合(可中英文各试一次),不要整句照抄用户提问;摘要不足以支撑回答时,优先用 web_fetch 读取对应链接的正文,其次才换关键词重搜(至多两次);回答时注明来源 URL。",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "搜索关键词组合:用空格分隔核心词,避免整句长问句",
+      },
+      max_results: { type: "number", description: "返回条数上限,默认 6,最大 10" },
+      recency: {
+        type: "string",
+        enum: ["day", "week", "month", "year"],
+        description: "时间范围过滤:只要最近一天/一周/一月/一年的结果;查时效性内容(新闻/版本发布)时使用,普通查询省略",
+      },
+      allowed_domains: {
+        type: "array",
+        items: { type: "string" },
+        description: "域名白名单(含子域),如 [\"react.dev\"];只在这些站点里找结果。与 blocked_domains 互斥,同时给时白名单优先",
+      },
+      blocked_domains: {
+        type: "array",
+        items: { type: "string" },
+        description: "域名黑名单(含子域):从结果中剔除这些站点",
+      },
+    },
+    required: ["query"],
+  },
+  execute: (args) => runWebSearch(args),
+});
+
+// ---- 网页读取 ----
+// 与 web_search 配套:搜索摘要不够时读正文。抓取/解码/缓存/解析在 offscreen
+// (background/webFetch.ts 校验转发,offscreen/fetchDoc.ts 实现)。
+registerTool<WebFetchArgs, WebFetchResult>({
+  type: "function",
+  name: "web_fetch",
+  displayName: "网页读取",
+  description:
+    "读取一个 URL 的网页正文(自动去除导航/脚本等噪音,保留标题/列表/代码块的 markdown 结构),按字符偏移分页返回,协议与 page_read 相同:offset 省略则从头读,next_offset 非 null 就把它传进 offset 继续翻页,done=true 表示读完。\n何时用:web_search 的摘要不足以回答、用户给了具体链接、需要阅读某网页全文。内网 http 页面同样可读。\n何时别用:读取当前浏览器里已打开的页面用 page_read(可带 tabId),不要对已打开页面重复 web_fetch。\n注意:只支持 http/https 文本页(PDF/图片会报错);先读第一窗,确有需要再翻页,不要为了「读全」机械翻到底。",
+  parameters: {
+    type: "object",
+    properties: {
+      url: { type: "string", description: "要读取的网页链接(http/https),来自 web_search 结果或用户提供的 URL" },
+      offset: {
+        type: "number",
+        description: "起始字符偏移;来自上次本工具返回的 next_offset;省略则从开头读",
+      },
+      chars: { type: "number", description: "本窗口大小(字符),默认 6000,最大 20000" },
+      refresh: {
+        type: "boolean",
+        description: "强制重新抓取;仅当怀疑页面已更新时使用",
+      },
+    },
+    required: ["url"],
+  },
+  execute: (args) => runWebFetch(args),
 });
 
 
