@@ -13,6 +13,8 @@ import {
   type CaptureMeta,
   type VirtualDoc,
 } from "./pipeline";
+import { parseSearchResults } from "./searchParse";
+import { fetchBuild, fetchRead } from "./fetchDoc";
 import { createLogger, installGlobalErrorHook } from "../shared/logger";
 
 const log = createLogger({ ctx: "off" });
@@ -148,9 +150,64 @@ async function handleDocTool(name: string, args: unknown, targetTabId: number, r
   }
 }
 
+// ---- 一次性解析任务(PARSE_CALL,不依赖任何 tab 快照)----
+// 与 DOC_TOOL_CALL 的区别:数据由 SW 随消息自带(如 web_search 抓到的
+// 搜索结果页 HTML),不需要先向某个 tab 索取快照
+
+interface SearchParsePayload {
+  engine?: unknown;
+  html?: unknown;
+  base?: unknown;
+  limit?: unknown;
+}
+
+// async:内部 throw 必须变成 rejected promise —— 同步 throw 会逃出
+// Promise.resolve(...) 成为 listener 未捕获异常,SW 侧拿到的是被 Chrome
+// 包装过的错误文本(如 "Uncaught Error: ..."),协议约定的错误前缀会失效
+async function handleParse(kind: string, payload: unknown): Promise<unknown> {
+  switch (kind) {
+    case "search": {
+      const p = (payload ?? {}) as SearchParsePayload;
+      if (typeof p.html !== "string" || !p.html) {
+        throw new Error("search 解析任务缺少 html 内容");
+      }
+      return parseSearchResults(
+        typeof p.engine === "string" ? p.engine : "",
+        p.html,
+        typeof p.base === "string" ? p.base : "",
+        typeof p.limit === "number" ? p.limit : 10,
+      );
+    }
+    case "fetch_build": {
+      const p = (payload ?? {}) as { url?: unknown; html?: unknown; base?: unknown };
+      if (typeof p.url !== "string" || typeof p.html !== "string" || typeof p.base !== "string") {
+        throw new Error("fetch_build 参数不完整");
+      }
+      return fetchBuild({ url: p.url, html: p.html, base: p.base });
+    }
+    case "fetch_read": {
+      const p = (payload ?? {}) as { url?: unknown };
+      if (typeof p.url !== "string" || !p.url) throw new Error("fetch_read 缺少 url");
+      return fetchRead(p as { url: string; offset?: unknown; chars?: unknown });
+    }
+    default:
+      throw new Error(`unknown parse kind: ${kind}`);
+  }
+}
+
 chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
   const msg = raw as
-    | { type?: string; id?: number; name?: string; args?: unknown; targetTabId?: number; refresh?: boolean; tabId?: number };
+    | {
+        type?: string;
+        id?: string | number;
+        name?: string;
+        args?: unknown;
+        targetTabId?: number;
+        refresh?: boolean;
+        tabId?: number;
+        kind?: string;
+        payload?: unknown;
+      };
   if (msg?.type === "DOC_TOOL_CALL") {
     handleDocTool(msg.name ?? "", msg.args, msg.targetTabId ?? -1, msg.refresh === true)
       .then((result) =>
@@ -168,6 +225,18 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
           ok: false,
           error,
         });
+      });
+    return true; // 异步响应
+  }
+  if (msg?.type === "PARSE_CALL") {
+    Promise.resolve(handleParse(msg.kind ?? "", msg.payload))
+      .then((result) =>
+        sendResponse({ type: "PARSE_RESULT", id: msg.id, ok: true, result }),
+      )
+      .catch((e) => {
+        const error = e instanceof Error ? e.message : String(e);
+        log.error("parse", `${msg.kind ?? "?"} 解析失败`, { error });
+        sendResponse({ type: "PARSE_RESULT", id: msg.id, ok: false, error });
       });
     return true; // 异步响应
   }

@@ -673,7 +673,7 @@ export default function ChatView({
                 submit();
               }
             }}
-            placeholder="读到什么，想问什么？"
+            placeholder="问点什么，或让 TARS 去查"
             aria-label="提问"
             disabled={status !== "idle"}
             className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:opacity-50"
@@ -807,9 +807,9 @@ function EmptyState() {
   return (
     <div className="px-2 py-10 text-center">
       <p className="mx-auto max-w-[220px] text-[16px] leading-relaxed text-muted">
-        读到什么，想问什么，就在这里问。
+        TARS 在此，诚实度 90%，幽默值 75%。
         <br />
-        我可以读取当前页面并回答。
+        你读你的，问就行：读页、联网查、点按填写都可以交给我。
       </p>
     </div>
   );
