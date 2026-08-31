@@ -48,13 +48,11 @@
     color: var(--muted);
   }
 
-  /* 分组卡片:实心表面。垂直节奏由子块自带,卡片只管左右包边 */
+  /* 分组卡片:M3 filled card —— 色调分层表达海拔,无边框无阴影 */
   .settings-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 14px;
+    background: var(--md-surface-container);
+    border-radius: var(--shape-m);
     padding: 1px 14px;
-    box-shadow: var(--shadow-sm);
   }
   /* 卡片内直接子块统一 9px 垂直节奏,子块之间一条发丝线(iOS 分组列表式) */
   .settings-card > * {
@@ -83,21 +81,24 @@
     color: var(--ink);
   }
 
-  /* 次级按钮(获取列表 / 添加):与 field-input 同圆角同高度 */
+  /* 次级按钮:M3 outlined —— pill 外形、主色文字、状态层反馈 */
   .settings-btn {
     flex-shrink: 0;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 7px 12px;
-    font-size: 12px;
-    color: var(--ink);
-    transition: background 150ms ease, opacity 150ms ease;
+    border: 1px solid var(--md-outline);
+    border-radius: var(--shape-full);
+    padding: 7px 14px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--md-primary);
+    transition: background var(--duration-s) var(--ease-emphasized);
   }
   .settings-btn:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--md-primary) 8%, transparent);
   }
   .settings-btn:disabled {
-    opacity: 0.5;
+    color: var(--md-on-surface);
+    border-color: color-mix(in srgb, var(--md-on-surface) 12%, transparent);
+    opacity: 0.6;
   }
 
   /* 堆叠字段:标签在上,控件全宽在下 */
@@ -110,25 +111,27 @@
   }
   .field-input {
     width: 100%;
-    padding: 7px 12px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--surface);
+    padding: 8px 12px;
+    border: 1px solid var(--md-outline-variant);
+    border-radius: var(--shape-s);
+    background: transparent;
     font-size: 13px;
     color: var(--ink);
-    caret-color: var(--accent);
+    caret-color: var(--md-primary);
     outline: none;
-    transition:
-      border-color 150ms ease,
-      box-shadow 150ms ease;
+    transition: border-color var(--duration-s) var(--ease-emphasized);
   }
   .field-input::placeholder {
     color: var(--muted);
     opacity: 0.65;
   }
+  .field-input:hover {
+    border-color: var(--md-on-surface);
+  }
+  /* M3 outlined focus:主色描边加粗(内衬避免布局位移),不做光圈 */
   .field-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
+    border-color: var(--md-primary);
+    box-shadow: inset 0 0 0 1px var(--md-primary);
   }
   .field-hint {
     margin: 4px 0 0;
@@ -137,16 +140,15 @@
     color: var(--muted);
   }
 
-  /* 浮层基座(聊天区模型选择弹层):吸附在锚点旁的自然小弹窗 */
+  /* 浮层基座(聊天区模型选择弹层):M3 menu —— surfaceContainer + 中圆角 + 阴影 */
   .combo-pop {
     position: absolute;
     z-index: 20;
     max-height: 180px;
     overflow-y: auto;
     padding: 4px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 10px;
+    background: var(--md-surface-container);
+    border-radius: var(--shape-m);
     box-shadow: var(--shadow-md);
   }
   /* 从锚点上方弹出;宽度随内容,封顶防溢出面板(超长 ID 截断) */
@@ -173,79 +175,104 @@
   .combo-option:hover,
   .combo-option[data-active="true"],
   .combo-option[aria-selected="true"] {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--md-on-surface) 5%, transparent);
   }
   .combo-option[aria-selected="true"] {
     color: var(--accent); /* 选中项高亮:长 ID 被截断时 ✓ 不可见,靠颜色兜底 */
   }
 
-  /* 分段控件:选中滑块测量定位,弹簧滑动 */
+  /* M3 分段按钮(connected button group):无滑块,选中段填 secondaryContainer + 勾 */
   .segmented {
-    position: relative;
     display: flex;
     width: 100%;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 2px;
-  }
-  .segmented-thumb {
-    position: absolute;
-    top: 2px;
-    bottom: 2px;
-    left: 0;
-    width: 0;
-    background: var(--surface);
-    border-radius: 8px;
-    box-shadow: var(--shadow-sm);
-    transition:
-      left 240ms cubic-bezier(0.16, 1, 0.3, 1),
-      width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid var(--md-outline);
+    border-radius: var(--shape-full);
+    overflow: hidden;
   }
   .segmented button {
-    position: relative;
-    z-index: 1;
     flex: 1;
-    padding: 6px 6px;
-    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 7px 6px;
     font-size: 13px;
     font-weight: 500;
-    color: var(--muted);
+    color: var(--md-on-surface-variant);
     white-space: nowrap;
-    transition: color 150ms ease;
+    transition:
+      background var(--duration-s) var(--ease-emphasized),
+      color var(--duration-s) var(--ease-emphasized);
+  }
+  .segmented button + button {
+    border-left: 1px solid var(--md-outline-variant);
   }
   .segmented button.selected {
-    color: var(--ink);
+    background: var(--md-secondary-container);
+    color: var(--md-on-secondary-container);
+  }
+  .segmented button.selected::before {
+    content: "";
+    width: 13px;
+    height: 6px;
+    border-left: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
   }
 
-  /* 开关:on 变 accent,旋钮弹簧位移 */
+  /* M3 开关:52×32 轨道,off 描边小旋钮 / on 主色轨道 + 旋钮变大带勾,
+     按压旋钮拉伸(expressive pressed handle) */
   .switch {
     position: relative;
     flex-shrink: 0;
-    width: 42px;
-    height: 26px;
-    border-radius: 999px;
-    background: var(--line-strong);
-    transition: background 200ms ease;
+    width: 52px;
+    height: 32px;
+    border-radius: var(--shape-full);
+    background: var(--md-surface-container-highest);
+    border: 2px solid var(--md-outline);
+    transition:
+      background var(--duration-m) var(--ease-emphasized),
+      border-color var(--duration-m) var(--ease-emphasized);
   }
   .switch-knob {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    background: var(--on-accent);
-    box-shadow:
-      0 2px 4px rgba(0, 0, 0, 0.22),
-      0 0 1px rgba(0, 0, 0, 0.1);
-    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+    top: 50%;
+    left: 6px;
+    width: 16px;
+    height: 16px;
+    margin-top: -8px;
+    border-radius: var(--shape-full);
+    background: var(--md-outline);
+    transition: all var(--duration-m) var(--ease-emphasized);
+  }
+  .switch:active .switch-knob {
+    width: 20px;
   }
   .switch[aria-checked="true"] {
-    background: var(--accent);
+    background: var(--md-primary);
+    border-color: var(--md-primary);
   }
   .switch[aria-checked="true"] .switch-knob {
-    transform: translateX(16px);
+    left: 20px;
+    width: 24px;
+    height: 24px;
+    margin-top: -12px;
+    background: var(--md-on-primary);
+  }
+  .switch:active[aria-checked="true"] .switch-knob {
+    left: 18px;
+    width: 28px;
+  }
+  .switch[aria-checked="true"] .switch-knob::after {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 6px;
+    width: 9px;
+    height: 4px;
+    border-left: 2px solid var(--md-primary);
+    border-bottom: 2px solid var(--md-primary);
+    transform: rotate(-45deg);
   }
 
   /* 图标按钮(返回 / 显隐):反馈在按下瞬间 */
@@ -262,7 +289,7 @@
       transform 120ms ease;
   }
   .settings-icon-btn:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
     color: var(--ink);
   }
   .settings-icon-btn:active {
@@ -288,7 +315,7 @@
       transform 120ms ease;
   }
   .settings-eye-btn:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
     color: var(--ink);
   }
   .settings-eye-btn:active {
@@ -311,8 +338,8 @@
     display: flex;
     flex-direction: column;
     margin-top: 10px;
-    border-radius: 10px;
-    background: var(--surface-2);
+    border-radius: var(--shape-s);
+    background: var(--md-surface-container-lowest);
     overflow: hidden;
   }
   .model-row + .model-row {
@@ -328,7 +355,7 @@
     transition: background 120ms ease;
   }
   .model-row-head:hover {
-    background: var(--line);
+    background: color-mix(in srgb, var(--md-on-surface) 8%, transparent);
   }
   .model-row-name {
     flex: 1;
@@ -343,9 +370,9 @@
   .model-badge {
     flex-shrink: 0;
     padding: 1px 6px;
-    border-radius: 5px;
-    background: var(--accent-soft);
-    color: var(--accent);
+    border-radius: var(--shape-xs);
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
     font-size: 10.5px;
     font-weight: 600;
   }

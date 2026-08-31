@@ -640,7 +640,7 @@ export default function ChatView({
           const busy = status !== "idle";
           const cls = busy
             ? "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted opacity-30"
-            : "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90";
+            : "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-ink/10 active:scale-90";
           return (
             <>
               <button
@@ -670,7 +670,7 @@ export default function ChatView({
           type="button"
           onClick={onOpenSettings}
           aria-label="打开设置"
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90"
+          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-ink/10 active:scale-90"
         >
           <SettingsIcon />
         </button>
@@ -735,7 +735,7 @@ export default function ChatView({
           e.preventDefault();
           submit();
         }}
-        className="mx-3 mb-3 rounded-2xl border border-line bg-surface shadow-md transition-all duration-200 focus-within:border-accent focus-within:shadow-lg"
+        className="mx-3 mb-3 rounded-[28px] bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
       >
         <div className="px-3.5 pt-2">
           <textarea
@@ -769,7 +769,7 @@ export default function ChatView({
                 aria-haspopup="listbox"
                 aria-expanded={modelPopOpen}
                 aria-label="选择模型"
-                className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-[12px] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-[12px] text-muted transition-colors hover:bg-ink/8 hover:text-ink"
               >
                 <span className="min-w-0 truncate">
                   {modelList.find((m) => m.id === modelId)?.alias ||
@@ -1300,7 +1300,7 @@ const MD_COMPONENTS: NonNullable<MarkdownOptions["components"]> = {
 
 const UserBubble = memo(function UserBubble({ text }: { text: string }) {
   return (
-    <div className="msg-in ml-auto w-fit max-w-[86%] whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-accent-soft px-3.5 py-2 text-[13px] leading-relaxed shadow-[var(--shadow-sm)]">
+    <div className="msg-in ml-auto w-fit max-w-[86%] whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
       {text}
     </div>
   );
@@ -1326,7 +1326,7 @@ const AssistantBubble = memo(function AssistantBubble({
 
 const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-xl border border-danger/25 bg-danger-soft px-3.5 py-2.5 text-[13px] leading-relaxed text-danger">
+    <div className="msg-in flex w-full items-start gap-2 rounded-xl bg-danger-soft px-3.5 py-2.5 text-[13px] leading-relaxed text-on-danger">
       <WarnIcon />
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
         {text}
@@ -1338,7 +1338,7 @@ const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
 /** 系统运行提示条(非错误):步数耗尽等状态说明,视觉层级低于错误 */
 const NoticeBubble = memo(function NoticeBubble() {
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-muted">
+    <div className="msg-in flex w-full items-start gap-2 rounded-xl bg-surface-container px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
       <InfoIcon />
       <span className="min-w-0 flex-1">
         本轮已达到步数上限,任务未完成 —— 发送「继续」可以接着做。
