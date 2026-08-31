@@ -48,10 +48,8 @@
 @layer components {
   .trace {
     max-width: 100%;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
+    border-radius: var(--shape-m);
+    background: var(--md-surface-container);
     overflow: hidden;
   }
 
@@ -67,7 +65,7 @@
     left: 12px;
     right: 0;
     height: 1px;
-    background: var(--line);
+    background: var(--line-soft);
   }
   .trace-row[data-status="done"] {
     animation:
@@ -98,11 +96,11 @@
       color 120ms ease;
   }
   .trace-header:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--md-on-surface) 5%, transparent);
     color: var(--ink);
   }
   .trace-header:active {
-    background: var(--line);
+    background: color-mix(in srgb, var(--md-on-surface) 12%, transparent);
   }
 
   .trace-icon {

@@ -51,8 +51,9 @@
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 0.9em;
     padding: 0.1em 0.35em;
-    border-radius: 3px;
-    background: var(--accent-soft);
+    border-radius: var(--shape-xs);
+    background: var(--md-primary-container);
+    color: var(--md-on-primary-container);
   }
 
   .markdown blockquote {

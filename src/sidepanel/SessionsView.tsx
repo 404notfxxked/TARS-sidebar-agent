@@ -265,7 +265,7 @@ function SessionRow({
     <li className="sessions-row-in" style={{ animationDelay: `${delay}ms` }}>
       <div
         className={`group flex items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
-          active ? "bg-accent-soft" : "hover:bg-surface-2"
+          active ? "bg-accent-soft" : "hover:bg-ink/5"
         }`}
       >
         <button
@@ -361,7 +361,7 @@ function EmptyState({ onNew }: { onNew: () => void }) {
       <button
         type="button"
         onClick={onNew}
-        className="rounded-full border border-line px-4 py-1.5 text-[12.5px] text-ink transition-colors hover:bg-surface-2"
+        className="rounded-full border border-outline px-4 py-1.5 text-[12.5px] font-medium text-accent transition-colors hover:bg-accent/8"
       >
         发起新对话
       </button>

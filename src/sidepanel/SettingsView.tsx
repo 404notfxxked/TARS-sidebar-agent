@@ -4,7 +4,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -45,7 +44,7 @@ function formatBytes(bytes: number): string {
 
 type FetchState = "idle" | "loading" | "error";
 
-/** 分段控件:滑块测量选中按钮的实际位置/宽度,弹簧滑动跟随 */
+/** M3 分段按钮(connected button group):选中段填 secondaryContainer,勾号由 CSS 提供 */
 function Segmented<T extends string>({
   value,
   options,
@@ -57,23 +56,8 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
   ariaLabel: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [thumb, setThumb] = useState({ left: 0, width: 0 });
-
-  useLayoutEffect(() => {
-    const btn = ref.current?.querySelector<HTMLButtonElement>(
-      `[data-v="${value}"]`,
-    );
-    if (btn) setThumb({ left: btn.offsetLeft, width: btn.offsetWidth });
-  }, [value]);
-
   return (
-    <div ref={ref} role="radiogroup" aria-label={ariaLabel} className="segmented">
-      <span
-        className="segmented-thumb"
-        style={{ left: thumb.left, width: thumb.width }}
-        aria-hidden="true"
-      />
+    <div role="radiogroup" aria-label={ariaLabel} className="segmented">
       {options.map((o) => (
         <button
           key={o.value}

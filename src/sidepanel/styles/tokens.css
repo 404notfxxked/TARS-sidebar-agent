@@ -1,67 +1,61 @@
-/* ---- 设计令牌(唯一事实源) ----
-   所有颜色从这里出;Tailwind 经 @theme inline 映射为原生工具类
-   (bg-surface / text-muted …),深浅色只靠 [data-theme] 翻转变量值 */
+/* ---- 设计令牌 ----
+   事实源:styles/m3.css —— 由 scripts/generate-m3.mjs 从源色 #16a34a 生成的 M3 scheme。
+   本文件只做三件事:
+   1) 旧语义槽位 → M3 角色的别名:存量组件与工具类(bg-surface / text-muted …)不改名
+      即可获得 M3 配色,深浅色只靠 [data-theme] 翻转 --md-*(CSS 变量按取用点解析)
+   2) M3 形状档位(shape scale)与动效令牌
+   3) 阴影:M3 用色调分层表达海拔,阴影仅保留给悬浮弹层 */
 
 :root {
   color-scheme: light;
 
-  --paper: #f7f8f7;
-  --surface: #ffffff;
-  --surface-2: #f1f3f2; /* 次级表面:hover 底、嵌套填充 */
-  --ink: #1a1f1c;
-  --muted: #6c7571;
-  --line: #e5e9e6;
-  --line-soft: #eef1ee; /* 卡内发丝线:比 line 更退后,只做分隔不做边界 */
-  --line-strong: #d8ded9; /* hover 边框 / 开关 off 底 */
+  /* 旧槽位 → M3 角色 */
+  --paper: var(--md-surface);
+  --surface: var(--md-surface-container-lowest);
+  --surface-2: var(--md-surface-container-high); /* hover 底(存量引用,新增用状态层) */
+  --ink: var(--md-on-surface);
+  --muted: var(--md-on-surface-variant);
+  --line: var(--md-outline-variant);
+  --line-soft: var(--md-outline-variant);
+  --line-strong: var(--md-outline);
+  --accent: var(--md-primary);
+  --accent-strong: var(--md-primary);
+  --accent-soft: var(--md-primary-container);
+  --on-accent: var(--md-on-primary);
+  --danger: var(--md-error);
+  --danger-soft: var(--md-error-container);
+  --on-danger: var(--md-on-error-container);
+  --warning: #f5b04d;
+  --code-bg: var(--md-surface-container);
 
-  --accent: #16a34a;
-  --accent-strong: #12833c;
-  --accent-soft: #e8f6ee;
-  --on-accent: #ffffff; /* 强调色之上的内容(文字/开关旋钮) */
-  --danger: #dc2626;
-  --danger-soft: #fdecec;
-  --on-danger: #ffffff; /* 危险色之上的内容 */
-  --warning: #f0a040;
+  /* M3 形状档位 */
+  --shape-xs: 4px;
+  --shape-s: 8px;
+  --shape-m: 12px;
+  --shape-l: 16px;
+  --shape-xl: 28px;
+  --shape-full: 999px;
 
-  --code-bg: #f4f6f5;
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-
+  /* M3 动效:emphasized easing + 时长档;spring 保留给入场/滑块类表现性动效 */
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --duration-s: 150ms;
+  --duration-m: 250ms;
   --spring-enter: cubic-bezier(0.16, 1, 0.3, 1);
   --spring-exit: cubic-bezier(0.3, 0, 1, 1);
+
+  /* 悬浮弹层专用(M3 elevation 2);平面组件一律色调分层 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.16);
 }
 
-/* 深色:同一套语义槽位换灰绿暗面 */
 [data-theme="dark"] {
   color-scheme: dark;
-
-  --paper: #1a1d1b;
-  --surface: #242826;
-  --surface-2: #2d322f;
-  --ink: #e6eae7;
-  --muted: #98a29b;
-  --line: #343937;
-  --line-soft: #2e332f; /* 卡内发丝线:比 line 更退后,只做分隔不做边界 */
-  --line-strong: #454b48;
-
-  --accent: #3ecf7a;
-  --accent-strong: #63d994;
-  --accent-soft: rgba(62, 207, 122, 0.14);
-  --on-accent: #0b120d;
-  --danger: #f87171;
-  --danger-soft: rgba(248, 113, 113, 0.12);
-  --on-danger: #140c0c;
-  --warning: #f5b04d;
-
-  --code-bg: #1e221f;
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.55);
 }
 
 /* 令牌 → Tailwind 原生工具类。inline 让 utility 直接内联 var(--) 引用,
-   而非指向静态的 @theme 变量 —— 深浅色翻转时所有 bg-surface/text-muted 自动跟随 */
+   深浅色翻转时所有 bg-surface/text-muted 自动跟随 */
 @theme inline {
   --color-paper: var(--paper);
   --color-surface: var(--surface);
@@ -69,6 +63,7 @@
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
   --color-line-strong: var(--line-strong);
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
@@ -79,6 +74,21 @@
   --color-on-danger: var(--on-danger);
   --color-warning: var(--warning);
   --color-code-bg: var(--code-bg);
+
+  /* M3 角色直达工具类(新组件优先用这组) */
+  --color-primary: var(--md-primary);
+  --color-on-primary: var(--md-on-primary);
+  --color-primary-container: var(--md-primary-container);
+  --color-on-primary-container: var(--md-on-primary-container);
+  --color-secondary-container: var(--md-secondary-container);
+  --color-on-secondary-container: var(--md-on-secondary-container);
+  --color-surface-container: var(--md-surface-container);
+  --color-surface-container-low: var(--md-surface-container-low);
+  --color-surface-container-high: var(--md-surface-container-high);
+  --color-surface-container-highest: var(--md-surface-container-highest);
+  --color-outline: var(--md-outline);
+  --color-outline-variant: var(--md-outline-variant);
+  --color-on-surface-variant: var(--md-on-surface-variant);
 }
 
 /* dark: 变体跟随 data-theme 属性(而非媒体查询),与令牌翻转同机制 */
