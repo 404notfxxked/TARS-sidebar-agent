@@ -12,7 +12,15 @@ import {
   installGlobalErrorHook,
 } from "../shared/logger";
 import { runAgentLoop, type AgentPort } from "./agent";
-import { clearHistory, loadHistory, toChatRecords } from "./sessionHistory";
+import {
+  clearAllSessions,
+  deleteSession,
+  listSessions,
+  loadHistory,
+  migrateLegacySessionStorage,
+  pruneExpiredSessions,
+  toChatRecords,
+} from "./sessionHistory";
 
 const log = createLogger({ ctx: "bg" });
 installGlobalErrorHook(log);
@@ -48,6 +56,10 @@ async function pruneDeadTabLogKeys(): Promise<void> {
   }
 }
 void pruneDeadTabLogKeys();
+
+// 会话历史:旧版 storage.session 里的数据搬进 IndexedDB,再按保留期清一次
+// (都有内部捕获,失败只记日志,不阻塞 SW 启动)
+void migrateLegacySessionStorage().then(() => pruneExpiredSessions());
 
 /** 单个 agent 运行的状态:持有一个 AbortController,取消时中断正在进行的网络请求 */
 interface RunState {
@@ -118,7 +130,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         break;
       }
       case MSG.LOAD_HISTORY: {
-        // 面板重开 / 切会话时,把该会话历史回给前端渲染
+        // 从历史列表切回某会话时,把该会话消息回给前端渲染
         const history = await loadHistory(msg.sessionId);
         port.postMessage({
           type: MSG.HISTORY,
@@ -126,11 +138,17 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         });
         break;
       }
-      case MSG.CLEAR_HISTORY: {
-        // 「开始新对话」:清掉该会话后台持久化历史,
-        // 否则面板重开 / 切回此 tab 时旧对话会被 loadHistory 捞回来
-        log.debug("port", "clear history", { sessionId: msg.sessionId });
-        await clearHistory(msg.sessionId);
+      case MSG.LIST_SESSIONS: {
+        const sessions = await listSessions();
+        port.postMessage({ type: MSG.SESSIONS, sessions });
+        break;
+      }
+      case MSG.DELETE_SESSION: {
+        await deleteSession(msg.sessionId);
+        break;
+      }
+      case MSG.CLEAR_ALL_HISTORY: {
+        await clearAllSessions();
         break;
       }
     }

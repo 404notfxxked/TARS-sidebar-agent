@@ -98,6 +98,11 @@ export async function runAgentLoop(
       : toProviderToolSchemas().filter((t) => !t.name.startsWith("web_"));
 
     const history = await loadHistory(payload.sessionId ?? "");
+    // 追加写的两个锚点:persistedSeqs = 库里已有条数(新消息起始 seq);
+    // persistedInCtx = 本轮 prompt 里携带的旧历史条数(新消息在领域数组里的
+    // 起始下标)。溢出裁剪会丢弃最早几轮,让两者错开 —— 裁剪只影响本轮
+    // prompt,不写回库里,落盘保持全量历史
+    const persistedSeqs = history.length;
     const userContent = await buildUserContent(payload.text);
     const messages: InternalMsg[] = [
       {
@@ -115,6 +120,9 @@ export async function runAgentLoop(
       }),
       { role: "user", content: userContent },
     ];
+    // 构造完再取:messages = [system, ...旧历史, 本轮 user],旧历史条数 =
+    // 总长 - 2(本轮 user 也是新增,不算旧)
+    const persistedInCtx = messages.length - 2;
 
     // 工具分发:注册表里的工具统一在这里执行。
     // 每次执行前注入 run 作用域上下文(提交时捕获的 tabId + 取消信号),
@@ -260,15 +268,19 @@ export async function runAgentLoop(
       });
     }
 
-    // 本轮结束:把完整 messages 写回 storage,供下一条消息续接
-    // (tools 消息也一并保存,保证下次提问时 LLM 有完整上下文)
-    // 注意 slice(1) 排除 system —— 下次加载时由 runAgentLoop 重新拼 system,避免重复
-    // 若本轮发生过溢出裁剪,写回的是裁剪后的历史:被裁的最早几轮就此丢弃
-    // (storage 本就只在浏览器会话内存活,可接受的有损降级)
-    // 写盘失败不打断本轮回答:历史丢了,但这次回复仍然送达
+    // 本轮结束:把新增消息追加进持久化历史,下一条消息续接
+    // (tools 消息一并保存,保证下次提问时 LLM 有完整上下文)
+    // 只追加旧历史之后的新增部分:中途发生的溢出裁剪改掉了老消息的内容,
+    // 不写回 —— 库里保持全量历史,每轮 prompt 在内存里重新裁
+    // 写盘失败不打断本轮回答:这次回复仍然送达,只是没存进历史
     if (payload.sessionId) {
       try {
-        await saveHistory(payload.sessionId, messages.slice(1));
+        await saveHistory(
+          payload.sessionId,
+          messages.slice(1),
+          persistedInCtx,
+          persistedSeqs,
+        );
       } catch (err) {
         log.warn("agent", "save history failed", {
           stack: err instanceof Error ? err.stack : String(err),

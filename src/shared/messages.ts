@@ -8,7 +8,9 @@ export const MSG = {
   USER_MESSAGE: 'user_message',
   CANCEL_RUN: 'cancel_run',
   LOAD_HISTORY: 'load_history',
-  CLEAR_HISTORY: 'clear_history',
+  LIST_SESSIONS: 'list_sessions',
+  DELETE_SESSION: 'delete_session',
+  CLEAR_ALL_HISTORY: 'clear_all_history',
 
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
@@ -20,6 +22,7 @@ export const MSG = {
   AGENT_DONE: 'agent_done',
   AGENT_ERROR: 'agent_error',
   HISTORY: 'history',
+  SESSIONS: 'sessions',
 } as const
 
 export type MsgType = (typeof MSG)[keyof typeof MSG]
@@ -41,9 +44,20 @@ export type SideToBg =
   | { type: typeof MSG.USER_MESSAGE; payload: UserMessagePayload }
   | { type: typeof MSG.CANCEL_RUN; sessionId: string }
   | { type: typeof MSG.LOAD_HISTORY; sessionId: string }
-  | { type: typeof MSG.CLEAR_HISTORY; sessionId: string }
+  | { type: typeof MSG.LIST_SESSIONS }
+  | { type: typeof MSG.DELETE_SESSION; sessionId: string }
+  | { type: typeof MSG.CLEAR_ALL_HISTORY }
 
 // ---------- 面板展示用消息(前后端一致的精简形状) ----------
+
+/** 会话元数据(历史列表用):title 是首条用户消息的截断 */
+export interface SessionMeta {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  msgCount: number;
+}
 
 /** 前端渲染用:只含 user/assistant 文本,不含 tool 内部消息 */
 export interface ChatRecord {
@@ -77,3 +91,4 @@ export type AgentEvent =
   | { type: typeof MSG.AGENT_DONE; reason?: "complete" | "max-turns" }
   | { type: typeof MSG.AGENT_ERROR; error: string }
   | { type: typeof MSG.HISTORY; messages: ChatRecord[] }
+  | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }

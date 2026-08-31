@@ -12,7 +12,7 @@
 - 🔍 **联网搜索** — 零配置可用：Bing 主力 + DuckDuckGo 自动兜底，被风控的引擎自动冷却；支持时间范围与域名过滤
 - 🌐 **读取网页** — 给它一个 http(s) 链接即可读正文（内网页面同样可达，GBK 等编码自动识别），与搜索结果配合使用
 - 🛡️ **稳态细节** — 停止按钮即时中断在途请求；工具结果超预算自动瘦身，防止撑爆上下文
-- 🌗 深浅色主题 · 会话历史持久化 · 跨上下文诊断日志导出
+- 🌗 深浅色主题 · 多会话历史（IndexedDB 本地持久化，保留期自动清理）· 跨上下文诊断日志导出
 
 ## 🚀 快速开始
 
@@ -41,6 +41,7 @@ E2E 验证脚本与 fixtures 在本地 `tests/`（不随仓库分发），通过
 ```bash
 node tests/verify-web-search.mjs   # 联网工具链路（11 场景，含实网）
 node tests/verify-cancel.mjs       # 停止按钮链路
+node tests/verify-persist.mjs      # 会话持久化（多会话/重启/保留期/迁移）
 ```
 
 受限网络环境可为测试浏览器挂代理：`VERIFY_PROXY=http://127.0.0.1:8118 node tests/verify-web-search.mjs`（mock 请求在 CDP 层拦截，不受代理影响）。
