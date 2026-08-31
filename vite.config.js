@@ -39,6 +39,13 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // sidepanel 单 chunk ~566KB 触发 Vite 的 500KB 警告,已确认是有意识的取舍:
+    // 构成 ≈ react 全家 31% + markdown 渲染栈 39%(其中 highlight.js 22%,
+    // rehype-highlight 默认带 ~37 种语言)+ 自有代码 4%。扩展从本地磁盘加载,
+    // 无下载成本,解析多花十几毫秒;拆 manualChunks 无用(单入口静态引用,
+    // 全量加载)。待办(视情况决定):把 highlight.js 换成小语言子集
+    // (如 js/ts/html/css/json/python/bash),min 后可省约 100-150KB。
+    chunkSizeWarningLimit: 700,
     rollupOptions: {
       input: {
         sidepanel: resolve(__dirname, 'sidepanel.html'),

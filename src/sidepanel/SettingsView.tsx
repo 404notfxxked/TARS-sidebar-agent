@@ -252,6 +252,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [theme, setTheme] = useState<ThemePref>("system");
+  const [webSearch, setWebSearch] = useState(true);
   // ── 模型列表(持久化):拉取 merge、手动添加、每模型独立配置 ──
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
   const [newId, setNewId] = useState("");
@@ -300,6 +301,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
       setModelList(c.models);
       setBaseUrl(c.baseUrl);
       setTheme(c.theme);
+      setWebSearch(c.webSearch);
     });
     readAllLogEntries()
       .then((es) => setLogCount(es.length))
@@ -340,6 +342,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         models: modelList,
         baseUrl,
         theme,
+        webSearch,
       }),
     );
 
@@ -720,6 +723,36 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
+        {/* ── 联网 ── */}
+        <h3 className="settings-eyebrow mb-1.5 mt-4">联网</h3>
+        <div className="settings-card">
+          <div className="mt-3 flex items-center justify-between">
+            <label
+              htmlFor="settings-web-search"
+              className="text-[12.5px] font-medium text-ink"
+            >
+              联网搜索
+            </label>
+            <button
+              id="settings-web-search"
+              type="button"
+              role="switch"
+              aria-checked={webSearch}
+              onClick={() => {
+                const next = !webSearch;
+                setWebSearch(next);
+                run(savePrefs({ webSearch: next }));
+              }}
+              className="switch"
+            >
+              <span className="switch-knob" />
+            </button>
+          </div>
+          <p className="field-hint mb-2.5 mt-1">
+            启用 web_search（联网搜索）与 web_fetch（读取网页正文）工具；关闭后 TARS 只能读取当前打开的页面。开启时搜索词会发送给搜索引擎。
+          </p>
+        </div>
+
         {/* ── 诊断 ── */}
         <h3 className="settings-eyebrow mb-1.5 mt-4">诊断</h3>
         <div className="settings-card">
@@ -759,7 +792,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         </div>
         <p className="settings-group-footer mt-2">
           记录各上下文最近 400 条执行与报错。排查问题时：点「下载日志」，把文件放进项目
-          .logs/ 目录，然后让助手读它分析。
+          .logs/ 目录，然后让 TARS 读它分析。
         </p>
 
         {apiKey && (

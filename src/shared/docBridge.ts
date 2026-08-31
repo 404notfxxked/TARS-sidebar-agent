@@ -1,6 +1,8 @@
 // 虚拟文档桥(service worker 侧):
 // - 懒创建并去重 offscreen document(chrome.offscreen 全局只允许一份)
 // - page_* 三工具的调用转发(DOC_TOOL_CALL / DOC_TOOL_RESULT 协议)
+// - 一次性解析任务转发(PARSE_CALL / PARSE_RESULT):解析数据由本侧自带,
+//   不绑定 tab 快照(如 web_search 抓到的搜索结果页 HTML)
 // - capture_doc 中继:offscreen document 没有 chrome.tabs/chrome.scripting 的
 //   访问权限面(Chrome 只给它 runtime 消息等子集),抓取宿主页 HTML 必须借道
 //   本 SW 完成——offscreen 发 CAPTURE_DOC_REQUEST,这里用 callContentTool
@@ -13,15 +15,6 @@
 import { callContentTool } from "./contentTools";
 
 export const OFFSCREEN_URL = "offscreen.html";
-
-interface DocToolCallMsg {
-  type: "DOC_TOOL_CALL";
-  id: string;
-  name: string;
-  args?: unknown;
-  targetTabId: number;
-  refresh: boolean;
-}
 
 let creating: Promise<void> | null = null;
 
@@ -61,18 +54,19 @@ function isNoReceiverError(e: unknown): boolean {
   return e instanceof Error && e.message.includes("Receiving end does not exist");
 }
 
-/** 转发一次文档工具调用到 offscreen(30s 上限,覆盖大页面首次构建) */
-export function callOffscreenTool(
-  name: string,
-  args: unknown,
-  targetTabId: number,
-  refresh: boolean,
+/**
+ * 向 offscreen 发一条请求消息并等待同 id 的配对响应(统一超时/错误语义)。
+ * DOC_TOOL_CALL 与 PARSE_CALL 共用:响应约定 {type, id, ok, result|error}。
+ */
+function sendOffscreenRequest(
+  msg: Record<string, unknown> & { id: string },
+  respType: string,
+  timeoutMs: number,
+  label: string,
 ): Promise<unknown> {
-  const id = `doc-${++callCounter}`;
-  const msg: DocToolCallMsg = { type: "DOC_TOOL_CALL", id, name, args, targetTabId, refresh };
   const sendOnce = () =>
     new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`document tool timeout: ${name}`)), 30_000);
+      const timer = setTimeout(() => reject(new Error(`offscreen request timeout: ${label}`)), timeoutMs);
       chrome.runtime.sendMessage(msg, (raw: unknown) => {
         clearTimeout(timer);
         if (chrome.runtime.lastError) {
@@ -80,11 +74,11 @@ export function callOffscreenTool(
           return;
         }
         const resp = raw as { type?: string; id?: string; ok?: boolean; result?: unknown; error?: string };
-        if (!resp || resp.id !== id || resp.type !== "DOC_TOOL_RESULT") {
-          reject(new Error("invalid document tool response"));
+        if (!resp || resp.id !== msg.id || resp.type !== respType) {
+          reject(new Error(`invalid offscreen response: ${label}`));
           return;
         }
-        if (!resp.ok) reject(new Error(resp.error ?? "unknown document tool error"));
+        if (!resp.ok) reject(new Error(resp.error ?? "unknown offscreen error"));
         else resolve(resp.result);
       });
     });
@@ -95,6 +89,36 @@ export function callOffscreenTool(
     await new Promise((r) => setTimeout(r, 150));
     return sendOnce();
   });
+}
+
+/** 转发一次文档工具调用到 offscreen(30s 上限,覆盖大页面首次构建) */
+export function callOffscreenTool(
+  name: string,
+  args: unknown,
+  targetTabId: number,
+  refresh: boolean,
+): Promise<unknown> {
+  const id = `doc-${++callCounter}`;
+  return sendOffscreenRequest(
+    { type: "DOC_TOOL_CALL", id, name, args, targetTabId, refresh },
+    "DOC_TOOL_RESULT",
+    30_000,
+    name,
+  );
+}
+
+/**
+ * 一次性解析任务:解析数据(HTML)由本侧随消息自带或由 offscreen 自取,
+ * 不绑定 tab 快照(search:SW 抓好的搜索结果页;fetch_read:offscreen 按
+ * URL 自抓自缓存)。默认 15s;web_fetch 含网络抓取,调用方传 30s。
+ */
+export function callOffscreenParser(
+  kind: string,
+  payload: unknown,
+  timeoutMs = 15_000,
+): Promise<unknown> {
+  const id = `parse-${++callCounter}`;
+  return sendOffscreenRequest({ type: "PARSE_CALL", id, kind, payload }, "PARSE_RESULT", timeoutMs, kind);
 }
 
 /** 通知 offscreen 作废某 tab 的快照(offscreen 尚未创建时静默失败,无缓存可失效) */
