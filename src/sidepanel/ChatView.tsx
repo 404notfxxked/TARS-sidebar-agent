@@ -638,9 +638,6 @@ export default function ChatView({
         {(() => {
           // 运行中置灰「新对话 / 历史会话」:二者在运行中都不可用(切换能力后续再做)
           const busy = status !== "idle";
-          const cls = busy
-            ? "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted opacity-30"
-            : "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-ink/10 active:scale-90";
           return (
             <>
               <button
@@ -649,7 +646,7 @@ export default function ChatView({
                 disabled={busy}
                 aria-label="开始新对话"
                 title={busy ? "回复结束后可开始新对话" : undefined}
-                className={cls}
+                className={busy ? "icon-btn opacity-30" : "icon-btn"}
               >
                 <PlusIcon />
               </button>
@@ -659,7 +656,7 @@ export default function ChatView({
                 disabled={busy}
                 aria-label="历史会话"
                 title={busy ? "回复结束后可查看历史会话" : undefined}
-                className={cls}
+                className={busy ? "icon-btn opacity-30" : "icon-btn"}
               >
                 <HistoryIcon />
               </button>
@@ -670,7 +667,7 @@ export default function ChatView({
           type="button"
           onClick={onOpenSettings}
           aria-label="打开设置"
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-ink/10 active:scale-90"
+          className="icon-btn"
         >
           <SettingsIcon />
         </button>
@@ -722,7 +719,7 @@ export default function ChatView({
         {/* 网络等待等「无过程可看」时的活动指示;思考 ticker 存在时由 ticker 表达,不重复 */}
         {status === "thinking" &&
           !runSegs.some((s) => s.kind === "reasoning" && s.active) && (
-            <div className="flex items-center gap-1.5 py-1 pl-1 text-muted">
+            <div className="flex items-center gap-1.5 py-1 pl-1 text-on-surface-variant">
               <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
@@ -735,7 +732,7 @@ export default function ChatView({
           e.preventDefault();
           submit();
         }}
-        className="mx-3 mb-3 rounded-[28px] bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
+        className="mx-3 mb-3 rounded-xl bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
       >
         <div className="px-3.5 pt-2">
           <textarea
@@ -757,7 +754,7 @@ export default function ChatView({
             placeholder="问点什么，或让 TARS 去查"
             aria-label="提问"
             disabled={status !== "idle"}
-            className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:opacity-50"
+            className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant disabled:opacity-50"
           />
         </div>
         <div className="flex items-center gap-2 px-2 pb-2 pt-0.5">
@@ -769,7 +766,7 @@ export default function ChatView({
                 aria-haspopup="listbox"
                 aria-expanded={modelPopOpen}
                 aria-label="选择模型"
-                className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-[12px] text-muted transition-colors hover:bg-ink/8 hover:text-ink"
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
               >
                 <span className="min-w-0 truncate">
                   {modelList.find((m) => m.id === modelId)?.alias ||
@@ -818,7 +815,7 @@ export default function ChatView({
               type="submit"
               disabled={!input.trim()}
               aria-label="发送"
-              className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] leading-none text-on-accent transition-all duration-150 hover:bg-accent-strong active:scale-90 disabled:opacity-25 disabled:scale-100"
+              className="icon-btn-filled ml-auto h-8 w-8 text-[14px] leading-none"
             >
               ↑
             </button>
@@ -827,7 +824,7 @@ export default function ChatView({
               type="button"
               onClick={cancel}
               aria-label="停止"
-              className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger text-on-danger transition-all duration-150 hover:opacity-85 active:scale-90"
+              className="icon-btn-filled error ml-auto h-8 w-8"
             >
               <svg
                 width="10"
@@ -906,7 +903,7 @@ function SettingsIcon() {
 function EmptyState() {
   return (
     <div className="px-2 py-10 text-center">
-      <p className="mx-auto max-w-[220px] text-[16px] leading-relaxed text-muted">
+      <p className="mx-auto max-w-[220px] text-[15px] leading-relaxed text-on-surface-variant">
         有什么问题，直接问。
         <br />
         我可以读取当前页面、联网搜索，也能帮你点按、填写。
@@ -1300,7 +1297,7 @@ const MD_COMPONENTS: NonNullable<MarkdownOptions["components"]> = {
 
 const UserBubble = memo(function UserBubble({ text }: { text: string }) {
   return (
-    <div className="msg-in ml-auto w-fit max-w-[86%] whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
+    <div className="msg-in ml-auto w-fit max-w-[86%] whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
       {text}
     </div>
   );
@@ -1326,7 +1323,7 @@ const AssistantBubble = memo(function AssistantBubble({
 
 const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-xl bg-danger-soft px-3.5 py-2.5 text-[13px] leading-relaxed text-on-danger">
+    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-error-container px-3.5 py-2.5 text-[13px] leading-relaxed text-on-error-container">
       <WarnIcon />
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
         {text}
@@ -1338,7 +1335,7 @@ const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
 /** 系统运行提示条(非错误):步数耗尽等状态说明,视觉层级低于错误 */
 const NoticeBubble = memo(function NoticeBubble() {
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-xl bg-surface-container px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
+    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
       <InfoIcon />
       <span className="min-w-0 flex-1">
         本轮已达到步数上限,任务未完成 —— 发送「继续」可以接着做。

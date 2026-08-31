@@ -1,4 +1,5 @@
-/* ---- 基础层:文档、焦点、滚动条、全局动效降级 ---- */
+/* ---- 基础层:文档、焦点、滚动条、全局动效 ----
+   动效只用 tokens.css 的 M3 令牌(emphasized 曲线);焦点 = M3 focus indicator */
 
 html,
 body,
@@ -8,8 +9,8 @@ body,
 
 body {
   margin: 0;
-  background: var(--paper);
-  color: var(--ink);
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Microsoft YaHei", sans-serif;
   font-size: 13px;
@@ -18,27 +19,93 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 键盘焦点 — soft ring, skip inputs (they get per-component focus styles) */
+/* 键盘焦点 — M3 focus indicator:3px 主色描边 + 2px 外偏移,不用阴影环。
+   输入框自身有 focus 描边形态,不在全局规则里重复 */
 :focus-visible:not(input):not(textarea) {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--accent);
-  border-radius: 3px;
+  outline: 3px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
-/* 入场动效 — spring-like curves */
+/* 入场:轻浮升 + emphasized 曲线(消息、悬浮层、过程卡共用) */
 @keyframes msg-in {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.99);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 @layer components {
   .msg-in {
-    animation: msg-in 200ms var(--spring-enter);
+    animation: msg-in 250ms var(--ease-emphasized);
+  }
+
+  /* ---- 共享控件:M3 图标按钮(标准态 / 填充态)----
+     三页通用:满圆 + 状态层(8% hover / 12% 按下),不做按压缩放 */
+  .icon-btn {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-full);
+    color: var(--md-sys-color-on-surface-variant);
+    transition:
+      color 150ms var(--ease-emphasized),
+      background 150ms var(--ease-emphasized);
+  }
+  .icon-btn:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+    color: var(--md-sys-color-on-surface);
+  }
+  .icon-btn:active {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  }
+
+  /* 填充图标按钮(发送 / 停止):主色圆底,M3 filled icon button */
+  .icon-btn-filled {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    transition: background 150ms var(--ease-emphasized);
+  }
+  /* M3 filled 状态层 = 叠 on-primary 透明层,用色彩混合近似 */
+  .icon-btn-filled:hover {
+    background: color-mix(
+      in srgb,
+      var(--md-sys-color-primary) 92%,
+      var(--md-sys-color-on-primary)
+    );
+  }
+  .icon-btn-filled:active {
+    background: color-mix(
+      in srgb,
+      var(--md-sys-color-primary) 88%,
+      var(--md-sys-color-on-primary)
+    );
+  }
+  .icon-btn-filled.error {
+    background: var(--md-sys-color-error);
+    color: var(--md-sys-color-on-error);
+  }
+  .icon-btn-filled.error:hover {
+    background: color-mix(
+      in srgb,
+      var(--md-sys-color-error) 92%,
+      var(--md-sys-color-on-error)
+    );
+  }
+  /* M3 禁用:底 on-surface 12%、前景 on-surface 38%,不用透明度缩放 */
+  .icon-btn-filled:disabled {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
   }
 }
 
@@ -54,7 +121,7 @@ body {
   }
 }
 
-/* ---- 滚动条(WebKit) ---- */
+/* ---- 滚动条(WebKit):发丝宽,色调随主题 ---- */
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -62,9 +129,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--line);
+  background: var(--md-sys-color-outline-variant);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  background: var(--md-sys-color-outline);
 }

@@ -1,94 +1,103 @@
-/* ---- 设计令牌 ----
-   事实源:styles/m3.css —— 由 scripts/generate-m3.mjs 从源色 #16a34a 生成的 M3 scheme。
-   本文件只做三件事:
-   1) 旧语义槽位 → M3 角色的别名:存量组件与工具类(bg-surface / text-muted …)不改名
-      即可获得 M3 配色,深浅色只靠 [data-theme] 翻转 --md-*(CSS 变量按取用点解析)
-   2) M3 形状档位(shape scale)与动效令牌
-   3) 阴影:M3 用色调分层表达海拔,阴影仅保留给悬浮弹层 */
+/* ---- 设计系统:Material 3 ----
+   唯一事实源:styles/m3.css —— 由 scripts/generate-m3.mjs 从源色 #16a34a 生成的
+   M3 sys color scheme(--md-sys-color-*,官方命名)。本文件把它接进 Tailwind,
+   并补齐 M3 其余三类令牌:shape / elevation / motion。
+   约定(全部组件必须遵守,不允许私造颜色/曲线/圆角):
+   - 颜色:只允许 --md-sys-color-* 角色;状态层 = color-mix 透明色(hover 8% / 按下 12%)
+   - 圆角:rounded-xs(4)/sm(8)/md(12)/lg(16)/xl(28)/full;控件小圆角 xs,卡片 md,胶囊 full
+   - 海拔:平面组件一律「色调分层」(surface-container 系列),阴影只给悬浮弹层(shadow-1/2)
+   - 动效:--ease-emphasized + duration-150/200/250;不用弹簧曲线、不用按压缩放 */
 
 :root {
   color-scheme: light;
 
-  /* 旧槽位 → M3 角色 */
-  --paper: var(--md-surface);
-  --surface: var(--md-surface-container-lowest);
-  --surface-2: var(--md-surface-container-high); /* hover 底(存量引用,新增用状态层) */
-  --ink: var(--md-on-surface);
-  --muted: var(--md-on-surface-variant);
-  --line: var(--md-outline-variant);
-  --line-soft: var(--md-outline-variant);
-  --line-strong: var(--md-outline);
-  --accent: var(--md-primary);
-  --accent-strong: var(--md-primary);
-  --accent-soft: var(--md-primary-container);
-  --on-accent: var(--md-on-primary);
-  --danger: var(--md-error);
-  --danger-soft: var(--md-error-container);
-  --on-danger: var(--md-on-error-container);
-  --warning: #f5b04d;
-  --code-bg: var(--md-surface-container);
+  /* M3 shape scale:组件 CSS 直接引用这些变量(rounded-* 工具类由 @theme 提供)。
+     full 必须在这里定义 —— Tailwind 的 rounded-full 是静态值,不产生变量 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+  --radius-full: 999px;
 
-  /* M3 形状档位 */
-  --shape-xs: 4px;
-  --shape-s: 8px;
-  --shape-m: 12px;
-  --shape-l: 16px;
-  --shape-xl: 28px;
-  --shape-full: 999px;
-
-  /* M3 动效:emphasized easing + 时长档;spring 保留给入场/滑块类表现性动效 */
+  /* M3 动效令牌:emphasized 是 M3 的万能曲线 */
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
-  --duration-s: 150ms;
-  --duration-m: 250ms;
-  --spring-enter: cubic-bezier(0.16, 1, 0.3, 1);
-  --spring-exit: cubic-bezier(0.3, 0, 1, 1);
 
-  /* 悬浮弹层专用(M3 elevation 2);平面组件一律色调分层 */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.16);
+  /* M3 elevation 阴影(level 1/2/3 官方值);level 3 备用,当前弹层最高用 2 */
+  --shadow-1:
+    0 1px 2px 0 rgb(0 0 0 / 0.3),
+    0 1px 3px 1px rgb(0 0 0 / 0.15);
+  --shadow-2:
+    0 1px 2px 0 rgb(0 0 0 / 0.3),
+    0 2px 6px 2px rgb(0 0 0 / 0.15);
+  --shadow-3:
+    0 1px 3px 0 rgb(0 0 0 / 0.3),
+    0 4px 8px 3px rgb(0 0 0 / 0.15);
 }
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.55);
+  /* 暗色 M3 靠 surface tint 表达海拔,阴影近似加强 */
+  --shadow-1:
+    0 1px 2px 0 rgb(0 0 0 / 0.55),
+    0 1px 3px 1px rgb(0 0 0 / 0.35);
+  --shadow-2:
+    0 1px 2px 0 rgb(0 0 0 / 0.55),
+    0 2px 6px 2px rgb(0 0 0 / 0.35);
+  --shadow-3:
+    0 1px 3px 0 rgb(0 0 0 / 0.55),
+    0 4px 8px 3px rgb(0 0 0 / 0.35);
 }
 
-/* 令牌 → Tailwind 原生工具类。inline 让 utility 直接内联 var(--) 引用,
-   深浅色翻转时所有 bg-surface/text-muted 自动跟随 */
+/* 令牌 → Tailwind 工具类。inline 让 utility 直接内联 var(--md-sys-color-*) 引用,
+   深浅色翻转时所有 bg-primary/text-on-surface-variant 自动跟随 */
 @theme inline {
-  --color-paper: var(--paper);
-  --color-surface: var(--surface);
-  --color-surface-2: var(--surface-2);
-  --color-ink: var(--ink);
-  --color-muted: var(--muted);
-  --color-line: var(--line);
-  --color-line-soft: var(--line-soft);
-  --color-line-strong: var(--line-strong);
-  --color-accent: var(--accent);
-  --color-accent-strong: var(--accent-strong);
-  --color-accent-soft: var(--accent-soft);
-  --color-on-accent: var(--on-accent);
-  --color-danger: var(--danger);
-  --color-danger-soft: var(--danger-soft);
-  --color-on-danger: var(--on-danger);
-  --color-warning: var(--warning);
-  --color-code-bg: var(--code-bg);
+  /* 颜色 = M3 角色,直用直名 */
+  --color-primary: var(--md-sys-color-primary);
+  --color-on-primary: var(--md-sys-color-on-primary);
+  --color-primary-container: var(--md-sys-color-primary-container);
+  --color-on-primary-container: var(--md-sys-color-on-primary-container);
+  --color-secondary: var(--md-sys-color-secondary);
+  --color-on-secondary: var(--md-sys-color-on-secondary);
+  --color-secondary-container: var(--md-sys-color-secondary-container);
+  --color-on-secondary-container: var(--md-sys-color-on-secondary-container);
+  --color-tertiary: var(--md-sys-color-tertiary);
+  --color-on-tertiary: var(--md-sys-color-on-tertiary);
+  --color-tertiary-container: var(--md-sys-color-tertiary-container);
+  --color-on-tertiary-container: var(--md-sys-color-on-tertiary-container);
+  --color-error: var(--md-sys-color-error);
+  --color-on-error: var(--md-sys-color-on-error);
+  --color-error-container: var(--md-sys-color-error-container);
+  --color-on-error-container: var(--md-sys-color-on-error-container);
+  --color-surface: var(--md-sys-color-surface);
+  --color-surface-dim: var(--md-sys-color-surface-dim);
+  --color-surface-container-lowest: var(--md-sys-color-surface-container-lowest);
+  --color-surface-container-low: var(--md-sys-color-surface-container-low);
+  --color-surface-container: var(--md-sys-color-surface-container);
+  --color-surface-container-high: var(--md-sys-color-surface-container-high);
+  --color-surface-container-highest: var(--md-sys-color-surface-container-highest);
+  --color-on-surface: var(--md-sys-color-on-surface);
+  --color-on-surface-variant: var(--md-sys-color-on-surface-variant);
+  --color-outline: var(--md-sys-color-outline);
+  --color-outline-variant: var(--md-sys-color-outline-variant);
+  --color-inverse-surface: var(--md-sys-color-inverse-surface);
+  --color-inverse-on-surface: var(--md-sys-color-inverse-on-surface);
+  --color-inverse-primary: var(--md-sys-color-inverse-primary);
 
-  /* M3 角色直达工具类(新组件优先用这组) */
-  --color-primary: var(--md-primary);
-  --color-on-primary: var(--md-on-primary);
-  --color-primary-container: var(--md-primary-container);
-  --color-on-primary-container: var(--md-on-primary-container);
-  --color-secondary-container: var(--md-secondary-container);
-  --color-on-secondary-container: var(--md-on-secondary-container);
-  --color-surface-container: var(--md-surface-container);
-  --color-surface-container-low: var(--md-surface-container-low);
-  --color-surface-container-high: var(--md-surface-container-high);
-  --color-surface-container-highest: var(--md-surface-container-highest);
-  --color-outline: var(--md-outline);
-  --color-outline-variant: var(--md-outline-variant);
-  --color-on-surface-variant: var(--md-on-surface-variant);
+  /* 圆角 = M3 shape scale(xs 4 / s 8 / m 12 / l 16 / xl 28),沿用 Tailwind 尺寸名 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 28px;
+
+  /* 动效:ease-emphasized / duration-150/200/250(Tailwind 内置时长档) */
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+
+  /* 海拔:shadow-1 / shadow-2 / shadow-3 */
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
 }
 
 /* dark: 变体跟随 data-theme 属性(而非媒体查询),与令牌翻转同机制 */
