@@ -11,6 +11,7 @@
   --ink: #1a1f1c;
   --muted: #6c7571;
   --line: #e5e9e6;
+  --line-soft: #eef1ee; /* 卡内发丝线:比 line 更退后,只做分隔不做边界 */
   --line-strong: #d8ded9; /* hover 边框 / 开关 off 底 */
 
   --accent: #16a34a;
@@ -41,6 +42,7 @@
   --ink: #e6eae7;
   --muted: #98a29b;
   --line: #343937;
+  --line-soft: #2e332f; /* 卡内发丝线:比 line 更退后,只做分隔不做边界 */
   --line-strong: #454b48;
 
   --accent: #3ecf7a;

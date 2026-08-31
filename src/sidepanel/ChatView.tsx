@@ -35,7 +35,6 @@ import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
 import { getActiveTabId } from "../shared/contentTools";
 import { loadConfig, savePrefs, type ModelEntry } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
-import { getOrCreateSessionId } from "../shared/sessionStore";
 
 // 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
 const log = createLogger({ ctx: "panel" });
@@ -43,7 +42,7 @@ const log = createLogger({ ctx: "panel" });
 interface ChatMsg {
   role: "user" | "assistant";
   content: string;
-  /** 所属会话:全局单会话,与 tab 解耦(见 sessionStore) */
+  /** 所属会话:多会话各自隔离,同屏只渲染 currentSession 的消息 */
   sessionId: string;
   /** 后台报错:以 ErrorBubble 呈现,不走 markdown */
   error?: boolean;
@@ -92,8 +91,18 @@ const REASONING_MAX_CHARS = 2000;
 
 export default function ChatView({
   onOpenSettings,
+  onOpenSessions,
+  resumeSessionId,
+  onResumeDone,
+  onActiveSessionChange,
 }: {
   onOpenSettings: () => void;
+  onOpenSessions: () => void;
+  /** 历史列表选中的会话:非空时打开它,完事后回调置空 */
+  resumeSessionId: string | null;
+  onResumeDone: () => void;
+  /** 当前会话变化时回传(历史列表里高亮「当前」) */
+  onActiveSessionChange?: (sessionId: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -331,13 +340,15 @@ export default function ChatView({
       return next;
     });
 
-  /** 会话全局唯一、与 tab 解耦;tabId 只随消息传递,作为工具执行的页面上下文 */
+  /** 打开面板 = 一律新会话(历史去列表找):会话 id 在首次提交时才生成,
+   *  没发过消息就不会在后台产生空会话记录 */
   const resolveContext = async (): Promise<{
     tabId: number | undefined;
     sessionId: string;
   }> => {
     const tabId = await getActiveTabId();
-    return { tabId: tabId ?? undefined, sessionId: await getOrCreateSessionId() };
+    if (!sessionRef.current) sessionRef.current = crypto.randomUUID();
+    return { tabId: tabId ?? undefined, sessionId: sessionRef.current };
   };
 
   const connect = (): chrome.runtime.Port => {
@@ -448,14 +459,64 @@ export default function ChatView({
     connect().postMessage({ type: MSG.LOAD_HISTORY, sessionId });
   };
 
-  // 挂载时解析激活 tab 的会话,向后端拉取历史恢复显示
-  useEffect(() => {
-    const port = connect();
-    resolveContext().then(({ sessionId }) => {
-      sessionRef.current = sessionId;
+  // 从历史列表切回某会话:清空本地视图后向后端拉消息。
+  // 空串 = 「新对话」入口:回到空白会话态,不发 LOAD_HISTORY,游标一并重置
+  const openSession = (sessionId: string) => {
+    if (status !== "idle") {
+      log.warn("chat", "switch session ignored, run in progress", { sessionId });
+      return;
+    }
+    if (sessionId === sessionRef.current) return; // 已是当前会话
+    log.info("chat", "open session", { sessionId });
+    setMessages([]);
+    setInput("");
+    clearRun();
+    setCurrentSession(sessionId);
+    sessionRef.current = sessionId;
+    if (sessionId) {
+      historyReqRef.current = sessionId;
       loadSessionHistory(sessionId);
-    });
-    // 设置页与聊天页互斥挂载,进聊天页重读一次配置即与设置改动同步
+    } else {
+      historyReqRef.current = "";
+      lastLoadedSessionRef.current = "";
+    }
+  };
+
+  // 历史列表选中 → 打开;消费完立刻回调置空,保证下次选同一会话仍能触发
+  // (空串也是有效选择 = 新对话,因此判 null 而非判真值)
+  useEffect(() => {
+    if (resumeSessionId !== null) {
+      openSession(resumeSessionId);
+      onResumeDone();
+    }
+  }, [resumeSessionId]);
+
+  // 当前会话回传给 App,历史列表据此高亮「当前」
+  useEffect(() => {
+    onActiveSessionChange?.(currentSession);
+  }, [currentSession]);
+
+  // 挂载:建 port、读配置。面板打开即新会话,不拉任何历史。
+  useEffect(() => {
+    connect();
+    // 设置页悬浮关闭后不重挂,配置变更靠 storage 事件同步模型列表
+    const onStorage = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string,
+    ) => {
+      if (area !== "local") return;
+      if (changes.models && Array.isArray(changes.models.newValue)) {
+        setModelList(
+          (changes.models.newValue as ModelEntry[]).filter(
+            (m) => m && typeof m.id === "string",
+          ),
+        );
+      }
+      if (changes.model && typeof changes.model.newValue === "string") {
+        setModelId(changes.model.newValue);
+      }
+    };
+    chrome.storage.onChanged.addListener(onStorage);
     loadConfig().then((c) => {
       setModelList(c.models);
       setModelId(c.model);
@@ -464,7 +525,8 @@ export default function ChatView({
       streamingRef.current = false;
       dropReasoningBuf();
       dropTextBuf();
-      port.disconnect();
+      chrome.storage.onChanged.removeListener(onStorage);
+      portRef.current?.disconnect();
       portRef.current = null;
     };
   }, []);
@@ -524,15 +586,11 @@ export default function ChatView({
     });
   };
 
-  // 开始新对话:清掉后台该会话的历史 + 清空面板。
-  // 全局单会话:清空后下次提问从空会话开始。
+  // 开始新对话:只清本地视图。旧会话原样留在历史列表(多会话语义,
+  // 不再通知后台删除);下次提交才会生成新的会话 id
   const resetConversation = () => {
     if (status !== "idle") return; // 运行中不允许打断
-    const old = sessionRef.current;
-    log.debug("chat", "new conversation", { old });
-    if (old) {
-      connect().postMessage({ type: MSG.CLEAR_HISTORY, sessionId: old });
-    }
+    log.debug("chat", "new conversation", { old: sessionRef.current });
     setMessages([]);
     setInput("");
     clearRun(); // 对话清空,本轮执行流也不保留
@@ -577,14 +635,37 @@ export default function ChatView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex justify-end gap-1 px-4 pb-1 pt-3">
-        <button
-          type="button"
-          onClick={resetConversation}
-          aria-label="开始新对话"
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90"
-        >
-          <PlusIcon />
-        </button>
+        {(() => {
+          // 运行中置灰「新对话 / 历史会话」:二者在运行中都不可用(切换能力后续再做)
+          const busy = status !== "idle";
+          const cls = busy
+            ? "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted opacity-30"
+            : "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90";
+          return (
+            <>
+              <button
+                type="button"
+                onClick={resetConversation}
+                disabled={busy}
+                aria-label="开始新对话"
+                title={busy ? "回复结束后可开始新对话" : undefined}
+                className={cls}
+              >
+                <PlusIcon />
+              </button>
+              <button
+                type="button"
+                onClick={onOpenSessions}
+                disabled={busy}
+                aria-label="历史会话"
+                title={busy ? "回复结束后可查看历史会话" : undefined}
+                className={cls}
+              >
+                <HistoryIcon />
+              </button>
+            </>
+          );
+        })()}
         <button
           type="button"
           onClick={onOpenSettings}
@@ -778,6 +859,25 @@ function PlusIcon() {
     >
       <line x1="8" y1="3" x2="8" y2="13" />
       <line x1="3" y1="8" x2="13" y2="8" />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r="5.8" />
+      <path d="M8 4.8V8l2.3 1.6" />
     </svg>
   );
 }

@@ -19,6 +19,7 @@ import {
 import { fetchModels } from "../background/provider";
 import { clearAllLogs, readAllLogEntries, toJsonl } from "../shared/logger";
 import { applyThemePreference } from "./theme";
+import { MSG, PORT_NAME } from "../shared/messages";
 
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -28,6 +29,19 @@ const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "light", label: "浅色" },
   { value: "dark", label: "深色" },
 ];
+
+/** 历史保留期分段选项:值为天数,0 = 不自动清理 */
+const RETENTION_OPTIONS: { value: "7" | "30" | "0"; label: string }[] = [
+  { value: "7", label: "7 天" },
+  { value: "30", label: "30 天" },
+  { value: "0", label: "全部" },
+];
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 type FetchState = "idle" | "loading" | "error";
 
@@ -271,6 +285,10 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   // ── 诊断日志 ──
   const [logCount, setLogCount] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  // ── 历史数据:保留期 / 占用 / 清空确认 ──
+  const [retention, setRetention] = useState<"7" | "30" | "0">("7");
+  const [usage, setUsage] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const pingSaved = useCallback(() => {
     setSavedFlash(true);
@@ -302,10 +320,16 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
       setBaseUrl(c.baseUrl);
       setTheme(c.theme);
       setWebSearch(c.webSearch);
+      setRetention(
+        c.historyRetention === 0 || c.historyRetention === 30
+          ? String(c.historyRetention) as "0" | "30"
+          : "7",
+      );
     });
     readAllLogEntries()
       .then((es) => setLogCount(es.length))
       .catch(() => setLogCount(-1));
+    refreshUsage();
     return () => {
       if (flashTimer.current) clearTimeout(flashTimer.current);
     };
@@ -330,6 +354,39 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     const t = window.setTimeout(() => setConfirmDeleteId(null), 3000);
     return () => clearTimeout(t);
   }, [confirmDeleteId]);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = window.setTimeout(() => setConfirmClear(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
+
+  /** 历史库占用(IDB 属整个扩展 origin,此值含日志等其他 local 数据,看个量级) */
+  const refreshUsage = () => {
+    navigator.storage
+      .estimate()
+      .then((est) =>
+        setUsage(est.usage != null ? formatBytes(est.usage) : "未知"),
+      )
+      .catch(() => setUsage(null));
+  };
+
+  const changeRetention = (v: "7" | "30" | "0") => {
+    setRetention(v);
+    run(savePrefs({ historyRetention: Number(v) }));
+  };
+
+  const clearAllHistory = () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setConfirmClear(false);
+    // SW 是历史库的唯一读写方,清空走消息(即发即断,无回执)
+    const port = chrome.runtime.connect({ name: PORT_NAME });
+    port.postMessage({ type: MSG.CLEAR_ALL_HISTORY });
+    port.disconnect();
+    window.setTimeout(refreshUsage, 300);
+  };
 
   /** apiKey / remember 变更:走 saveConfig 的 session/local 分流 */
   const saveKeyState = (key: string, rememberNext: boolean) =>
@@ -343,6 +400,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         baseUrl,
         theme,
         webSearch,
+        historyRetention: Number(retention),
       }),
     );
 
@@ -476,7 +534,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="view-in flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 px-3 pb-1 pt-3">
+      <header className="flex items-center gap-2 px-4 pb-1 pt-3">
         <button
           type="button"
           onClick={onBack}
@@ -520,42 +578,47 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         {/* ── 模型服务 ── */}
         <h3 className="settings-eyebrow mb-1.5 mt-3">模型服务</h3>
         <div className="settings-card">
-          <label className="field-label" htmlFor="settings-name">
-            名称<span className="font-normal text-muted">（选填）</span>
-          </label>
-          <input
-            id="settings-name"
-            type="text"
-            value={cfgName}
-            onChange={(e) => setCfgName(e.target.value)}
-            onBlur={() => run(savePrefs({ name: cfgName.trim() }))}
-            placeholder="如 DeepSeek，仅备注用"
-            autoComplete="off"
-            spellCheck={false}
-            className="field-input"
-          />
+          <div className="settings-field">
+            <label className="field-label" htmlFor="settings-name">
+              名称<span className="font-normal text-muted">（选填）</span>
+            </label>
+            <input
+              id="settings-name"
+              type="text"
+              value={cfgName}
+              onChange={(e) => setCfgName(e.target.value)}
+              onBlur={() => run(savePrefs({ name: cfgName.trim() }))}
+              placeholder="如 DeepSeek，仅备注用"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input"
+            />
+          </div>
 
-          <label className="field-label" htmlFor="settings-baseurl">
-            Base URL
-          </label>
-          <input
-            id="settings-baseurl"
-            type="text"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            onBlur={() => run(savePrefs({ baseUrl: baseUrl.trim() }))}
-            placeholder="https://api.deepseek.com/v1"
-            autoComplete="off"
-            spellCheck={false}
-            className="field-input font-mono"
-          />
-          <p className="field-hint">
-            OpenAI 兼容端点，需含 /v1；留空使用官方 api.openai.com/v1。
-          </p>
+          <div className="settings-field">
+            <label className="field-label" htmlFor="settings-baseurl">
+              Base URL
+            </label>
+            <input
+              id="settings-baseurl"
+              type="text"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              onBlur={() => run(savePrefs({ baseUrl: baseUrl.trim() }))}
+              placeholder="https://api.deepseek.com/v1"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input font-mono"
+            />
+            <p className="field-hint">
+              OpenAI 兼容端点，需含 /v1；留空使用官方 api.openai.com/v1。
+            </p>
+          </div>
 
-          <label className="field-label" htmlFor="settings-apikey">
-            API Key
-          </label>
+          <div className="settings-field">
+            <label className="field-label" htmlFor="settings-apikey">
+              API Key
+            </label>
           <div className="relative">
             <input
               id="settings-apikey"
@@ -606,44 +669,48 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               )}
             </button>
           </div>
-
-          <div className="mt-3 flex items-center justify-between">
-            <label
-              htmlFor="settings-remember"
-              className="text-[12.5px] font-medium text-ink"
-            >
-              记住我
-            </label>
-            <button
-              id="settings-remember"
-              type="button"
-              role="switch"
-              aria-checked={remember}
-              onClick={() => {
-                const next = !remember;
-                setRemember(next);
-                saveKeyState(apiKey, next);
-              }}
-              className="switch"
-            >
-              <span className="switch-knob" />
-            </button>
           </div>
-          <p className="field-hint">
-            不开启则仅本次会话有效，关闭浏览器后失效。
-          </p>
 
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-[12.5px] font-medium text-ink">模型</span>
-            <button
-              type="button"
-              onClick={fetchList}
-              disabled={fetchState === "loading"}
-              className="shrink-0 rounded-[10px] border border-line px-3 py-[7px] text-[12px] text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
-            >
-              {fetchState === "loading" ? "拉取中…" : "获取列表"}
-            </button>
+          <div className="settings-block">
+            <div className="settings-row">
+              <label
+                htmlFor="settings-remember"
+                className="settings-row-label"
+              >
+                记住我
+              </label>
+              <button
+                id="settings-remember"
+                type="button"
+                role="switch"
+                aria-checked={remember}
+                onClick={() => {
+                  const next = !remember;
+                  setRemember(next);
+                  saveKeyState(apiKey, next);
+                }}
+                className="switch"
+              >
+                <span className="switch-knob" />
+              </button>
+            </div>
+            <p className="field-hint">
+              不开启则仅本次会话有效，关闭浏览器后失效。
+            </p>
           </div>
+
+          <div className="settings-block">
+            <div className="flex items-center justify-between">
+              <span className="settings-row-label">模型</span>
+              <button
+                type="button"
+                onClick={fetchList}
+                disabled={fetchState === "loading"}
+                className="settings-btn"
+              >
+                {fetchState === "loading" ? "拉取中…" : "获取列表"}
+              </button>
+            </div>
           {fetchState === "error" && (
             <p className="field-hint text-danger">获取失败：{fetchError}</p>
           )}
@@ -690,11 +757,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               spellCheck={false}
               className="field-input font-mono"
             />
-            <button
-              type="button"
-              onClick={addModel}
-              className="shrink-0 rounded-[10px] border border-line px-3 py-[7px] text-[12px] text-ink transition-colors hover:bg-surface-2"
-            >
+            <button type="button" onClick={addModel} className="settings-btn">
               添加
             </button>
           </div>
@@ -703,12 +766,13 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               点模型行展开配置；带「默认」标记的是对话使用的模型。
             </p>
           )}
+          </div>
         </div>
 
         {/* ── 外观 ── */}
         <h3 className="settings-eyebrow mb-1.5 mt-4">外观</h3>
         <div className="settings-card">
-          <div className="py-2.5">
+          <div className="settings-field">
             <span className="field-label">主题</span>
             <Segmented
               ariaLabel="主题"
@@ -726,38 +790,75 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         {/* ── 联网 ── */}
         <h3 className="settings-eyebrow mb-1.5 mt-4">联网</h3>
         <div className="settings-card">
-          <div className="mt-3 flex items-center justify-between">
-            <label
-              htmlFor="settings-web-search"
-              className="text-[12.5px] font-medium text-ink"
-            >
-              联网搜索
-            </label>
+          <div className="settings-block">
+            <div className="settings-row">
+              <label
+                htmlFor="settings-web-search"
+                className="settings-row-label"
+              >
+                联网搜索
+              </label>
+              <button
+                id="settings-web-search"
+                type="button"
+                role="switch"
+                aria-checked={webSearch}
+                onClick={() => {
+                  const next = !webSearch;
+                  setWebSearch(next);
+                  run(savePrefs({ webSearch: next }));
+                }}
+                className="switch"
+              >
+                <span className="switch-knob" />
+              </button>
+            </div>
+            <p className="field-hint">
+              启用 web_search（联网搜索）与 web_fetch（读取网页正文）工具；关闭后
+              TARS 只能读取当前打开的页面。开启时搜索词会发送给搜索引擎。
+            </p>
+          </div>
+        </div>
+
+        {/* ── 数据 ── */}
+        <h3 className="settings-eyebrow mb-1.5 mt-4">历史数据</h3>
+        <div className="settings-card">
+          <div className="settings-field">
+            <span className="field-label">保留时长</span>
+            <Segmented
+              value={retention}
+              options={RETENTION_OPTIONS}
+              onChange={changeRetention}
+              ariaLabel="历史会话保留时长"
+            />
+          </div>
+          <div className="settings-row">
+            <span className="settings-row-label">本地占用</span>
+            <span className="font-mono text-[12px] text-muted">
+              {usage ?? "—"}
+            </span>
+          </div>
+          <div className="settings-block">
             <button
-              id="settings-web-search"
               type="button"
-              role="switch"
-              aria-checked={webSearch}
-              onClick={() => {
-                const next = !webSearch;
-                setWebSearch(next);
-                run(savePrefs({ webSearch: next }));
-              }}
-              className="switch"
+              onClick={clearAllHistory}
+              className={`text-[13px] transition-colors ${
+                confirmClear ? "text-danger" : "text-muted hover:text-danger"
+              }`}
             >
-              <span className="switch-knob" />
+              {confirmClear ? "再点一次确认清空" : "清空全部历史"}
             </button>
           </div>
-          <p className="field-hint mb-2.5 mt-1">
-            启用 web_search（联网搜索）与 web_fetch（读取网页正文）工具；关闭后 TARS 只能读取当前打开的页面。开启时搜索词会发送给搜索引擎。
-          </p>
         </div>
+        <p className="settings-group-footer mt-2">
+          超过保留时长的会话按最后活跃时间自动清理;删除的会话不可恢复,所有数据只存在本机。
+        </p>
 
         {/* ── 诊断 ── */}
         <h3 className="settings-eyebrow mb-1.5 mt-4">诊断</h3>
         <div className="settings-card">
-          <div className="flex items-center justify-between py-2.5">
-            <span className="text-[12.5px] font-medium text-ink">运行日志</span>
+          <div className="settings-row">
+            <span className="settings-row-label">运行日志</span>
             <span className="font-mono text-[12px] text-muted">
               {logCount === null
                 ? "读取中…"
@@ -766,7 +867,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
                   : `${logCount} 条`}
             </span>
           </div>
-          <div className="flex items-center gap-4 pb-1.5">
+          <div className="settings-block flex items-center gap-4">
             <button
               type="button"
               onClick={copyLogs}

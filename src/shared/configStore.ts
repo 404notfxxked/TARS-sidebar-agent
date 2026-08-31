@@ -48,6 +48,8 @@ export interface AppConfig {
   theme: ThemePref;
   /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 开 */
   webSearch: boolean;
+  /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
+  historyRetention: number;
 }
 
 export async function loadConfig(): Promise<AppConfig> {
@@ -61,6 +63,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "maxContextTokens",
     "theme",
     "webSearch",
+    "historyRetention",
   ]);
 
   const apiKey = s.apiKey ?? l.apiKey ?? "";
@@ -81,6 +84,11 @@ export async function loadConfig(): Promise<AppConfig> {
     theme: l.theme ?? "system",
     // 旧版本没有这个 key:undefined 视为开启(能力默认可用,开关只做显式关闭)
     webSearch: l.webSearch !== false,
+    // 历史保留天数:与 sessionHistory.retentionDays 的缺省保持一致(7 天)
+    historyRetention:
+      typeof l.historyRetention === "number" && l.historyRetention >= 0
+        ? l.historyRetention
+        : 7,
   };
 }
 
@@ -88,7 +96,16 @@ export async function loadConfig(): Promise<AppConfig> {
  *  自动保存的各控件按字段调用,避免整包重写 apiKey 相关存储 */
 export async function savePrefs(
   prefs: Partial<
-    Pick<AppConfig, "name" | "model" | "models" | "baseUrl" | "theme" | "webSearch">
+    Pick<
+      AppConfig,
+      | "name"
+      | "model"
+      | "models"
+      | "baseUrl"
+      | "theme"
+      | "webSearch"
+      | "historyRetention"
+    >
   >,
 ): Promise<void> {
   await chrome.storage.local.set(prefs);

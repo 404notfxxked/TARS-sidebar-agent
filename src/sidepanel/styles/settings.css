@@ -17,6 +17,25 @@
   .view-in {
     animation: page-in 240ms var(--spring-enter);
   }
+
+  /* ---- 历史会话页 ---- */
+  /* 日期组头:滚动时吸顶,像 ChatGPT 历史侧栏的分段 */
+  .sessions-group-head {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: 4px 0 2px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    background: var(--paper);
+  }
+  /* 行入场:按序交错淡入(延迟由行内 style 提供,封顶 8 行) */
+  .sessions-row-in {
+    animation: msg-in 240ms var(--spring-enter) backwards;
+  }
 }
 
 @layer components {
@@ -29,13 +48,56 @@
     color: var(--muted);
   }
 
-  /* 分组卡片:实心表面 */
+  /* 分组卡片:实心表面。垂直节奏由子块自带,卡片只管左右包边 */
   .settings-card {
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 14px;
-    padding: 2px 14px 10px;
+    padding: 1px 14px;
     box-shadow: var(--shadow-sm);
+  }
+  /* 卡片内直接子块统一 9px 垂直节奏,子块之间一条发丝线(iOS 分组列表式) */
+  .settings-card > * {
+    padding: 9px 0;
+  }
+  .settings-card > * + * {
+    border-top: 1px solid var(--line-soft);
+  }
+
+  /* 子块三件套:纵向字段 / 单行 / 复合块。
+     行的 padding 只在作为卡片直接子块时生效 —— 嵌在 block 里的行不再自垫,
+     否则双层 padding 叠加会导致各卡首行文字起点不一致 */
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .settings-field .field-label {
+    margin: 4px 0 6px;
+  }
+  .settings-row-label {
+    flex-shrink: 0;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  /* 次级按钮(获取列表 / 添加):与 field-input 同圆角同高度 */
+  .settings-btn {
+    flex-shrink: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 7px 12px;
+    font-size: 12px;
+    color: var(--ink);
+    transition: background 150ms ease, opacity 150ms ease;
+  }
+  .settings-btn:hover {
+    background: var(--surface-2);
+  }
+  .settings-btn:disabled {
+    opacity: 0.5;
   }
 
   /* 堆叠字段:标签在上,控件全宽在下 */
@@ -69,7 +131,7 @@
     box-shadow: 0 0 0 3px var(--accent-soft);
   }
   .field-hint {
-    margin: 6px 0 2px;
+    margin: 4px 0 0;
     font-size: 11px;
     line-height: 1.45;
     color: var(--muted);
@@ -244,17 +306,17 @@
     color: var(--muted);
   }
 
-  /* ---- 模型列表行:收起态一行,点击展开每模型配置 ---- */
+  /* ---- 模型列表:卡片内的二级分组,用填充色区分层级(不做卡中卡) ---- */
   .model-list {
     display: flex;
     flex-direction: column;
-    margin-top: 8px;
-    border: 1px solid var(--line);
+    margin-top: 10px;
     border-radius: 10px;
+    background: var(--surface-2);
     overflow: hidden;
   }
   .model-row + .model-row {
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--line-soft);
   }
   .model-row-head {
     display: flex;
@@ -266,7 +328,7 @@
     transition: background 120ms ease;
   }
   .model-row-head:hover {
-    background: var(--surface-2);
+    background: var(--line);
   }
   .model-row-name {
     flex: 1;
