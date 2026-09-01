@@ -1,7 +1,6 @@
 // 搜索结果页解析(运行在 offscreen document 的扩展私有 DOM 环境):
-// 每个无 Key 搜索引擎一个解析器,输入引擎返回的原始 HTML + 最终响应 URL,
-// 输出统一的 {title,url,snippet}。选择器只负责「定位条目」,文本清洗、
-// URL 还原(DDG 跳转包装 / Bing 点击包装)、去重与裁剪在这里统一收口。
+// 仅服务免 Key 抓取兜底路径(scrapeSearch.ts)。选择器只负责「定位条目」,
+// 文本清洗、URL 还原(DDG 跳转包装 / Bing 点击包装)、去重与裁剪在这里统一收口。
 // 注意:DOMParser 解析出的文档 URL 是 about:blank,相对链接必须用
 // 调用方传入的最终响应 URL(base)手工还原,不能依赖 a.href 自动解析。
 

@@ -98,12 +98,19 @@ export async function runAgentLoop(
       maxTokensField:
         modelEntry?.maxTokensField ?? inferMaxTokensField(config.model),
     });
-    // 联网开关(webSearch,缺省开):关闭时对模型隐藏 web_* 工具,
-    // 并在系统提示里声明,避免模型照着规则 8 去调不存在的工具
-    const webEnabled = config.webSearch !== false;
+    // 联网开关:开关打开即暴露 web_* 工具——auto 模式(免 Key 抓取兜底)无需配置;
+    // 选了服务商但没填 key 时视为 auto 兜底,不再隐藏工具
+    const webEnabled = config.webSearch === true;
     const tools = webEnabled
       ? toProviderToolSchemas()
       : toProviderToolSchemas().filter((t) => !t.name.startsWith("web_"));
+    // 执行上下文档案:模型与联网开关(index.ts 的 run started 已记用户原文,
+    // 这里补齐判断搜索质量时需要的模型身份)
+    log.info("agent", "run config", {
+      session: payload.sessionId ?? "",
+      model: config.model,
+      web: webEnabled,
+    });
 
     const history = await loadHistory(payload.sessionId ?? "");
     // 追加写的两个锚点:persistedSeqs = 库里已有条数(新消息起始 seq);
@@ -294,12 +301,14 @@ export async function runAgentLoop(
             toolResult = await dispatchToolCall(tc.name, tc.args);
             log.info("tool", `${tc.name} 完成`, {
               ms: Date.now() - startedAt,
+              args: tc.args,
               result: stringifyResult(toolResult),
             });
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : String(err);
             log.error("tool", `${tc.name} 失败`, {
               ms: Date.now() - startedAt,
+              args: tc.args,
               error: errMsg,
             });
             ok = false;

@@ -9,7 +9,7 @@
 // 取消:用户中止 run 时,在途抓取立即中断(offscreen 侧的解析为本地纯计算,
 // 不受影响,结果会被丢弃)。
 
-import { callOffscreenParser } from "../shared/docBridge";
+import { callOffscreenParser, ensureOffscreenDocument } from "../shared/docBridge";
 import { abortWithTimeout, getToolExecutionContext } from "./toolContext";
 import { createLogger } from "../shared/logger";
 
@@ -48,6 +48,9 @@ export async function runWebFetch(args: WebFetchArgs): Promise<WebFetchResult> {
   if (!url) {
     throw new Error("web_fetch: url 不能为空,请给出要读取的网页链接");
   }
+  // offscreen 的存活由本工具自理:搜索 API 化之后没有别人顺手唤起它了
+  // (此前一直依赖 web_search 抓 HTML 前的 ensure 调用)
+  await ensureOffscreenDocument();
   let parsed: URL;
   try {
     parsed = new URL(url);

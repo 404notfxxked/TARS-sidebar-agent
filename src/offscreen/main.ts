@@ -13,8 +13,8 @@ import {
   type CaptureMeta,
   type VirtualDoc,
 } from "./pipeline";
-import { parseSearchResults } from "./searchParse";
 import { fetchBuild, fetchRead } from "./fetchDoc";
+import { parseSearchResults } from "./searchParse";
 import { createLogger, installGlobalErrorHook } from "../shared/logger";
 
 const log = createLogger({ ctx: "off" });
@@ -151,15 +151,8 @@ async function handleDocTool(name: string, args: unknown, targetTabId: number, r
 }
 
 // ---- 一次性解析任务(PARSE_CALL,不依赖任何 tab 快照)----
-// 与 DOC_TOOL_CALL 的区别:数据由 SW 随消息自带(如 web_search 抓到的
-// 搜索结果页 HTML),不需要先向某个 tab 索取快照
-
-interface SearchParsePayload {
-  engine?: unknown;
-  html?: unknown;
-  base?: unknown;
-  limit?: unknown;
-}
+// 与 DOC_TOOL_CALL 的区别:数据由 SW 随消息自带(web_fetch 抓到的网页 HTML),
+// 不需要先向某个 tab 索取快照
 
 // async:内部 throw 必须变成 rejected promise —— 同步 throw 会逃出
 // Promise.resolve(...) 成为 listener 未捕获异常,SW 侧拿到的是被 Chrome
@@ -167,7 +160,12 @@ interface SearchParsePayload {
 async function handleParse(kind: string, payload: unknown): Promise<unknown> {
   switch (kind) {
     case "search": {
-      const p = (payload ?? {}) as SearchParsePayload;
+      const p = (payload ?? {}) as {
+        engine?: unknown;
+        html?: unknown;
+        base?: unknown;
+        limit?: unknown;
+      };
       if (typeof p.html !== "string" || !p.html) {
         throw new Error("search 解析任务缺少 html 内容");
       }

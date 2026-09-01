@@ -240,10 +240,15 @@ registerTool<WebSearchArgs, WebSearchResult>({
         description: "搜索关键词组合:用空格分隔核心词,避免整句长问句",
       },
       max_results: { type: "number", description: "返回条数上限,默认 6,最大 10" },
+      market: {
+        type: "string",
+        description:
+          "结果的语言市场,格式「语言-地区」:zh-CN / zh-TW / ja-JP / en-US / ko-KR 等。按 query 所用语言填对应市场(中文查询 zh-CN、查日文内容 ja-JP),比自身所在地区更相关;仅配置了搜索服务时生效(Brave 映射为地区参数,其余服务忽略),免 Key 抓取通道不支持",
+      },
       recency: {
         type: "string",
         enum: ["day", "week", "month", "year"],
-        description: "时间范围过滤:只要最近一天/一周/一月/一年的结果;查时效性内容(新闻/版本发布)时使用,普通查询省略",
+        description: "时间范围过滤:只要最近一天/一周/一月/一年的结果;查时效性内容(新闻/版本发布)时使用,普通查询省略。仅配置了搜索服务时生效,免 Key 抓取通道(引擎 bing/ddg)会忽略",
       },
       allowed_domains: {
         type: "array",

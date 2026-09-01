@@ -1,42 +1,42 @@
-// web_search 工具执行体(service worker 侧):
-// 按序尝试多个无 Key 搜索引擎,单个引擎请求失败 / 被风控 / 空结果时自动
-// 切换下一个;全部失败才向模型报错。引擎只负责「抓 HTML」,解析借道
-// offscreen document 的 DOMParser(PARSE_CALL 协议,见 shared/docBridge.ts)。
-//
-// 为什么不做成可选配置:无 Key 方案零配置可用,是本工具的设计前提;
-// 引擎顺序按「用户网络可达性」排定(Bing 在国内可达,DDG 多数国际网络可达),
-// 兜底顺序本身就覆盖了两类环境,不值得为此引入设置项。
-//
-// 健壮性:引擎失败会按原因进入冷却(storage.session,SW 重启不丢),
-// 冷却期内直接跳过 —— 避免每次搜索都先撞一次注定失败的风控/不可达;
-// 冷却是启发式,若所有引擎都在冷却中则照常尝试(有结果总比没有强)。
-// 用户中止 run 时,在途请求立即中断且不再尝试下一个引擎。
+// web_search 工具执行体(service worker 侧)——双模式:
+//   auto(免 Key,默认):抓取搜索结果页 HTML,走 scrapeSearch.ts 的加固链路
+//   (cookie 蹭行 / 语言头 / 节流 / 风控冷却,详见该文件头部说明);
+//   API(BYOK):设置里配置了服务商 key 时走结构化 API。
+// API 三家预设:Tavily(海外 agent 生态主流)/ 博查(国产,DeepSeek C 端同款,
+// 中文质量好、国内直连稳)/ Brave(独立索引)。响应都是结构化 JSON,直接映射
+// {title,url,snippet},各家差异收在 preset 表内(端点、鉴权头、请求体、参数
+// 映射、响应解析);域名过滤统一用结果后置(对任何 provider 都成立)。
+// 失败按原因进冷却(storage.session,SW 重启不丢;两条路径共用同一冷却表);
+// 用户中止 run 时在途请求立即中断。
 
-import { callOffscreenParser, ensureOffscreenDocument } from "../shared/docBridge";
 import { abortWithTimeout, getToolExecutionContext } from "./toolContext";
 import { createLogger } from "../shared/logger";
+import type { SearchProviderId, SearchProviderSetting } from "../shared/configStore";
+import { runScrapeSearch } from "./scrapeSearch";
 
 const log = createLogger({ ctx: "bg" });
 
-/** 单引擎请求超时:搜索引擎应答很快,超时基本等于不可达(如被墙) */
-const FETCH_TIMEOUT_MS = 10_000;
-/** 默认返回条数与上限(条数越大 token 越贵,且首页之后的相关度急剧下降) */
+/** 单次请求超时:搜索 API 应答很快,超时基本等于不可达 */
+const FETCH_TIMEOUT_MS = 15_000;
+/** 默认返回条数与上限(条数越大 token 越贵) */
 const RESULTS_DEFAULT = 6;
 const RESULTS_MAX = 10;
 
 export interface WebSearchArgs {
   query?: unknown;
   max_results?: unknown;
-  /** 时间范围(day/week/month/year),对齐 Tavily time_range 语义 */
+  /** 时间范围(day/week/month/year),映射到各家的 recency 参数 */
   recency?: unknown;
   /** 域名白名单/黑名单,对齐 Anthropic web_search 工具;互斥,同时给时白名单优先 */
   allowed_domains?: unknown;
   blocked_domains?: unknown;
+  /** 结果的语言市场(如 zh-CN / ja-JP);当前仅 Brave 支持映射,其余服务忽略 */
+  market?: unknown;
 }
 
 export interface WebSearchResult {
   query: string;
-  /** 实际产出结果的引擎;空数组时是最后一个正常应答的引擎 */
+  /** 实际产出结果的搜索服务;空数组时是最后正常应答的服务 */
   engine: string;
   results: { title: string; url: string; snippet: string }[];
   /** 仅空结果时携带:给模型的下一步建议 */
@@ -46,49 +46,157 @@ export interface WebSearchResult {
 const RECENCY_VALUES = ["day", "week", "month", "year"] as const;
 type Recency = (typeof RECENCY_VALUES)[number];
 
-/** recency 对应的天数范围(Bing ez5 过滤用);DDG df 参数直接用首字母 */
-const RECENCY_DAYS: Record<Recency, number> = {
-  day: 1,
-  week: 7,
-  month: 30,
-  year: 365,
-};
+// ---- 搜索服务预设 ----
+// 请求/响应形状各家不同,收口在 buildRequest / parseResponse 两个函数里;
+// 鉴权统一「用户提供 key」,地址留空用官方端点(自建中转时在设置里改)。
 
-interface SearchEngine {
-  id: string;
-  buildUrl: (query: string, recency: Recency | null) => string;
-  /** 响应命中标记且解析不出结果 → 判定为风控/验证页而非「无结果」,继续换引擎 */
-  blockMarkers?: RegExp;
+interface ProviderRequest {
+  url: string;
+  init: RequestInit;
 }
 
-const ENGINES: SearchEngine[] = [
-  {
-    id: "bing",
-    buildUrl: (q, recency) => {
-      let url = `https://www.bing.com/search?q=${encodeURIComponent(q)}&count=${RESULTS_MAX}`;
-      if (recency) {
-        // Bing 时间过滤:ez5_<起>_<结束>,日期序列 = UTC 天数(实测有效,
-        // 响应里会出现「2026/8/22 - 2026/8/29」这类生效标签)
-        const end = Math.floor(Date.now() / 86_400_000);
-        const range = `ex1:"ez5_${end - RECENCY_DAYS[recency]}_${end}"`;
-        url += `&filters=${encodeURIComponent(range)}`;
-      }
-      return url;
-    },
-    blockMarkers: /grecaptcha|challengesurvey/i,
-  },
-  {
-    id: "ddg",
-    buildUrl: (q, recency) => {
-      let url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-      if (recency) url += `&df=${recency[0]}`; // d/w/m/y
-      return url;
-    },
-    blockMarkers: /anomaly|captcha/i,
-  },
-];
+interface SearchProviderPreset {
+  id: SearchProviderId;
+  /** 官方 API 根地址(不含路径);设置里留空时使用 */
+  defaultBaseUrl: string;
+  buildRequest(ctx: {
+    baseUrl: string;
+    apiKey: string;
+    query: string;
+    limit: number;
+    recency: Recency | null;
+    market: string | null;
+  }): ProviderRequest;
+  /** 响应 JSON → 统一结果数组;抛错视为该服务响应异常 */
+  parse(body: unknown): { title: string; url: string; snippet: string }[];
+}
 
-// ---- 引擎冷却(风控/不可达后短期跳过) ----
+/** 安全取字符串字段 */
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+const TAVILY: SearchProviderPreset = {
+  id: "tavily",
+  defaultBaseUrl: "https://api.tavily.com",
+  buildRequest: ({ baseUrl, apiKey, query, limit, recency }) => ({
+    url: `${baseUrl}/search`,
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        max_results: limit,
+        ...(recency ? { time_range: recency } : {}),
+      }),
+    },
+  }),
+  parse: (body) => {
+    const results = (body as { results?: unknown })?.results;
+    if (!Array.isArray(results)) throw new Error("响应缺少 results 数组");
+    return results.map((r) => {
+      const o = r as Record<string, unknown>;
+      return { title: str(o.title), url: str(o.url), snippet: str(o.content) };
+    });
+  },
+};
+
+const BOCHA: SearchProviderPreset = {
+  id: "bocha",
+  defaultBaseUrl: "https://api.bocha.cn",
+  buildRequest: ({ baseUrl, apiKey, query, limit, recency }) => ({
+    url: `${baseUrl}/v1/web-search`,
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        count: limit,
+        summary: true,
+        // 博查 freshness 词表:noLimit/oneDay/oneWeek/oneMonth/oneYear
+        ...(recency
+          ? { freshness: `one${recency[0].toUpperCase()}${recency.slice(1)}` }
+          : {}),
+      }),
+    },
+  }),
+  parse: (body) => {
+    const pages = (body as { data?: { webPages?: { value?: unknown } } })?.data
+      ?.webPages?.value;
+    if (!Array.isArray(pages))
+      throw new Error("响应缺少 data.webPages.value 数组");
+    return pages.map((p) => {
+      const o = p as Record<string, unknown>;
+      return {
+        title: str(o.name),
+        url: str(o.url),
+        snippet: str(o.summary) || str(o.snippet),
+      };
+    });
+  },
+};
+
+/** Brave search_lang 词表:中文不接受 "zh",简体要写 zh-hans、繁体 zh-hant;
+ *  其余语言直接用 market 的语言码 */
+function braveSearchLang(lang: string, region?: string): string {
+  if (lang !== "zh") return lang;
+  return region === "TW" || region === "HK" || region === "MO"
+    ? "zh-hant"
+    : "zh-hans";
+}
+
+const BRAVE: SearchProviderPreset = {
+  id: "brave",
+  defaultBaseUrl: "https://api.search.brave.com",
+  buildRequest: ({ baseUrl, apiKey, query, limit, recency, market }) => {
+    const u = new URL(`${baseUrl}/res/v1/web/search`);
+    u.searchParams.set("q", query);
+    u.searchParams.set("count", String(limit));
+    if (recency) {
+      // Brave freshness 词表:pd(天)/pw(周)/pm(月)/py(年)
+      u.searchParams.set("freshness", `p${recency[0]}`);
+    }
+    if (market) {
+      const [lang, region] = market.split("-");
+      u.searchParams.set("search_lang", braveSearchLang(lang, region));
+      if (region) u.searchParams.set("country", region.toLowerCase());
+    }
+    return {
+      url: u.href,
+      init: {
+        headers: {
+          Accept: "application/json",
+          "X-Subscription-Token": apiKey,
+        },
+      },
+    };
+  },
+  parse: (body) => {
+    const results = (body as { web?: { results?: unknown } })?.web?.results;
+    if (!Array.isArray(results)) throw new Error("响应缺少 web.results 数组");
+    return results.map((r) => {
+      const o = r as Record<string, unknown>;
+      return {
+        title: str(o.title),
+        url: str(o.url),
+        snippet: str(o.description),
+      };
+    });
+  },
+};
+
+export const SEARCH_PROVIDERS: Record<SearchProviderId, SearchProviderPreset> =
+  {
+    tavily: TAVILY,
+    bocha: BOCHA,
+    brave: BRAVE,
+  };
+
+// ---- 失败冷却(限流/不可达后短期跳过) ----
 // 存 storage.session:浏览器会话内有效,SW 被杀重启也不丢;浏览器重开自动清零。
 const COOLDOWN_KEY = "webSearch:engineCooldown";
 const COOLDOWN_MS = { blocked: 5 * 60_000, unreachable: 10 * 60_000 } as const;
@@ -110,28 +218,29 @@ async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
   try {
     await chrome.storage.session.set({ [COOLDOWN_KEY]: map });
   } catch {
-    /* 冷却写失败无碍,下次会重新尝试引擎 */
+    /* 冷却写失败无碍,下次会重新尝试 */
   }
-  log.warn("search", "引擎进入冷却,近期搜索将跳过", {
-    engine: id,
+  log.warn("search", "搜索服务进入冷却,近期搜索将报错", {
+    provider: id,
     kind,
     minutes: COOLDOWN_MS[kind] / 60_000,
   });
 }
 
-async function clearEngineCooldown(id: string): Promise<void> {
+/** 搜索服务是否在冷却期内(冷却只影响报错文案,不改变「不可用」的事实) */
+export async function searchCooldownKind(
+  id: string,
+): Promise<CooldownKind | null> {
   const map = await loadCooldowns();
-  if (!map[id]) return;
-  delete map[id];
-  try {
-    await chrome.storage.session.set({ [COOLDOWN_KEY]: map });
-  } catch {
-    /* ignore */
-  }
+  const hit = map[id];
+  return hit?.until > Date.now() ? hit.kind : null;
 }
 
-/** 失败分类:决定「不再尝试下一个引擎」还是「冷却后换下一个」 */
-function classifyFailure(e: unknown, cancelled: boolean): "cancelled" | "timeout" | "blocked" | "error" {
+/** 失败分类:限流/拒绝 → blocked;超时 → unreachable;其余 → error */
+function classifyFailure(
+  e: unknown,
+  cancelled: boolean,
+): "cancelled" | "timeout" | "blocked" | "error" {
   if (cancelled) return "cancelled";
   const msg = e instanceof Error ? e.message : String(e);
   if (/timeout/i.test(msg)) return "timeout";
@@ -139,7 +248,10 @@ function classifyFailure(e: unknown, cancelled: boolean): "cancelled" | "timeout
   return "error";
 }
 
-export async function runWebSearch(args: WebSearchArgs): Promise<WebSearchResult> {
+/** 工具入口:按配置分流到 API 或免 Key 抓取兜底 */
+export async function runWebSearch(
+  args: WebSearchArgs,
+): Promise<WebSearchResult> {
   const query = typeof args?.query === "string" ? args.query.trim() : "";
   if (!query) {
     throw new Error("web_search: query 不能为空,请给出要搜索的关键词");
@@ -152,131 +264,203 @@ export async function runWebSearch(args: WebSearchArgs): Promise<WebSearchResult
     args?.recency === null || args?.recency === undefined
       ? null
       : validateRecency(args.recency);
-  // 域名过滤(Anthropic 语义:两者互斥,同时给时白名单优先)
+  const market = validateMarket(args?.market);
+  // 域名参数宽松归一后统一做结果后置(Anthropic 语义:两者互斥,同时给时白名单优先)
   const allowed = parseDomainList(args?.allowed_domains);
-  const blocked = allowed.length === 0 ? parseDomainList(args?.blocked_domains) : [];
+  const blocked =
+    allowed.length === 0 ? parseDomainList(args?.blocked_domains) : [];
 
-  const cancelSignal = getToolExecutionContext()?.signal;
-  await ensureOffscreenDocument();
-
-  const startedAt = Date.now();
-  const failures: string[] = [];
-  /** 有引擎正常应答(哪怕空结果)时记下它,作为空结果返回值里的 engine */
-  let lastGoodEngine = "";
-
-  // 冷却中的引擎直接跳过;若全部在冷却,说明冷却已不可信,照常尝试
-  const cooldowns = await loadCooldowns();
-  const now = Date.now();
-  const available = ENGINES.filter((en) => {
-    if (!(cooldowns[en.id]?.until > now)) return true;
-    log.info("search", "引擎冷却中,跳过", {
-      engine: en.id,
-      remainingSec: Math.round(((cooldowns[en.id]?.until ?? 0) - now) / 1000),
-    });
-    return false;
-  });
-  const enginesToTry = available.length > 0 ? available : ENGINES;
-  if (available.length === 0) {
-    log.info("search", "所有引擎均在冷却中,忽略冷却照常尝试");
+  const mode = await readSearchMode();
+  if (mode.kind === "scrape") {
+    // 抓取通道是最小请求形态(只带 q):recency/market 仅 API 通道支持
+    return runScrapeSearch({ query, limit, allowed, blocked });
   }
-
-  for (const engine of enginesToTry) {
-    if (cancelSignal?.aborted) {
-      throw new Error("用户已取消本次搜索");
-    }
-    try {
-      const { html, finalUrl } = await fetchHtml(engine.buildUrl(query, recency), cancelSignal);
-      const results = (await callOffscreenParser("search", {
-        engine: engine.id,
-        html,
-        base: finalUrl,
-        limit,
-      })) as { title: string; url: string; snippet: string }[];
-
-      if (!Array.isArray(results)) throw new Error("解析结果异常");
-      const beforeFilter = results.length;
-      const filtered = results.filter((r) => passesDomainFilter(r.url, allowed, blocked));
-      if (beforeFilter > 0 && filtered.length === 0 && (allowed.length > 0 || blocked.length > 0)) {
-        // 域名过滤把结果全滤掉了:换引擎大概率也一样,直接说明,不继续兜底
-        log.info("search", "结果全被域名过滤排除", {
-          engine: engine.id,
-          allowed,
-          blocked,
-          beforeFilter,
-        });
-        return {
-          query,
-          engine: engine.id,
-          results: [],
-          note: `有 ${beforeFilter} 条结果但全被域名过滤排除。请放宽 allowed_domains / blocked_domains 后重试,或去掉过滤参数。`,
-        };
-      }
-      if (filtered.length === 0) {
-        if (engine.blockMarkers?.test(html)) {
-          await coolDownEngine(engine.id, "blocked");
-          throw new Error("返回风控/验证页");
-        }
-        lastGoodEngine = engine.id;
-        log.info("search", `引擎无结果,切换下一个`, { engine: engine.id, query });
-        continue;
-      }
-      await clearEngineCooldown(engine.id);
-      log.info("search", "web_search 完成", {
-        engine: engine.id,
-        count: filtered.length,
-        ms: Date.now() - startedAt,
-      });
-      return { query, engine: engine.id, results: filtered.slice(0, limit) };
-    } catch (e) {
-      const kind = classifyFailure(e, cancelSignal?.aborted ?? false);
-      if (kind === "cancelled") {
-        throw new Error("用户已取消本次搜索");
-      }
-      const msg = e instanceof Error ? e.message : String(e);
-      if (kind === "timeout") await coolDownEngine(engine.id, "unreachable");
-      if (kind === "blocked") await coolDownEngine(engine.id, "blocked");
-      failures.push(`${engine.id}: ${msg}`);
-      log.warn("search", `引擎失败,切换下一个`, { engine: engine.id, error: msg });
-    }
-  }
-
-  // 所有引擎都报错(网络/风控)→ 抛错,让模型看到原因后换词重试或直接回答
-  if (!lastGoodEngine) {
-    throw new Error(`所有搜索引擎都失败了(${failures.join("; ")})`);
-  }
-  // 有引擎正常应答但确实没有结果 → 空结果 + 建议,不算错误
-  return {
+  return runApiSearch(mode, {
     query,
-    engine: lastGoodEngine,
-    results: [],
-    note: "没有搜索到相关结果。可换更具体的核心词、或换一种语言的关键词重试;若已知答案请直接回答。",
-  };
+    limit,
+    recency,
+    market,
+    allowed,
+    blocked,
+  });
 }
 
-/** SW 内 fetch(host_permissions 覆盖 <all_urls>,无 CORS 限制);返回最终 URL 供相对链接还原 */
-async function fetchHtml(
-  url: string,
-  external?: AbortSignal,
-): Promise<{ html: string; finalUrl: string }> {
-  const { signal, cleanup } = abortWithTimeout(FETCH_TIMEOUT_MS, external);
-  try {
-    const res = await fetch(url, { signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const html = await res.text();
-    if (!html.trim()) throw new Error("空响应");
-    return { html, finalUrl: res.url || url };
-  } finally {
-    cleanup();
+type ApiSearchArgs = {
+  query: string;
+  limit: number;
+  recency: Recency | null;
+  market: string | null;
+  allowed: string[];
+  blocked: string[];
+};
+
+async function runApiSearch(
+  mode: { provider: SearchProviderId; baseUrl: string; apiKey: string },
+  args: ApiSearchArgs,
+): Promise<WebSearchResult> {
+  const { query, limit, recency, market, allowed, blocked } = args;
+  const preset = SEARCH_PROVIDERS[mode.provider];
+
+  const cancelSignal = getToolExecutionContext()?.signal;
+  const startedAt = Date.now();
+
+  const cooldown = await searchCooldownKind(mode.provider);
+  if (cooldown === "blocked") {
+    throw new Error(
+      `搜索服务(${mode.provider})刚因限流/拒绝进入冷却(5 分钟),请稍后重试或改用其他信息来源`,
+    );
   }
+
+  try {
+    const req = preset.buildRequest({
+      baseUrl: mode.baseUrl,
+      apiKey: mode.apiKey,
+      query,
+      limit,
+      recency,
+      market,
+    });
+    const { signal, cleanup } = abortWithTimeout(
+      FETCH_TIMEOUT_MS,
+      cancelSignal,
+    );
+    let res: Response;
+    try {
+      res = await fetch(req.url, { ...req.init, signal });
+    } finally {
+      cleanup();
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `HTTP ${res.status}${text ? `:${text.slice(0, 120)}` : ""}`,
+      );
+    }
+    const body: unknown = await res.json();
+    const results = preset.parse(body);
+
+    const beforeFilter = results.length;
+    const filtered = results.filter((r) =>
+      passesDomainFilter(r.url, allowed, blocked),
+    );
+    if (
+      beforeFilter > 0 &&
+      filtered.length === 0 &&
+      (allowed.length > 0 || blocked.length > 0)
+    ) {
+      // 域名过滤把结果全滤掉了:重试大概率也一样,直接说明
+      log.info("search", "结果全被域名过滤排除", {
+        query,
+        provider: mode.provider,
+        allowed,
+        blocked,
+        beforeFilter,
+      });
+      return {
+        query,
+        engine: mode.provider,
+        results: [],
+        note: `有 ${beforeFilter} 条结果但全被域名过滤排除。请放宽 allowed_domains / blocked_domains 后重试,或去掉过滤参数。`,
+      };
+    }
+    const finalResults = filtered.slice(0, limit);
+    // 搜索质量复盘档案:一次搜索的完整链路(词/过滤参数/服务/结果预览)一条记全
+    log.info("search", "web_search 完成", {
+      query,
+      ...(market ? { market } : {}),
+      ...(recency ? { recency } : {}),
+      ...(allowed.length ? { allowed } : {}),
+      ...(blocked.length ? { blocked } : {}),
+      engine: mode.provider,
+      mode: "api",
+      count: finalResults.length,
+      ms: Date.now() - startedAt,
+      results: finalResults.map((r) => ({
+        t: clipLog(r.title, 80),
+        u: r.url,
+        s: clipLog(r.snippet, 120),
+      })),
+    });
+    if (finalResults.length === 0) {
+      log.info("search", "搜索无结果", {
+        query,
+        ...(market ? { market } : {}),
+        engine: mode.provider,
+        ms: Date.now() - startedAt,
+      });
+      return {
+        query,
+        engine: mode.provider,
+        results: [],
+        note: "没有搜索到相关结果。可换更具体的核心词、或换一种语言的关键词重试;若已知答案请直接回答。",
+      };
+    }
+    return { query, engine: mode.provider, results: finalResults };
+  } catch (e) {
+    const kind = classifyFailure(e, cancelSignal?.aborted ?? false);
+    if (kind === "cancelled") {
+      throw new Error("用户已取消本次搜索");
+    }
+    if (kind === "timeout" || kind === "blocked") {
+      await coolDownEngine(
+        mode.provider,
+        kind === "timeout" ? "unreachable" : "blocked",
+      );
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    log.warn("search", "搜索服务失败", { provider: mode.provider, error: msg });
+    throw new Error(`搜索服务(${mode.provider})请求失败:${msg}`);
+  }
+}
+
+/** 读搜索模式:provider=auto 或没配 key → 免 Key 抓取兜底;否则 API 路径 */
+async function readSearchMode(): Promise<
+  { kind: "scrape" } | { kind: "api"; provider: SearchProviderId; baseUrl: string; apiKey: string }
+> {
+  const bag = await chrome.storage.local.get("search");
+  const s = (bag.search ?? {}) as Partial<{
+    provider: SearchProviderSetting;
+    baseUrl: string;
+    apiKey: string;
+  }>;
+  const apiKey = typeof s.apiKey === "string" ? s.apiKey.trim() : "";
+  if (s.provider === "auto" || !apiKey) return { kind: "scrape" };
+  const provider: SearchProviderId =
+    s.provider && s.provider in SEARCH_PROVIDERS ? s.provider : "tavily";
+  const baseUrl =
+    typeof s.baseUrl === "string" && s.baseUrl.trim()
+      ? s.baseUrl.trim().replace(/\/+$/, "")
+      : SEARCH_PROVIDERS[provider].defaultBaseUrl;
+  return { kind: "api", provider, baseUrl, apiKey };
 }
 
 function validateRecency(v: unknown): Recency {
-  if (typeof v === "string" && (RECENCY_VALUES as readonly string[]).includes(v)) {
+  if (
+    typeof v === "string" &&
+    (RECENCY_VALUES as readonly string[]).includes(v)
+  ) {
     return v as Recency;
   }
   throw new Error(
     `recency 只接受 ${RECENCY_VALUES.join(" / ")} 之一,收到:${JSON.stringify(v) ?? String(v)}`,
   );
+}
+
+const MARKET_RE = /^[a-z]{2,3}(?:-[a-z]{2,4})?$/i;
+
+/** market 宽松校验并归一:小写语言 + 大写地区(zh-cn → zh-CN);空/缺省返回 null */
+function validateMarket(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const raw = typeof v === "string" ? v.trim() : "";
+  if (!raw || !MARKET_RE.test(raw)) {
+    throw new Error(
+      `market 需为「语言-地区」格式(如 zh-CN / ja-JP / en-US),收到:${JSON.stringify(v) ?? String(v)}`,
+    );
+  }
+  const [lang, region] = raw.split("-");
+  return region
+    ? `${lang.toLowerCase()}-${region.toUpperCase()}`
+    : lang.toLowerCase();
 }
 
 /** 域名参数宽松归一:允许带协议/路径,取主机名部分 */
@@ -296,15 +480,28 @@ function parseDomainList(v: unknown): string[] {
 }
 
 /** 主机名匹配:等于名单项或为其子域(example.com 匹配 www.example.com) */
-function passesDomainFilter(url: string, allowed: string[], blocked: string[]): boolean {
+function passesDomainFilter(
+  url: string,
+  allowed: string[],
+  blocked: string[],
+): boolean {
   let hostname: string;
   try {
     hostname = new URL(url).hostname.toLowerCase();
   } catch {
     return false; // 非法 URL 视为不通过
   }
-  if (allowed.length > 0 && !allowed.some((d) => hostname === d || hostname.endsWith(`.${d}`))) {
+  if (
+    allowed.length > 0 &&
+    !allowed.some((d) => hostname === d || hostname.endsWith(`.${d}`))
+  ) {
     return false;
   }
   return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
+}
+
+/** 日志预览字段截断(标题/摘要用),压平空白 */
+function clipLog(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }

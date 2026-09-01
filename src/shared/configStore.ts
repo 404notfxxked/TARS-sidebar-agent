@@ -6,6 +6,27 @@
 
 export type ThemePref = "system" | "light" | "dark";
 
+/** 联网搜索服务( BYOK):联网开关打开时,配置了 key 走 API,否则免 Key 抓取兜底 */
+export type SearchProviderId = "tavily" | "bocha" | "brave";
+
+/** 设置里的搜索服务选项:auto = 不用服务商,抓取搜索引擎结果页兜底 */
+export type SearchProviderSetting = "auto" | SearchProviderId;
+
+/** 搜索服务配置:provider=auto 时 baseUrl/apiKey 无效;其余留空 baseUrl 用官方端点 */
+export interface SearchConfig {
+  provider: SearchProviderSetting;
+  baseUrl: string;
+  apiKey: string;
+}
+
+/** 各选项展示名(设置页下拉用) */
+export const SEARCH_PROVIDER_LABELS: Record<SearchProviderSetting, string> = {
+  auto: "自动（免 Key，抓取搜索页）",
+  tavily: "Tavily",
+  bocha: "博查 Bocha",
+  brave: "Brave Search",
+};
+
 /** 重点色(配色方案):generate-m3.mjs 里 ACCENTS 的 id,green = 默认源色 */
 export type AccentPref =
   | "green"
@@ -69,8 +90,11 @@ export interface AppConfig {
   theme: ThemePref;
   /** 重点色:决定整套 M3 scheme 的源色(表面底色不随它变,只换强调/主色系) */
   accent: AccentPref;
-  /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 开 */
+  /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关
+   *  (搜索已改为 BYOK 服务,开启还需配好 search.apiKey 才真正可用) */
   webSearch: boolean;
+  /** 搜索服务配置;开关开着但 apiKey 为空时 web_search 仍不可用 */
+  search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
   historyRetention: number;
 }
@@ -87,6 +111,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "theme",
     "accent",
     "webSearch",
+    "search",
     "historyRetention",
   ]);
 
@@ -109,13 +134,28 @@ export async function loadConfig(): Promise<AppConfig> {
     accent: ACCENT_IDS.includes(l.accent as AccentPref)
       ? (l.accent as AccentPref)
       : "green",
-    // 旧版本没有这个 key:undefined 视为开启(能力默认可用,开关只做显式关闭)
-    webSearch: l.webSearch !== false,
+    // 联网搜索 BYOK 化后缺省关闭:开关显式打开 + 配好 key 才对模型可用
+    webSearch: l.webSearch === true,
+    search: normalizeSearch(l.search),
     // 历史保留天数:与 sessionHistory.retentionDays 的缺省保持一致(7 天)
     historyRetention:
       typeof l.historyRetention === "number" && l.historyRetention >= 0
         ? l.historyRetention
         : 7,
+  };
+}
+
+/** 搜索配置宽松归一:非法 provider 回落 auto(免 Key 兜底),字段类型不对的丢弃 */
+function normalizeSearch(v: unknown): SearchConfig {
+  const s = (v ?? {}) as Partial<SearchConfig>;
+  const provider = s.provider;
+  return {
+    provider:
+      provider === "tavily" || provider === "bocha" || provider === "brave"
+        ? provider
+        : "auto",
+    baseUrl: typeof s.baseUrl === "string" ? s.baseUrl : "",
+    apiKey: typeof s.apiKey === "string" ? s.apiKey : "",
   };
 }
 
@@ -132,6 +172,7 @@ export async function savePrefs(
       | "theme"
       | "accent"
       | "webSearch"
+      | "search"
       | "historyRetention"
     >
   >,

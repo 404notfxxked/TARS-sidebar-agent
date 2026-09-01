@@ -103,7 +103,13 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           tabId: msg.payload.tabId,
         };
         activeRuns.set(sessionId, run);
-        log.info("agent", "run started", { sessionId, tabId: msg.payload.tabId });
+        // run 档案首条(e2e 以此为 run 边界):sessionId/tabId + 用户原文,
+        // 复盘搜索质量时串「用户问了什么 → 模型提了什么词」用
+        log.info("agent", "run started", {
+          sessionId,
+          tabId: msg.payload.tabId,
+          text: msg.payload.text,
+        });
         try {
           await runAgentLoop(
             { ...msg.payload, sessionId },

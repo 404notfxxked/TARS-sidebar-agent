@@ -9,7 +9,7 @@
 
 - 📖 **读页答疑** — 页面快照在 offscreen 转成结构化 markdown；长文档支持大纲、关键词定位、分窗阅读，不会刷爆上下文
 - 🖱️ **页面操作** — 模拟真实鼠标点击、表单填写与回车提交，React 受控组件也能正确感知
-- 🔍 **联网搜索** — 零配置可用：Bing 主力 + DuckDuckGo 自动兜底，被风控的引擎自动冷却；支持时间范围与域名过滤
+- 🔍 **联网搜索** — 默认关闭；开启即可用（免 Key 抓取 Bing/DDG 结果页兜底，带 cookie 蹭行、节流与风控冷却），也可配置搜索服务 API（Tavily / 博查 / Brave）获得稳定质量；支持时间范围与域名过滤
 - 🌐 **读取网页** — 给它一个 http(s) 链接即可读正文（内网页面同样可达，GBK 等编码自动识别），与搜索结果配合使用
 - 🖼️ **图片输入** — 选图或粘贴发给视觉模型：面板内压缩转码，按模型能力门控；历史图片本地持久化
 - 🛡️ **稳态细节** — 停止按钮即时中断在途请求；工具结果超预算自动瘦身，防止撑爆上下文
@@ -28,7 +28,7 @@ pnpm build        # 产物输出到 dist/
 2. 点「加载已解压的扩展程序」，选择本项目的 `dist/`
 3. 点工具栏图标打开侧栏，在设置里填入 Base URL 与 API Key（例如 `https://api.deepseek.com/v1`）
 
-设置里还有「联网」开关（默认开启）：关闭后 TARS 只读当前页面，不会向搜索引擎发出任何请求。
+「联网」默认关闭：开启后默认走**免 Key 抓取通道**（直接抓取 Bing / DuckDuckGo 的搜索结果页，质量随网络出口浮动）；也可在设置里改选搜索服务（Tavily / 博查 / Brave，填 API Key），走结构化 API 获得稳定结果。关闭则 TARS 只读当前页面，不发出任何联网搜索请求。
 
 ## 🛠 开发
 
@@ -40,7 +40,7 @@ pnpm build        # 类型检查 + 构建 + offscreen 后处理
 E2E 验证脚本与 fixtures 在本地 `tests/`（不随仓库分发），通过 CDP 拦截扩展上下文的网络流量、mock LLM 驱动真实 agent 循环：
 
 ```bash
-node tests/verify-web-search.mjs   # 联网工具链路（11 场景，含实网）
+node tests/verify-web-search.mjs   # 联网工具链路（双模式 15 组场景，mock 搜索引擎与三家 API）
 node tests/verify-cancel.mjs       # 停止按钮链路
 node tests/verify-persist.mjs      # 会话持久化（多会话/重启/保留期/迁移）
 ```
