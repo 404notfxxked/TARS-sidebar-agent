@@ -9,12 +9,11 @@ import {
 } from "react";
 import {
   loadConfig,
-  saveConfig,
   savePrefs,
-  forgetApiKey,
   SEARCH_PROVIDER_LABELS,
   type AccentPref,
   type ModelEntry,
+  type ProviderEntry,
   type SearchConfig,
   type SearchProviderSetting,
   type ThemePref,
@@ -259,13 +258,292 @@ function ModelRow({
   );
 }
 
+/** baseUrl → 主机名(供应商未命名时的展示兜底) */
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+};
+
+/** 供应商卡片:收起态 = 名称/主机/模型数概要 + 当前标记;点击展开该供应商
+ *  及其模型配置的细节(端点、Key、拉取列表、逐模型配置)。编辑即时落盘:
+ *  文本输入失焦保存,「获取列表/添加/删除模型」等动作型操作即时保存 */
+function ProviderCard({
+  entry,
+  isCurrent,
+  currentModelId,
+  open,
+  confirming,
+  onToggle,
+  onPatch,
+  onCommit,
+  onRemove,
+  onSelectModel,
+}: {
+  entry: ProviderEntry;
+  isCurrent: boolean;
+  currentModelId: string;
+  open: boolean;
+  confirming: boolean;
+  onToggle: () => void;
+  onPatch: (patch: Partial<ProviderEntry>, save?: boolean) => void;
+  onCommit: () => void;
+  onRemove: () => void;
+  onSelectModel: (modelId: string) => void;
+}) {
+  const [newId, setNewId] = useState("");
+  const [openModelId, setOpenModelId] = useState<string | null>(null);
+  const [confirmModelId, setConfirmModelId] = useState<string | null>(null);
+  const [fetchState, setFetchState] = useState<FetchState>("idle");
+  const [fetchError, setFetchError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => {
+    if (!confirmModelId) return;
+    const t = window.setTimeout(() => setConfirmModelId(null), 3000);
+    return () => window.clearTimeout(t);
+  }, [confirmModelId]);
+
+  const displayName = entry.name || hostOf(entry.baseUrl) || "未命名服务";
+
+  /** 供应商内某个模型条目的局部更新;save=true 即时落盘 */
+  const patchModel = (mid: string, patch: Partial<ModelEntry>, save = false) =>
+    onPatch(
+      {
+        models: entry.models.map((m) => (m.id === mid ? { ...m, ...patch } : m)),
+      },
+      save,
+    );
+  const commitModels = () => onCommit();
+  const addModel = () => {
+    const id = newId.trim();
+    if (!id || entry.models.some((m) => m.id === id)) return;
+    setNewId("");
+    onPatch(
+      {
+        models: [...entry.models, { id }].sort((a, b) =>
+          a.id.localeCompare(b.id),
+        ),
+      },
+      true,
+    );
+  };
+  const removeModel = (mid: string) => {
+    if (confirmModelId !== mid) {
+      setConfirmModelId(mid);
+      return;
+    }
+    setConfirmModelId(null);
+    onPatch({ models: entry.models.filter((m) => m.id !== mid) }, true);
+  };
+
+  /** 用该供应商自己的地址与 Key 拉取模型列表,与已有条目按 id 合并 */
+  const fetchList = async () => {
+    if (fetchState === "loading") return;
+    if (!entry.apiKey.trim()) {
+      setFetchState("error");
+      setFetchError("请先填写此服务的 API Key");
+      return;
+    }
+    abortRef.current?.abort();
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    setFetchState("loading");
+    setFetchError("");
+    try {
+      const list = await fetchModels(
+        entry.baseUrl.trim() || DEFAULT_BASE_URL,
+        entry.apiKey.trim(),
+        ctl.signal,
+      );
+      const map = new Map(entry.models.map((m) => [m.id, m]));
+      for (const id of list) if (!map.has(id)) map.set(id, { id });
+      const next = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
+      onPatch({ models: next }, true);
+      setFetchState("idle");
+    } catch (e) {
+      if (ctl.signal.aborted) return;
+      setFetchState("error");
+      setFetchError(e instanceof Error ? e.message.slice(0, 120) : String(e));
+    }
+  };
+
+  return (
+    <div className="model-row">
+      <button
+        type="button"
+        className="model-row-head"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="min-w-0 truncate">
+          <span className="model-row-name">{displayName}</span>
+          {isCurrent && <span className="model-badge">当前</span>}
+        </span>
+        <span className="ml-auto shrink-0 pr-1 text-[11px] text-on-surface-variant">
+          {entry.models.length > 0 ? `${entry.models.length} 个模型` : "无模型"}
+        </span>
+        <svg
+          className="model-row-chevron"
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 3 5 5-5 5" />
+        </svg>
+      </button>
+      <div className="model-row-body" data-open={open}>
+        <div className="model-row-body-inner">
+          <div className="settings-field">
+            <label className="field-label" htmlFor={`p-name-${entry.id}`}>
+              名称<span className="font-normal text-on-surface-variant">（选填）</span>
+            </label>
+            <input
+              id={`p-name-${entry.id}`}
+              type="text"
+              value={entry.name}
+              onChange={(e) => onPatch({ name: e.target.value })}
+              onBlur={onCommit}
+              placeholder="如 DeepSeek"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input"
+            />
+          </div>
+          <div className="settings-field">
+            <label className="field-label" htmlFor={`p-baseurl-${entry.id}`}>
+              Base URL
+            </label>
+            <input
+              id={`p-baseurl-${entry.id}`}
+              type="text"
+              value={entry.baseUrl}
+              onChange={(e) => onPatch({ baseUrl: e.target.value })}
+              onBlur={onCommit}
+              placeholder="https://api.deepseek.com/v1"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input font-mono"
+            />
+            <p className="field-hint">
+              OpenAI 兼容端点，需含 /v1；留空使用官方 api.openai.com/v1。
+            </p>
+          </div>
+          <div className="settings-field">
+            <label className="field-label" htmlFor={`p-apikey-${entry.id}`}>
+              API Key
+            </label>
+            <input
+              id={`p-apikey-${entry.id}`}
+              type="password"
+              value={entry.apiKey}
+              onChange={(e) => onPatch({ apiKey: e.target.value })}
+              onBlur={onCommit}
+              placeholder="sk-…"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input font-mono"
+            />
+          </div>
+
+          <div className="settings-block">
+            <div className="flex items-center justify-between">
+              <span className="settings-row-label">模型</span>
+              <button
+                type="button"
+                onClick={fetchList}
+                disabled={fetchState === "loading"}
+                className="btn-text"
+              >
+                {fetchState === "loading" ? "拉取中…" : "获取列表"}
+              </button>
+            </div>
+            {fetchState === "error" && (
+              <p className="field-hint text-error">获取失败：{fetchError}</p>
+            )}
+            {entry.models.length > 0 ? (
+              <div className="model-list">
+                {entry.models.map((m) => (
+                  <ModelRow
+                    key={m.id}
+                    entry={m}
+                    isDefault={isCurrent && currentModelId === m.id}
+                    open={openModelId === m.id}
+                    confirming={confirmModelId === m.id}
+                    onToggle={() =>
+                      setOpenModelId(openModelId === m.id ? null : m.id)
+                    }
+                    onPatch={(patch, save) => patchModel(m.id, patch, save)}
+                    onCommit={commitModels}
+                    onSetDefault={() => onSelectModel(m.id)}
+                    onRemove={() => removeModel(m.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="field-hint">
+                还没有模型：点「获取列表」按此服务的地址与 Key
+                拉取，或在下方手动添加。
+              </p>
+            )}
+
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                value={newId}
+                onChange={(e) => setNewId(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addModel();
+                  }
+                }}
+                placeholder="手动添加模型 ID，如 deepseek-chat"
+                autoComplete="off"
+                spellCheck={false}
+                className="field-input font-mono"
+              />
+              <button type="button" onClick={addModel} className="settings-btn">
+                添加
+              </button>
+            </div>
+            {entry.models.length > 0 && (
+              <p className="field-hint">
+                点模型行展开配置；「默认」标记 = 对话正在使用的供应商与模型。
+              </p>
+            )}
+          </div>
+
+          <div className="mb-1 mt-2">
+            <button
+              type="button"
+              className={`model-row-action${confirming ? " model-row-action-danger" : ""}`}
+              onClick={onRemove}
+            >
+              {confirming ? "再点一次确认删除此服务" : "删除此服务"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsView({ onBack }: { onBack: () => void }) {
-  const [cfgName, setCfgName] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
-  const [remember, setRemember] = useState(true);
+  // ── 模型服务供应商 ──
+  const [providers, setProviders] = useState<ProviderEntry[]>([]);
+  const [modelProvider, setModelProvider] = useState("");
   const [model, setModel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
+  const [expandedPid, setExpandedPid] = useState<string | null>(null);
+  const [confirmDelPid, setConfirmDelPid] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemePref>("system");
   const [accent, setAccent] = useState<AccentPref>("green");
   const [webSearch, setWebSearch] = useState(false);
@@ -274,21 +552,10 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     baseUrl: "",
     apiKey: "",
   });
-  // ── 模型列表(持久化):拉取 merge、手动添加、每模型独立配置 ──
-  const [modelList, setModelList] = useState<ModelEntry[]>([]);
-  const [newId, setNewId] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  // ── 模型列表拉取(仅手动) ──
-  const [fetchState, setFetchState] = useState<FetchState>("idle");
-  const [fetchError, setFetchError] = useState("");
-  const fetchAbortRef = useRef<AbortController | null>(null);
   // ── 保存反馈 ──
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const flashTimer = useRef<number | null>(null);
-  // ── 忘记 Key 的两段确认 ──
-  const [confirmForget, setConfirmForget] = useState(false);
   // ── 诊断日志 ──
   const [logCount, setLogCount] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
@@ -319,12 +586,9 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     loadConfig().then((c) => {
-      setCfgName(c.name);
-      setApiKey(c.apiKey);
-      setRemember(c.remember);
+      setProviders(c.providers);
+      setModelProvider(c.modelProvider);
       setModel(c.model);
-      setModelList(c.models);
-      setBaseUrl(c.baseUrl);
       setTheme(c.theme);
       setAccent(c.accent);
       setWebSearch(c.webSearch);
@@ -344,25 +608,13 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
-  // 卸载时中止进行中的拉取
-  useEffect(
-    () => () => {
-      fetchAbortRef.current?.abort();
-    },
-    [],
-  );
 
   // 忘记 / 删除确认 3s 未跟进则自动复位,避免按钮一直停在「危险态」
   useEffect(() => {
-    if (!confirmForget) return;
-    const t = window.setTimeout(() => setConfirmForget(false), 3000);
+    if (!confirmDelPid) return;
+    const t = window.setTimeout(() => setConfirmDelPid(null), 3000);
     return () => clearTimeout(t);
-  }, [confirmForget]);
-  useEffect(() => {
-    if (!confirmDeleteId) return;
-    const t = window.setTimeout(() => setConfirmDeleteId(null), 3000);
-    return () => clearTimeout(t);
-  }, [confirmDeleteId]);
+  }, [confirmDelPid]);
   useEffect(() => {
     if (!confirmClear) return;
     const t = window.setTimeout(() => setConfirmClear(false), 3000);
@@ -397,107 +649,74 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     window.setTimeout(refreshUsage, 300);
   };
 
-  /** apiKey / remember 变更:走 saveConfig 的 session/local 分流 */
-  const saveKeyState = (key: string, rememberNext: boolean) =>
-    run(
-      saveConfig({
-        name: cfgName,
-        apiKey: key.trim(),
-        remember: rememberNext,
-        model,
-        models: modelList,
-        baseUrl,
-        theme,
-        accent,
-        webSearch,
-        search,
-        historyRetention: Number(retention),
-      }),
-    );
-
-  /** 手动拉取模型列表:用当前输入的 Base URL + Key(未保存的也算)。
-   *  结果与现有列表按 id merge —— 已有条目保留每模型配置,新 ID 追加;
-   *  默认模型为空时顺手设为第一项,避免「拉完还得手选」 */
-  const fetchList = async () => {
-    if (fetchState === "loading") return;
-    const key = apiKey.trim();
-    if (!key) {
-      setFetchState("error");
-      setFetchError("请先填写 API Key");
-      return;
-    }
-    fetchAbortRef.current?.abort();
-    const ctl = new AbortController();
-    fetchAbortRef.current = ctl;
-    setFetchState("loading");
-    setFetchError("");
-    try {
-      const list = await fetchModels(baseUrl.trim() || DEFAULT_BASE_URL, key, ctl.signal);
-      const map = new Map(modelList.map((m) => [m.id, m]));
-      for (const id of list) if (!map.has(id)) map.set(id, { id });
-      const next = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
-      setModelList(next);
-      const ops: Promise<void>[] = [savePrefs({ models: next })];
-      if (!model && next.length > 0) {
-        setModel(next[0].id);
-        ops.push(savePrefs({ model: next[0].id }));
-      }
-      run(Promise.all(ops).then(() => {}));
-      setFetchState("idle");
-    } catch (e) {
-      if (ctl.signal.aborted) return;
-      setFetchState("error");
-      setFetchError(e instanceof Error ? e.message.slice(0, 120) : String(e));
-    }
-  };
-
-  /** 局部更新一个模型条目;save=true 即时落盘(开关类),
-   *  文本/数字类 onChange 只改本地,失焦时 commitModels 统一落盘 */
-  const patchModel = (id: string, patch: Partial<ModelEntry>, save = false) => {
-    const next = modelList.map((m) => (m.id === id ? { ...m, ...patch } : m));
-    setModelList(next);
-    if (save) run(savePrefs({ models: next }));
-  };
-
-  /** 文本/数字字段的失焦落盘(闭包里的 modelList 即当前最新值) */
-  const commitModels = () => run(savePrefs({ models: modelList }));
-
-  const addModel = () => {
-    const id = newId.trim();
-    if (!id) return;
-    setNewId("");
-    if (modelList.some((m) => m.id === id)) return; // 重复 ID 忽略
-    const next = [...modelList, { id }].sort((a, b) => a.id.localeCompare(b.id));
-    setModelList(next);
-    const ops: Promise<void>[] = [savePrefs({ models: next })];
-    if (!model) {
-      setModel(id);
-      ops.push(savePrefs({ model: id }));
-    }
-    run(Promise.all(ops).then(() => {}));
-  };
-
-  const setDefaultModel = (id: string) => {
-    setModel(id);
-    run(savePrefs({ model: id }));
-  };
-
-  /** 两段确认删除;删的是默认模型时,默认回退到剩余第一项(空则清空) */
-  const removeModel = (id: string) => {
-    if (confirmDeleteId !== id) {
-      setConfirmDeleteId(id);
-      return;
-    }
-    setConfirmDeleteId(null);
-    const next = modelList.filter((m) => m.id !== id);
-    setModelList(next);
-    const ops: Promise<void>[] = [savePrefs({ models: next })];
-    if (model === id) {
-      const fallback = next[0]?.id ?? "";
+  /** 供应商局部更新;save=true 即时落盘。当前供应商的默认模型被删时回落到
+   *  该供应商的第一个模型,避免对话侧拿着悬空引用 */
+  const patchProvider = (
+    id: string,
+    patch: Partial<ProviderEntry>,
+    save = false,
+  ) => {
+    const next = providers.map((p) => (p.id === id ? { ...p, ...patch } : p));
+    setProviders(next);
+    if (!save) return;
+    const ops: Promise<void>[] = [savePrefs({ providers: next })];
+    const affected = next.find((p) => p.id === id);
+    if (
+      id === modelProvider &&
+      affected &&
+      !affected.models.some((m) => m.id === model)
+    ) {
+      const fallback = affected.models[0]?.id ?? "";
       setModel(fallback);
       ops.push(savePrefs({ model: fallback }));
     }
     run(Promise.all(ops).then(() => {}));
+  };
+  const commitProviders = () => run(savePrefs({ providers }));
+
+  const addProvider = () => {
+    const entry: ProviderEntry = {
+      id: crypto.randomUUID(),
+      name: "",
+      baseUrl: "",
+      apiKey: "",
+      models: [],
+    };
+    const next = [...providers, entry];
+    setProviders(next);
+    setExpandedPid(entry.id);
+    run(savePrefs({ providers: next }));
+  };
+
+  /** 两段确认删除;删的是当前供应商时,回落到剩余第一个供应商及其首个模型 */
+  const removeProvider = (id: string) => {
+    if (confirmDelPid !== id) {
+      setConfirmDelPid(id);
+      return;
+    }
+    setConfirmDelPid(null);
+    const next = providers.filter((p) => p.id !== id);
+    const ops: Promise<void>[] = [savePrefs({ providers: next })];
+    if (modelProvider === id) {
+      const fb = next[0];
+      setModelProvider(fb?.id ?? "");
+      setModel(fb?.models[0]?.id ?? "");
+      ops.push(
+        savePrefs({
+          modelProvider: fb?.id ?? "",
+          model: fb?.models[0]?.id ?? "",
+        }),
+      );
+    }
+    setProviders(next);
+    run(Promise.all(ops).then(() => {}));
+  };
+
+  /** 设当前对话模型(供应商 + wire 模型名) */
+  const selectModel = (pid: string, mid: string) => {
+    setModelProvider(pid);
+    setModel(mid);
+    run(savePrefs({ modelProvider: pid, model: mid }));
   };
 
   const copyLogs = async () => {
@@ -530,17 +749,6 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   const clearLogs = async () => {
     await clearAllLogs();
     setLogCount(0);
-  };
-
-  const forget = async () => {
-    if (!confirmForget) {
-      setConfirmForget(true);
-      return;
-    }
-    setConfirmForget(false);
-    await forgetApiKey();
-    setApiKey("");
-    setShowKey(false);
   };
 
   return (
@@ -587,196 +795,40 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         {/* ── 模型服务 ── */}
         <h3 className="settings-eyebrow mb-1.5 mt-3">模型服务</h3>
         <div className="settings-card">
-          <div className="settings-field">
-            <label className="field-label" htmlFor="settings-name">
-              名称<span className="font-normal text-on-surface-variant">（选填）</span>
-            </label>
-            <input
-              id="settings-name"
-              type="text"
-              value={cfgName}
-              onChange={(e) => setCfgName(e.target.value)}
-              onBlur={() => run(savePrefs({ name: cfgName.trim() }))}
-              placeholder="如 DeepSeek，仅备注用"
-              autoComplete="off"
-              spellCheck={false}
-              className="field-input"
-            />
-          </div>
-
-          <div className="settings-field">
-            <label className="field-label" htmlFor="settings-baseurl">
-              Base URL
-            </label>
-            <input
-              id="settings-baseurl"
-              type="text"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              onBlur={() => run(savePrefs({ baseUrl: baseUrl.trim() }))}
-              placeholder="https://api.deepseek.com/v1"
-              autoComplete="off"
-              spellCheck={false}
-              className="field-input font-mono"
-            />
-            <p className="field-hint">
-              OpenAI 兼容端点，需含 /v1；留空使用官方 api.openai.com/v1。
-            </p>
-          </div>
-
-          <div className="settings-field">
-            <label className="field-label" htmlFor="settings-apikey">
-              API Key
-            </label>
-          <div className="relative">
-            <input
-              id="settings-apikey"
-              type={showKey ? "text" : "password"}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              onBlur={() => saveKeyState(apiKey, remember)}
-              placeholder="sk-…"
-              autoComplete="off"
-              spellCheck={false}
-              className="field-input has-eye font-mono"
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey((s) => !s)}
-              aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
-              className="settings-eye-btn"
-            >
-              {showKey ? (
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="m4 4 16 16" />
-                </svg>
-              ) : (
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
-            </button>
-          </div>
-          </div>
-
-          <div className="settings-block">
-            <div className="settings-row">
-              <label
-                htmlFor="settings-remember"
-                className="settings-row-label"
-              >
-                记住我
-              </label>
-              <button
-                id="settings-remember"
-                type="button"
-                role="switch"
-                aria-checked={remember}
-                onClick={() => {
-                  const next = !remember;
-                  setRemember(next);
-                  saveKeyState(apiKey, next);
-                }}
-                className="switch"
-              >
-                <span className="switch-knob" />
-              </button>
-            </div>
-            <p className="field-hint">
-              不开启则仅本次会话有效，关闭浏览器后失效。
-            </p>
-          </div>
-
-          <div className="settings-block">
-            <div className="flex items-center justify-between">
-              <span className="settings-row-label">模型</span>
-              <button
-                type="button"
-                onClick={fetchList}
-                disabled={fetchState === "loading"}
-                className="btn-text"
-              >
-                {fetchState === "loading" ? "拉取中…" : "获取列表"}
-              </button>
-            </div>
-          {fetchState === "error" && (
-            <p className="field-hint text-error">获取失败：{fetchError}</p>
-          )}
-          {modelList.length > 0 ? (
+          {providers.length > 0 ? (
             <div className="model-list">
-              {modelList.map((m) => (
-                <ModelRow
-                  key={m.id}
-                  entry={m}
-                  isDefault={m.id === model}
-                  open={expandedId === m.id}
-                  confirming={confirmDeleteId === m.id}
-                  onToggle={() =>
-                    setExpandedId(expandedId === m.id ? null : m.id)
-                  }
-                  onPatch={(patch, save) => patchModel(m.id, patch, save)}
-                  onCommit={commitModels}
-                  onSetDefault={() => setDefaultModel(m.id)}
-                  onRemove={() => removeModel(m.id)}
+              {providers.map((p) => (
+                <ProviderCard
+                  key={p.id}
+                  entry={p}
+                  isCurrent={p.id === modelProvider}
+                  currentModelId={p.id === modelProvider ? model : ""}
+                  open={expandedPid === p.id}
+                  confirming={confirmDelPid === p.id}
+                  onToggle={() => setExpandedPid(expandedPid === p.id ? null : p.id)}
+                  onPatch={(patch, save) => patchProvider(p.id, patch, save)}
+                  onCommit={commitProviders}
+                  onRemove={() => removeProvider(p.id)}
+                  onSelectModel={(mid) => selectModel(p.id, mid)}
                 />
               ))}
             </div>
           ) : (
             <p className="field-hint">
-              还没有模型：点「获取列表」按当前 Base URL 与 Key
-              拉取，或在下方手动添加。
+              还没有模型服务：点「添加服务商」填入 OpenAI 兼容端点（Base URL +
+              API Key），可添加多个随时切换。
             </p>
           )}
-
-          {/* 手动添加:有些端点不提供 /models,或只想加一个 */}
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              type="text"
-              value={newId}
-              onChange={(e) => setNewId(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addModel();
-                }
-              }}
-              placeholder="手动添加模型 ID，如 deepseek-chat"
-              autoComplete="off"
-              spellCheck={false}
-              className="field-input font-mono"
-            />
-            <button type="button" onClick={addModel} className="settings-btn">
-              添加
+          <div className="mt-2">
+            <button type="button" onClick={addProvider} className="settings-btn">
+              添加服务商
             </button>
           </div>
-          {modelList.length > 0 && (
-            <p className="field-hint">
-              点模型行展开配置；带「默认」标记的是对话使用的模型。
-            </p>
-          )}
-          </div>
+          <p className="field-hint">
+            点卡片展开该服务的端点与模型配置；带「当前」标记的是对话正在使用的供应商与模型。
+          </p>
         </div>
+
 
         {/* ── 外观 ── */}
         <h3 className="settings-eyebrow mb-1.5 mt-4">外观</h3>
@@ -1009,17 +1061,6 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
           .logs/ 目录，然后让 TARS 读它分析。
         </p>
 
-        {apiKey && (
-          <button
-            type="button"
-            onClick={forget}
-            className={`btn-text muted mt-2 block w-full ${
-              confirmForget ? "danger" : ""
-            }`}
-          >
-            {confirmForget ? "再点一次确认忘记" : "忘记已保存的 Key"}
-          </button>
-        )}
       </div>
     </div>
   );

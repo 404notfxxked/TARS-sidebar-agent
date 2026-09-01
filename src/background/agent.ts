@@ -66,24 +66,28 @@ export async function runAgentLoop(
   let turnNo = 0;
 
   try {
-    // 从 storage 读配置 → 按配置构建对应的 provider 适配器
+    // 当前供应商与模型条目:providers 里按 modelProvider 引用取,模型条目再
+    // 按 config.model 在该供应商的列表里取(跨供应商同名模型互不干扰)
     const config = await loadConfig();
-    if (!config.apiKey) {
+    const cur =
+      config.providers.find((p) => p.id === config.modelProvider) ??
+      config.providers[0];
+    if (!cur) {
       port.postMessage({
         type: MSG.AGENT_ERROR,
-        error: "请先在设置里配置 API Key",
+        error: "请先在设置里添加模型服务(Base URL + API Key)",
       });
       return;
     }
-    if (!config.model) {
+    if (!config.model || !cur.models.some((m) => m.id === config.model)) {
       port.postMessage({
         type: MSG.AGENT_ERROR,
-        error: "请先在设置里添加并选择模型",
+        error: "请先在设置里选择模型",
       });
       return;
     }
     // 当前默认模型对应的列表条目:提供每模型配置(最大输出 / 上下文窗口)
-    const modelEntry = config.models.find((m) => m.id === config.model);
+    const modelEntry = cur.models.find((m) => m.id === config.model);
     // 工具结果字符预算:配了 contextTokens 就按窗口 1/4 缩放(混排内容约
     // 0.4 token/字符 ≈ 占窗口 10%),未配置用默认 60k;下限 12k 保证至少
     // 容得下一次完整的网页窗口
@@ -91,9 +95,9 @@ export async function runAgentLoop(
       ? Math.min(60_000, Math.max(12_000, Math.floor(modelEntry.contextTokens / 4)))
       : 60_000;
     const provider = new OpenAIAdapter({
-      apiKey: config.apiKey,
+      apiKey: cur.apiKey,
       model: config.model,
-      baseUrl: config.baseUrl,
+      baseUrl: cur.baseUrl,
       maxTokens: modelEntry?.maxTokens,
       maxTokensField:
         modelEntry?.maxTokensField ?? inferMaxTokensField(config.model),
@@ -108,6 +112,7 @@ export async function runAgentLoop(
     // 这里补齐判断搜索质量时需要的模型身份)
     log.info("agent", "run config", {
       session: payload.sessionId ?? "",
+      provider: cur.name,
       model: config.model,
       web: webEnabled,
     });

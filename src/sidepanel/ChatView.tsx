@@ -34,7 +34,11 @@ import yaml from "highlight.js/lib/languages/yaml";
 import { MSG, PORT_NAME, type AgentEvent, type ImageMeta } from "../shared/messages";
 import { base64ToBytes } from "../shared/imageCodec";
 import { getActiveTabId } from "../shared/contentTools";
-import { loadConfig, savePrefs, type ModelEntry } from "../shared/configStore";
+import {
+  loadConfig,
+  savePrefs,
+  type ProviderEntry,
+} from "../shared/configStore";
 import { createLogger } from "../shared/logger";
 
 // 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
@@ -231,13 +235,18 @@ export default function ChatView({
   // 最近一次已加载历史的会话,防重复请求
   const lastLoadedSessionRef = useRef("");
 
-  // ---- 模型选择:列表来自设置页持久化的 models,切换即写回默认模型 ----
-  const [modelList, setModelList] = useState<ModelEntry[]>([]);
+  // ---- 模型选择:按供应商分组展示,切换即写回 modelProvider + model 两字段 ----
+  const [providers, setProviders] = useState<ProviderEntry[]>([]);
+  const [modelProvider, setModelProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const [modelPopOpen, setModelPopOpen] = useState(false);
   const modelPopRef = useRef<HTMLDivElement | null>(null);
+  /** 当前供应商(选择器与视觉门控都基于它;引用失效时退回第一个) */
+  const curProvider =
+    providers.find((p) => p.id === modelProvider) ?? providers[0];
+  const curModels = curProvider?.models ?? [];
   /** 当前模型是否支持视觉:图片入口的门控依据 */
-  const visionOk = !!modelList.find((m) => m.id === modelId)?.vision;
+  const visionOk = !!curModels.find((m) => m.id === modelId)?.vision;
 
   // ---- 图片附件状态 ----
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -634,12 +643,18 @@ export default function ChatView({
       area: string,
     ) => {
       if (area !== "local") return;
-      if (changes.models && Array.isArray(changes.models.newValue)) {
-        setModelList(
-          (changes.models.newValue as ModelEntry[]).filter(
-            (m) => m && typeof m.id === "string",
+      if (changes.providers && Array.isArray(changes.providers.newValue)) {
+        setProviders(
+          (changes.providers.newValue as ProviderEntry[]).filter(
+            (p) => p && typeof p.id === "string" && Array.isArray(p.models),
           ),
         );
+      }
+      if (
+        changes.modelProvider &&
+        typeof changes.modelProvider.newValue === "string"
+      ) {
+        setModelProvider(changes.modelProvider.newValue);
       }
       if (changes.model && typeof changes.model.newValue === "string") {
         setModelId(changes.model.newValue);
@@ -647,7 +662,8 @@ export default function ChatView({
     };
     chrome.storage.onChanged.addListener(onStorage);
     loadConfig().then((c) => {
-      setModelList(c.models);
+      setProviders(c.providers);
+      setModelProvider(c.modelProvider);
       setModelId(c.model);
     });
     return () => {
@@ -679,11 +695,12 @@ export default function ChatView({
     };
   }, [modelPopOpen]);
 
-  /** 切换默认模型:只写偏好,后台每轮 run 重读配置,下一轮生效 */
-  const pickModel = (id: string) => {
+  /** 切换默认模型:写供应商 + 模型两个字段,后台每轮 run 重读配置,下一轮生效 */
+  const pickModel = (providerId: string, id: string) => {
+    setModelProvider(providerId);
     setModelId(id);
     setModelPopOpen(false);
-    savePrefs({ model: id }).catch((err) =>
+    savePrefs({ modelProvider: providerId, model: id }).catch((err) =>
       log.warn("chat", "save model pref failed", { error: String(err) }),
     );
   };
@@ -1028,7 +1045,7 @@ export default function ChatView({
           >
             <ImageIcon />
           </button>
-          {modelList.length > 0 && (
+          {providers.some((p) => p.models.length > 0) && (
             <div ref={modelPopRef} className="relative min-w-0">
               <button
                 type="button"
@@ -1039,7 +1056,7 @@ export default function ChatView({
                 className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
               >
                 <span className="min-w-0 truncate">
-                  {modelList.find((m) => m.id === modelId)?.alias ||
+                  {curModels.find((m) => m.id === modelId)?.alias ||
                     modelId ||
                     "选择模型"}
                 </span>
@@ -1055,7 +1072,7 @@ export default function ChatView({
                   aria-hidden="true"
                   className="shrink-0"
                 >
-                  <path d="m3 6 5 5 5-5" />
+                  <path d="m3 6 5 5-5 5" />
                 </svg>
               </button>
               {modelPopOpen && (
@@ -1064,18 +1081,35 @@ export default function ChatView({
                   aria-label="可选模型"
                   className="combo-pop combo-pop--up"
                 >
-                  {modelList.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      role="option"
-                      aria-selected={m.id === modelId}
-                      className="combo-option"
-                      onClick={() => pickModel(m.id)}
-                    >
-                      {(m.alias || m.id) + (m.id === modelId ? " ✓" : "")}
-                    </button>
-                  ))}
+                  {providers
+                    .filter((p) => p.models.length > 0)
+                    .map((p) => (
+                      <div key={p.id} role="group" aria-label={p.name}>
+                        <div
+                          aria-hidden="true"
+                          className="px-3 pb-0.5 pt-2 text-[10.5px] font-medium uppercase tracking-wide text-on-surface-variant/70 first:pt-1.5"
+                        >
+                          {p.name || new URL(p.baseUrl).hostname}
+                        </div>
+                        {p.models.map((m) => {
+                          const selected =
+                            p.id === curProvider?.id && m.id === modelId;
+                          return (
+                            <button
+                              key={`${p.id}/${m.id}`}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              className="combo-option"
+                              title={m.alias ? m.id : undefined}
+                              onClick={() => pickModel(p.id, m.id)}
+                            >
+                              {(m.alias || m.id) + (selected ? " ✓" : "")}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>

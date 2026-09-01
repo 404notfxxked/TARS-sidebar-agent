@@ -1,31 +1,13 @@
 // 全量配置存储(shared —— side panel 与 service worker 共用):
-// - name / model / baseUrl / models 等恒存 chrome.storage.local(非敏感)
-// - apiKey 受「记住」控制:勾选 → local(持久);不勾 → session(仅本次会话)
-// - 读取时 apiKey 以 session 优先、回退 local —— 本次会话新输的 key 覆盖旧的记住值
-// 协议只支持 OpenAI 兼容格式(DeepSeek/Kimi/OpenRouter/Ollama 等通用)
+// - 模型服务支持多个供应商(providers 数组),每个含自己的 Base URL / API Key /
+//   模型列表;当前选择 = modelProvider(供应商 id)+ model(wire 模型名)两个字段
+// - key 一律存 chrome.storage.local(个人浏览器场景,多供应商下不再区分
+//   「记住/仅本次会话」);读取时 providers 键缺席会从旧版单供应商字段合成,
+//   合成只发生在内存,不写回 —— 与当年 model→models 的迁移同款策略:
+//   providers 键一旦写入,旧键整体废弃
+// - 搜索服务(search)/联网开关/主题等照旧
 
 export type ThemePref = "system" | "light" | "dark";
-
-/** 联网搜索服务( BYOK):联网开关打开时,配置了 key 走 API,否则免 Key 抓取兜底 */
-export type SearchProviderId = "tavily" | "bocha" | "brave";
-
-/** 设置里的搜索服务选项:auto = 不用服务商,抓取搜索引擎结果页兜底 */
-export type SearchProviderSetting = "auto" | SearchProviderId;
-
-/** 搜索服务配置:provider=auto 时 baseUrl/apiKey 无效;其余留空 baseUrl 用官方端点 */
-export interface SearchConfig {
-  provider: SearchProviderSetting;
-  baseUrl: string;
-  apiKey: string;
-}
-
-/** 各选项展示名(设置页下拉用) */
-export const SEARCH_PROVIDER_LABELS: Record<SearchProviderSetting, string> = {
-  auto: "自动（免 Key，抓取搜索页）",
-  tavily: "Tavily",
-  bocha: "博查 Bocha",
-  brave: "Brave Search",
-};
 
 /** 重点色(配色方案):generate-m3.mjs 里 ACCENTS 的 id,green = 默认源色 */
 export type AccentPref =
@@ -48,9 +30,9 @@ const ACCENT_IDS: AccentPref[] = [
   "graphite",
 ];
 
-/** 模型列表条目(存 local 的 models key) */
+/** 模型条目(供应商内的 models 数组元素) */
 export interface ModelEntry {
-  /** wire 模型名,列表内唯一键 */
+  /** wire 模型名,供应商内唯一键 */
   id: string;
   /** 显示别名(选填):聊天区选择器优先显示它,模型 ID 太长时用 */
   alias?: string;
@@ -67,6 +49,18 @@ export interface ModelEntry {
   // thinking.type / chat_template_kwargs),没有可移植语义,暂不引入
 }
 
+/** 模型服务供应商:一份 OpenAI 兼容端点配置 + 它自己的模型列表 */
+export interface ProviderEntry {
+  /** 稳定引用(随机生成),modelProvider 与设置页展开态都用它 */
+  id: string;
+  /** 显示名(如 DeepSeek);留空时 UI 用 baseUrl 主机名兜底展示 */
+  name: string;
+  /** OpenAI 兼容根地址,约定含 /v1 */
+  baseUrl: string;
+  apiKey: string;
+  models: ModelEntry[];
+}
+
 /** 按模型名推断 maxTokens 请求字段:OpenAI o 系列 / gpt-5 只认 max_completion_tokens。
  *  兼容 OpenRouter 风格带厂商前缀的 id("openai/o3-mini:free");其余返回 undefined(用 max_tokens) */
 export function inferMaxTokensField(
@@ -78,15 +72,12 @@ export function inferMaxTokensField(
 }
 
 export interface AppConfig {
-  /** 配置显示名(选填):为将来多配置档案预留,当前无消费方 */
-  name: string;
-  apiKey: string;
-  remember: boolean;
-  /** 当前默认模型 = models 中某项的 id;聊天区选择器切换即改写此值 */
+  /** 模型服务供应商列表;空 = 尚未配置,对话前需先添加 */
+  providers: ProviderEntry[];
+  /** 当前供应商 = providers 中某项的 id */
+  modelProvider: string;
+  /** 当前 wire 模型名(属于 modelProvider);聊天区选择器切换即写回这两个字段 */
   model: string;
-  /** 持久化的模型列表:拉取 merge、手动添加、每模型独立配置 */
-  models: ModelEntry[];
-  baseUrl: string; // 空 = 用 OpenAI 官方地址;约定含 /v1,如 https://api.deepseek.com/v1
   theme: ThemePref;
   /** 重点色:决定整套 M3 scheme 的源色(表面底色不随它变,只换强调/主色系) */
   accent: AccentPref;
@@ -99,15 +90,36 @@ export interface AppConfig {
   historyRetention: number;
 }
 
+export type SearchProviderId = "tavily" | "bocha" | "brave";
+
+/** 设置里的搜索服务选项:auto = 不用服务商,抓取搜索引擎结果页兜底 */
+export type SearchProviderSetting = "auto" | SearchProviderId;
+
+/** 搜索服务配置:provider=auto 时 baseUrl/apiKey 无效;其余留空 baseUrl 用官方端点 */
+export interface SearchConfig {
+  provider: SearchProviderSetting;
+  baseUrl: string;
+  apiKey: string;
+}
+
+/** 各选项展示名(设置页下拉用) */
+export const SEARCH_PROVIDER_LABELS: Record<SearchProviderSetting, string> = {
+  auto: "自动（免 Key，抓取搜索页）",
+  tavily: "Tavily",
+  bocha: "博查 Bocha",
+  brave: "Brave Search",
+};
+
 export async function loadConfig(): Promise<AppConfig> {
   const s = await chrome.storage.session.get("apiKey");
   const l = await chrome.storage.local.get([
-    "apiKey",
-    "name",
+    "providers",
+    "modelProvider",
     "model",
     "models",
-    "baseUrl",
     "maxContextTokens",
+    "baseUrl",
+    "apiKey",
     "theme",
     "accent",
     "webSearch",
@@ -115,21 +127,23 @@ export async function loadConfig(): Promise<AppConfig> {
     "historyRetention",
   ]);
 
-  const apiKey = s.apiKey ?? l.apiKey ?? "";
-  // 旧版只有单个 model(+ maxContextTokens):首次读取时合成单条目列表;
-  // models key 一旦写入,旧 key 只读不再写,自然废弃
-  const models: ModelEntry[] = Array.isArray(l.models)
-    ? (l.models as ModelEntry[]).filter((m) => m && typeof m.id === "string")
-    : l.model
-      ? [{ id: l.model, contextTokens: l.maxContextTokens || undefined }]
-      : [];
+  const providers = normalizeProviders(l.providers, {
+    baseUrl: l.baseUrl,
+    apiKey: (s.apiKey as string) || l.apiKey,
+    model: l.model,
+    models: l.models,
+    maxContextTokens: l.maxContextTokens,
+  });
+  const modelProvider =
+    typeof l.modelProvider === "string" &&
+    providers.some((p) => p.id === l.modelProvider)
+      ? l.modelProvider
+      : (providers[0]?.id ?? "");
+
   return {
-    name: l.name ?? "",
-    apiKey,
-    remember: !s.apiKey, // session 有 key = 本次会话输入的;否则(local 或没有)默认记住
-    model: l.model ?? "",
-    models,
-    baseUrl: l.baseUrl ?? "",
+    providers,
+    modelProvider,
+    model: typeof l.model === "string" ? l.model : "",
     theme: l.theme ?? "system",
     accent: ACCENT_IDS.includes(l.accent as AccentPref)
       ? (l.accent as AccentPref)
@@ -143,6 +157,60 @@ export async function loadConfig(): Promise<AppConfig> {
         ? l.historyRetention
         : 7,
   };
+}
+
+/** providers 键在 → 新 schema 原样取;缺席 → 从旧版单供应商字段合成一个条目
+ *  (只读合成不写回;设置页任何一次保存都会写入 providers 键,旧键随即废弃) */
+function normalizeProviders(
+  raw: unknown,
+  legacy: {
+    baseUrl: unknown;
+    apiKey: unknown;
+    model: unknown;
+    models: unknown;
+    maxContextTokens: unknown;
+  },
+): ProviderEntry[] {
+  if (Array.isArray(raw)) {
+    return (raw as ProviderEntry[]).filter(
+      (p) =>
+        p &&
+        typeof p.id === "string" &&
+        typeof p.apiKey === "string" &&
+        typeof p.baseUrl === "string" &&
+        Array.isArray(p.models),
+    );
+  }
+  const legacyModels: ModelEntry[] = Array.isArray(legacy.models)
+    ? (legacy.models as ModelEntry[])
+        .filter((m) => m && typeof m.id === "string")
+        .map((m) => ({
+          ...m,
+          contextTokens: m.contextTokens ?? undefined,
+        }))
+    : typeof legacy.model === "string" && legacy.model
+      ? [
+          {
+            id: legacy.model,
+            contextTokens:
+              typeof legacy.maxContextTokens === "number"
+                ? legacy.maxContextTokens
+                : undefined,
+          },
+        ]
+      : [];
+  const baseUrl = typeof legacy.baseUrl === "string" ? legacy.baseUrl : "";
+  const apiKey = typeof legacy.apiKey === "string" ? legacy.apiKey : "";
+  if (!baseUrl && !apiKey && legacyModels.length === 0) return [];
+  let host = "默认服务";
+  try {
+    host = new URL(baseUrl).hostname || host;
+  } catch {
+    /* baseUrl 不合法就保持占位名 */
+  }
+  return [
+    { id: "p0", name: host, baseUrl, apiKey, models: legacyModels },
+  ];
 }
 
 /** 搜索配置宽松归一:非法 provider 回落 auto(免 Key 兜底),字段类型不对的丢弃 */
@@ -159,16 +227,15 @@ function normalizeSearch(v: unknown): SearchConfig {
   };
 }
 
-/** 非敏感偏好的局部保存(storage key 与字段同名,直接落盘)。
- *  自动保存的各控件按字段调用,避免整包重写 apiKey 相关存储 */
+/** 偏好局部保存(storage key 与字段同名,直接落盘)。
+ *  各控件按字段调用,providers 整包写入(内含各供应商的 key) */
 export async function savePrefs(
   prefs: Partial<
     Pick<
       AppConfig,
-      | "name"
+      | "providers"
+      | "modelProvider"
       | "model"
-      | "models"
-      | "baseUrl"
       | "theme"
       | "accent"
       | "webSearch"
@@ -178,29 +245,4 @@ export async function savePrefs(
   >,
 ): Promise<void> {
   await chrome.storage.local.set(prefs);
-}
-
-export async function saveConfig(input: AppConfig): Promise<void> {
-  // 非敏感字段恒存 local
-  await chrome.storage.local.set({
-    name: input.name,
-    model: input.model.trim(),
-    models: input.models,
-    baseUrl: input.baseUrl.trim(),
-  });
-
-  // apiKey 受「记住」控制
-  if (input.remember) {
-    await chrome.storage.local.set({ apiKey: input.apiKey });
-  } else {
-    await chrome.storage.local.remove("apiKey"); // 忘掉旧值,避免残留
-  }
-  await chrome.storage.session.set({ apiKey: input.apiKey }); // 本次会话总是可用
-}
-
-// 「忘记」只清 API key,不清 provider/model/baseUrl:那些是非敏感偏好,
-// 每次忘记都清掉会让用户反复重选;需要「恢复默认」时应另加函数,而非改这里
-export async function forgetApiKey(): Promise<void> {
-  await chrome.storage.local.remove("apiKey");
-  await chrome.storage.session.remove("apiKey");
 }
