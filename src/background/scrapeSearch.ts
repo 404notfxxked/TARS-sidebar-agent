@@ -21,7 +21,10 @@
 // 无效——实测同一代理出口上 Bing 降级、DDG/Mojeek 挑战,直连/住宅 IP 则一切
 // 正常。免 Key 模式的定位是「干净网络下的零配置兜底」,不是对抗手段。
 
-import { callOffscreenParser, ensureOffscreenDocument } from "../shared/docBridge";
+import {
+  callOffscreenParser,
+  ensureOffscreenDocument,
+} from "../shared/docBridge";
 import { abortWithTimeout, getToolExecutionContext } from "./toolContext";
 import { createLogger } from "../shared/logger";
 import type { WebSearchResult } from "./webSearch";
@@ -56,15 +59,14 @@ interface ScrapeEngine {
 // 是不是辅助参数引发」。recency/market 在抓取通道被忽略(工具描述已注明仅
 // 搜索服务通道支持);Accept-Language 头保留:真实浏览器必发,缺失本身是指纹。
 
+// ---- 引擎顺序:ddg 在前,bing 兜底 ----
+// 两家失败形态相反:ddg fail-closed(风控给挑战页,可检测),bing fail-open
+// (降级页结构完整、内容垃圾,agent 无告警地吃下)。fail-closed 放第一,
+// 健康时结果可信、被标记时干净失败落入冷却/兜底;fail-open 放最后当安全网,
+// 避免它以「成功」的姿态污染观察。CN 直连用户首搜会在 ddg 超时一次,
+// 之后冷却窗口内直接走 bing。
+
 const ENGINES: ScrapeEngine[] = [
-  {
-    id: "bing",
-    buildRequest: (q, uiLang) => ({
-      url: `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
-      acceptLanguage: acceptLanguageFor(deriveMarket(uiLang)),
-    }),
-    blockMarkers: /grecaptcha|challengesurvey/i,
-  },
   {
     id: "ddg",
     buildRequest: (q, uiLang) => ({
@@ -72,6 +74,14 @@ const ENGINES: ScrapeEngine[] = [
       acceptLanguage: acceptLanguageFor(deriveMarket(uiLang)),
     }),
     blockMarkers: /anomaly|captcha/i,
+  },
+  {
+    id: "bing",
+    buildRequest: (q, uiLang) => ({
+      url: `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
+      acceptLanguage: acceptLanguageFor(deriveMarket(uiLang)),
+    }),
+    blockMarkers: /grecaptcha|challengesurvey/i,
   },
 ];
 
@@ -95,7 +105,9 @@ async function pace(engineId: string): Promise<void> {
   lastHitAt.set(engineId, Date.now());
 }
 
-export async function runScrapeSearch(args: ScrapeArgs): Promise<WebSearchResult> {
+export async function runScrapeSearch(
+  args: ScrapeArgs,
+): Promise<WebSearchResult> {
   const { query, limit, allowed, blocked } = args;
   const cancelSignal = getToolExecutionContext()?.signal;
   await ensureOffscreenDocument();
@@ -128,8 +140,14 @@ export async function runScrapeSearch(args: ScrapeArgs): Promise<WebSearchResult
       if (!Array.isArray(results)) throw new Error("解析结果异常");
 
       const beforeFilter = results.length;
-      const filtered = results.filter((r) => passesDomainFilter(r.url, allowed, blocked));
-      if (beforeFilter > 0 && filtered.length === 0 && (allowed.length > 0 || blocked.length > 0)) {
+      const filtered = results.filter((r) =>
+        passesDomainFilter(r.url, allowed, blocked),
+      );
+      if (
+        beforeFilter > 0 &&
+        filtered.length === 0 &&
+        (allowed.length > 0 || blocked.length > 0)
+      ) {
         log.info("search", "结果全被域名过滤排除", {
           engine: engine.id,
           allowed,
@@ -149,7 +167,10 @@ export async function runScrapeSearch(args: ScrapeArgs): Promise<WebSearchResult
           throw new Error("返回风控/验证页");
         }
         lastGoodEngine = engine.id;
-        log.info("search", "引擎无结果,切换下一个", { engine: engine.id, query });
+        log.info("search", "引擎无结果,切换下一个", {
+          engine: engine.id,
+          query,
+        });
         continue;
       }
       clearEngineCooldown(engine.id);
@@ -170,9 +191,13 @@ export async function runScrapeSearch(args: ScrapeArgs): Promise<WebSearchResult
       const msg = e instanceof Error ? e.message : String(e);
       if (cancelSignal?.aborted) throw new Error("用户已取消本次搜索");
       if (/timeout/i.test(msg)) await coolDownEngine(engine.id, "unreachable");
-      if (/HTTP (403|429)/.test(msg)) await coolDownEngine(engine.id, "blocked");
+      if (/HTTP (403|429)/.test(msg))
+        await coolDownEngine(engine.id, "blocked");
       failures.push(`${engine.id}: ${msg}`);
-      log.warn("search", "引擎失败,切换下一个", { engine: engine.id, error: msg });
+      log.warn("search", "引擎失败,切换下一个", {
+        engine: engine.id,
+        error: msg,
+      });
     }
   }
 
@@ -200,7 +225,9 @@ async function fetchHtml(
     const res = await fetch(req.url, {
       signal,
       credentials: "include",
-      headers: req.acceptLanguage ? { "Accept-Language": req.acceptLanguage } : undefined,
+      headers: req.acceptLanguage
+        ? { "Accept-Language": req.acceptLanguage }
+        : undefined,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
@@ -221,13 +248,20 @@ async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
   const minutes = kind === "blocked" ? 5 : 10;
   try {
     const bag = await chrome.storage.session.get(COOLDOWN_KEY);
-    const map = (bag[COOLDOWN_KEY] ?? {}) as Record<string, { until: number; kind: CooldownKind }>;
+    const map = (bag[COOLDOWN_KEY] ?? {}) as Record<
+      string,
+      { until: number; kind: CooldownKind }
+    >;
     map[id] = { until: Date.now() + minutes * 60_000, kind };
     await chrome.storage.session.set({ [COOLDOWN_KEY]: map });
   } catch {
     /* 冷却写失败无碍 */
   }
-  log.warn("search", "引擎进入冷却,近期搜索将跳过", { engine: id, kind, minutes });
+  log.warn("search", "引擎进入冷却,近期搜索将跳过", {
+    engine: id,
+    kind,
+    minutes,
+  });
 }
 
 /** 引擎在冷却期内则直接抛错(文案可转告用户),调用方跳到下一引擎 */
@@ -259,14 +293,21 @@ function clearEngineCooldown(id: string): void {
   })();
 }
 
-function passesDomainFilter(url: string, allowed: string[], blocked: string[]): boolean {
+function passesDomainFilter(
+  url: string,
+  allowed: string[],
+  blocked: string[],
+): boolean {
   let hostname: string;
   try {
     hostname = new URL(url).hostname.toLowerCase();
   } catch {
     return false;
   }
-  if (allowed.length > 0 && !allowed.some((d) => hostname === d || hostname.endsWith(`.${d}`))) {
+  if (
+    allowed.length > 0 &&
+    !allowed.some((d) => hostname === d || hostname.endsWith(`.${d}`))
+  ) {
     return false;
   }
   return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
