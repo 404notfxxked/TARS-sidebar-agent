@@ -44,9 +44,10 @@ export async function loadHistory(sessionId: string): Promise<InternalMsg[]> {
  *    发生过溢出裁剪时更小(最早几轮已从内存丢弃,但库里仍存着全量 ——
  *    裁剪只影响本轮 prompt,不写回,落盘永远是全量历史)
  *  - baseSeq:该会话在库里的已有条数,即新消息的起始 seq
- *  落盘前剥离思考内容(reasoning_content):严格按 OpenAI 规范校验的端点
- *  对 assistant 消息里的未知字段直接 400;单次 run 内的逐轮回传不受影响
- *  (agent 循环直接用内存 messages)。写失败由调用方兜底,不打断回答。 */
+ *  落盘前剥离思考内容(reasoning_content)与图片字节:严格按 OpenAI 规范
+ *  校验的端点对 assistant 消息里的未知字段直接 400;图片字节进 images store,
+ *  消息行只留引用。单次 run 内的逐轮回传不受影响(内存直用)。写失败由
+ *  调用方兜底,不打断回答。 */
 export async function saveHistory(
   sessionId: string,
   msgs: InternalMsg[],
@@ -54,8 +55,10 @@ export async function saveHistory(
   baseSeq: number,
 ): Promise<void> {
   if (!sessionId) return;
-  const fresh = msgs.slice(fromIdx).map(stripReasoning);
-  if (fresh.length === 0) return;
+  const freshRaw = msgs.slice(fromIdx);
+  if (freshRaw.length === 0) return;
+  const imageRows = collectImageRows(sessionId, freshRaw);
+  const fresh = freshRaw.map(persistableMsg);
   const now = Date.now();
   const prev = await db.getSession(sessionId).catch(() => undefined);
   const meta: db.SessionRow = {
@@ -65,9 +68,14 @@ export async function saveHistory(
     updatedAt: now,
     msgCount: msgs.length,
   };
-  await db.appendMessages(sessionId, meta, fresh, baseSeq);
+  await db.appendMessages(sessionId, meta, fresh, baseSeq, imageRows);
   // 顺带做一次保留期清理(内部自捕获,失败不影响本次保存)
   void pruneExpiredSessions();
+}
+
+/** 取单张图片(历史气泡渲染,面板经 GET_IMAGE 消息转发到这里) */
+export function loadImage(id: string) {
+  return db.getImage(id);
 }
 
 /** 会话列表,最近活跃在前 */
@@ -150,13 +158,19 @@ export async function migrateLegacySessionStorage(): Promise<void> {
   }
 }
 
-/** 首条用户消息 → 列表标题。用户 content 带 <context>/<user-request> 包裹,
- *  取 <user-request> 内层文本(旧数据无包裹则原样用),压平空白后截断 */
+/** 用户 wire content 里的可读文本:content 带 <context>/<user-request> 包裹,
+ *  取 <user-request> 内层(旧数据/无包裹则原样)。面板回显与会话标题共用 */
+function userRequestText(content: string): string {
+  const inner = content.match(/<user-request>([\s\S]*?)<\/user-request>/);
+  return inner ? inner[1] : content;
+}
+
+/** 首条用户消息 → 列表标题(压平空白后截断) */
 function deriveTitle(msgs: InternalMsg[]): string {
   const first = msgs.find((m) => m.role === "user");
-  const raw = first?.content ?? "";
-  const inner = raw.match(/<user-request>([\s\S]*?)<\/user-request>/);
-  const text = (inner ? inner[1] : raw).replace(/\s+/g, " ").trim();
+  const text = userRequestText(first?.content ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!text) return "未命名会话";
   return text.length > TITLE_MAX_CHARS
     ? `${text.slice(0, TITLE_MAX_CHARS)}…`
@@ -176,12 +190,56 @@ function stripReasoning(
   };
 }
 
-/** 完整 InternalMsg[] → 前端展示用的精简投影(只留 user/assistant 文本) */
+/** 持久化形态:剥 reasoning_content + 剥图片字节(字节另行入 images store) */
+function persistableMsg(m: InternalMsg): InternalMsg {
+  if (m.role === "user" && m.images?.length) {
+    return {
+      role: "user",
+      content: m.content,
+      images: m.images.map(({ id, mime, w, h }) => ({ id, mime, w, h })),
+    };
+  }
+  return stripReasoning(m);
+}
+
+/** 从待保存的新消息里收集图片字节行(只收带字节的;历史引用没有字节) */
+function collectImageRows(
+  sessionId: string,
+  msgs: InternalMsg[],
+): db.ImageRow[] {
+  const rows: db.ImageRow[] = [];
+  for (const m of msgs) {
+    if (m.role !== "user" || !m.images) continue;
+    for (const im of m.images) {
+      if (im.bytes) {
+        rows.push({
+          sessionId,
+          id: im.id,
+          mime: im.mime,
+          w: im.w,
+          h: im.h,
+          bytes: im.bytes,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+/** 完整 InternalMsg[] → 前端展示用的精简投影(user/assistant 文本 + 图片元信息)。
+ *  用户消息解掉 <context>/<user-request> 包裹 —— 气泡回显的应是用户输入的
+ *  原文,与实时发送时的本地回显一致;wire 内容只属于发给模型的请求 */
 export function toChatRecords(msgs: InternalMsg[]): ChatRecord[] {
   const out: ChatRecord[] = [];
   for (const m of msgs) {
     if (m.role === "user") {
-      out.push({ role: "user", content: m.content });
+      out.push({
+        role: "user",
+        content: userRequestText(m.content),
+        ...(m.images?.length
+          ? { images: m.images.map(({ id, mime, w, h }) => ({ id, mime, w, h })) }
+          : {}),
+      });
     } else if (m.role === "assistant" && m.content) {
       out.push({ role: "assistant", content: m.content });
     }

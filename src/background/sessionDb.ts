@@ -1,6 +1,8 @@
-// 会话历史的 IndexedDB 底层封装:db "tars" v1,两个 store
+// 会话历史的 IndexedDB 底层封装:db "tars",两个版本起的 store
 // - sessions:会话元数据(keyPath id),列表/保留期清理只碰这里,不读消息体
 // - messages:一条 InternalMsg 一行,主键 [sessionId, seq],按会话有序读写
+// - images:消息图片字节(压缩后),主键 [sessionId, id],随会话级联删除;
+//   消息行里只存元数据引用,列表/清理永不碰大对象
 // 只有后台 SW 访问此模块(单写者);面板经消息协议间接读写。
 //
 // 为什么选 IndexedDB 而不是 chrome.storage.local:多会话需要按记录追加与
@@ -9,9 +11,10 @@
 // 由保留期策略化解——数据本就是短命数据,见 sessionHistory.ts 的注释。
 
 const DB_NAME = "tars";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SESSIONS = "sessions";
 const MESSAGES = "messages";
+const IMAGES = "images";
 
 /** 会话元数据行(sessions store) */
 export interface SessionRow {
@@ -25,11 +28,21 @@ export interface SessionRow {
   msgCount: number;
 }
 
-/** 消息行(messages store):msg 为完整 InternalMsg */
+/** 消息行(messages store):msg 为完整 InternalMsg(图片只有元数据引用) */
 export interface MessageRow {
   sessionId: string;
   seq: number;
   msg: unknown;
+}
+
+/** 图片字节行(images store):随会话/消息级联删除 */
+export interface ImageRow {
+  sessionId: string;
+  id: string;
+  mime: string;
+  w: number;
+  h: number;
+  bytes: Uint8Array;
 }
 
 // ---- 连接管理 ----
@@ -51,6 +64,13 @@ function openDb(): Promise<IDBDatabase> {
         });
         // 同会话的按序读/范围删都走这个索引
         store.createIndex("bySession", "sessionId");
+      }
+      // v2:消息图片字节(v1 库升级时补建)
+      if (!db.objectStoreNames.contains(IMAGES)) {
+        const store = db.createObjectStore(IMAGES, {
+          keyPath: ["sessionId", "id"],
+        });
+        store.createIndex("byId", "id");
       }
     };
     req.onsuccess = () => {
@@ -122,41 +142,55 @@ export async function loadMessageRows(
 
 // ---- 写 ----
 
-/** 追加消息 + upsert 会话元数据,一个事务内原子生效。
+/** 追加消息 + upsert 会话元数据 + 落图片字节,一个事务内原子生效。
  *  baseSeq = 该会话已有消息条数(run 开始时的历史长度) */
 export async function appendMessages(
   sessionId: string,
   meta: SessionRow,
   msgs: unknown[],
   baseSeq: number,
+  images: ImageRow[] = [],
 ): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([SESSIONS, MESSAGES], "readwrite");
+  const tx = db.transaction([SESSIONS, MESSAGES, IMAGES], "readwrite");
   tx.objectStore(SESSIONS).put(meta);
   const store = tx.objectStore(MESSAGES);
   msgs.forEach((msg, i) => store.put({ sessionId, seq: baseSeq + i, msg }));
+  const imageStore = tx.objectStore(IMAGES);
+  for (const row of images) imageStore.put(row);
   await settled(tx);
 }
 
-/** 删单个会话:元数据与其全部消息一起消失 */
+/** 按 id 取单张图片(历史气泡渲染时面板经消息协议来取) */
+export async function getImage(id: string): Promise<ImageRow | undefined> {
+  const db = await openDb();
+  return p<ImageRow | undefined>(
+    db.transaction(IMAGES).objectStore(IMAGES).index("byId").get(id),
+  );
+}
+
+/** 删单个会话:元数据、消息、图片字节一起消失 */
 export async function deleteSessionRows(id: string): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([SESSIONS, MESSAGES], "readwrite");
+  const tx = db.transaction([SESSIONS, MESSAGES, IMAGES], "readwrite");
   tx.objectStore(SESSIONS).delete(id);
   // delete 接受 KeyRange:直接按会话前缀整段删
   tx.objectStore(MESSAGES).delete(sessionRange(id));
+  tx.objectStore(IMAGES).delete(sessionRange(id));
   await settled(tx);
 }
 
 /** 批量删(保留期清理用),同样单事务原子 */
 export async function deleteSessions(ids: string[]): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([SESSIONS, MESSAGES], "readwrite");
+  const tx = db.transaction([SESSIONS, MESSAGES, IMAGES], "readwrite");
   const sessions = tx.objectStore(SESSIONS);
   const messages = tx.objectStore(MESSAGES);
+  const images = tx.objectStore(IMAGES);
   for (const id of ids) {
     sessions.delete(id);
     messages.delete(sessionRange(id));
+    images.delete(sessionRange(id));
   }
   await settled(tx);
 }
@@ -164,9 +198,10 @@ export async function deleteSessions(ids: string[]): Promise<void> {
 /** 清空全部会话(设置页「清空全部历史」) */
 export async function clearAllRows(): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([SESSIONS, MESSAGES], "readwrite");
+  const tx = db.transaction([SESSIONS, MESSAGES, IMAGES], "readwrite");
   tx.objectStore(SESSIONS).clear();
   tx.objectStore(MESSAGES).clear();
+  tx.objectStore(IMAGES).clear();
   await settled(tx);
 }
 

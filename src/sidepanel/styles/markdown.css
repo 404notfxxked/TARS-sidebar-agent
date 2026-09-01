@@ -1,4 +1,6 @@
-/* ---- markdown 渲染(组件类) ---- */
+/* ---- markdown 渲染(组件类)----
+   全部走 M3 角色:行内 code 用中性色容器片(不用 primary-container,正文里太响),
+   代码块 = 填充表面 + md 圆角 + 发丝分隔,无边框无阴影 */
 
 @layer components {
   .markdown > *:first-child {
@@ -15,9 +17,8 @@
   .markdown h2,
   .markdown h3 {
     margin: 0.7em 0 0.3em;
-    font-weight: 600;
+    font-weight: 500;
     line-height: 1.25;
-    letter-spacing: -0.01em;
   }
   .markdown h1 {
     font-size: 1.08em;
@@ -27,7 +28,7 @@
   }
   .markdown h3 {
     font-size: 0.93em;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
   .markdown ul,
   .markdown ol {
@@ -38,7 +39,7 @@
     margin: 0.15em 0;
   }
   .markdown a {
-    color: var(--accent);
+    color: var(--md-sys-color-primary);
     text-decoration: none;
   }
   .markdown a:hover {
@@ -46,39 +47,45 @@
     text-underline-offset: 2px;
   }
 
-  /* 行内 code(pre 内的由 .code-block 重置) */
+  /* 行内 code(pre 内的由 .code-block 重置):中性容器片 */
   .markdown :not(pre) > code {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 0.9em;
     padding: 0.1em 0.35em;
-    border-radius: 3px;
-    background: var(--accent-soft);
+    border-radius: var(--radius-xs);
+    background: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface);
   }
 
   .markdown blockquote {
     margin: 0.5em 0;
     padding-left: 0.75em;
-    border-left: 2px solid var(--line);
-    color: var(--muted);
+    border-left: 3px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface-variant);
   }
   .markdown table {
     margin: 0.5em 0;
     border-collapse: collapse;
     font-size: 12px;
   }
+  /* 只留横向行线(M3:能少画就少画),列靠内边距区分;表头用底色+字重分层 */
   .markdown th,
   .markdown td {
-    padding: 0.3em 0.6em;
-    border: 1px solid var(--line);
+    padding: 0.35em 0.6em;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    text-align: left;
+  }
+  .markdown tr:last-child td {
+    border-bottom: 0;
   }
   .markdown th {
-    background: var(--surface-2);
-    font-weight: 600;
+    background: var(--md-sys-color-surface-container);
+    font-weight: 500;
   }
   .markdown hr {
     margin: 0.7em 0;
     border: 0;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--md-sys-color-outline-variant);
   }
 
   /* ---- 代码块:顶部条(语言 + 复制)+ 横向滚动代码体 ----
@@ -87,9 +94,8 @@
   .code-block {
     margin: 0.5em 0;
     max-width: 100%;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--code-bg);
+    border-radius: var(--radius-md);
+    background: var(--md-sys-color-surface-container);
     overflow: hidden;
   }
   .code-block-head {
@@ -97,29 +103,27 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 4px 6px 4px 12px;
-    border-bottom: 1px solid var(--line);
-    background: var(--surface-2);
+    padding: 3px 5px 3px 12px;
+    /* 头部用色阶(高一级容器)分层,不画分割线 */
+    background: var(--md-sys-color-surface-container-high);
     font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    color: var(--muted);
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
   }
   .code-copy-btn {
     flex-shrink: 0;
-    padding: 2px 8px;
-    border-radius: 5px;
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
     font-size: 11px;
     font-weight: 500;
-    letter-spacing: 0.02em;
-    color: var(--muted);
-    transition:
-      color 120ms ease,
-      background 120ms ease;
+    color: var(--md-sys-color-primary);
+    transition: background 150ms var(--ease-emphasized);
   }
   .code-copy-btn:hover {
-    background: var(--line);
-    color: var(--ink);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  }
+  .code-copy-btn:active {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
   }
   .code-block pre {
     margin: 0;
@@ -130,14 +134,14 @@
     display: block;
     padding: 0;
     background: none;
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 11.5px;
     line-height: 1.5;
   }
 }
 
-/* ---- 代码高亮配色(rehype-highlight / highlight.js) ----
+/* ---- 代码高亮配色(rehype-highlight / highlight.js)----
    与主题同机制的令牌:浅色定义在 :root,深色随 [data-theme] 翻转 */
 
 :root {
@@ -202,5 +206,5 @@
   font-style: italic;
 }
 .markdown .hljs-deletion {
-  color: var(--danger);
+  color: var(--md-sys-color-error);
 }

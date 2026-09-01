@@ -2,7 +2,7 @@
 // 颜色本体在 styles/tokens.css 里随 data-theme 翻转,color-scheme 也由 CSS 声明,
 // 这里只负责把偏好落到 DOM 属性上
 
-import type { ThemePref } from "../shared/configStore";
+import type { AccentPref, ThemePref } from "../shared/configStore";
 
 const mq = window.matchMedia("(prefers-color-scheme: dark)");
 
@@ -17,6 +17,12 @@ export function resolveTheme(p: ThemePref = pref): "light" | "dark" {
 export function applyThemePreference(p: ThemePref): void {
   pref = p;
   document.documentElement.dataset.theme = resolveTheme();
+}
+
+/** 应用主题色:默认源色不带属性,其余挂 data-accent(m3.css 里各有一套浅色 scheme) */
+export function applyAccent(a: AccentPref): void {
+  if (a === "green") delete document.documentElement.dataset.accent;
+  else document.documentElement.dataset.accent = a;
 }
 
 /** system 偏好下跟随系统实时切换;面板生命周期内调用一次即可 */

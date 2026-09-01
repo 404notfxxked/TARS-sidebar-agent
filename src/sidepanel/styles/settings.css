@@ -1,6 +1,8 @@
-/* ---- 设置整页(分组堆叠表单,自动保存) ----
-   标签在上、控件全宽在下;分组卡片 = 实心表面 + 1px 边框。
-   控件级通用件(分段/开关/图标钮)沿用,颜色全部走令牌 */
+/* ---- 设置 / 历史会话页(M3)----
+   页面底 = surface-container(悬浮层是另一目的地,色调分层示意方位);
+   分组卡 = surface-container-lowest 填充卡 + lg 圆角(Android 系统设置形态,
+   无边框无阴影,海拔靠色调);控件 = M3 形态(开关 52×32、连体分段、胶囊按钮)。
+   状态层约定:on-surface / primary / error 的 8%(hover)与 12%(按下) */
 
 /* 整页切入:轻右移淡入(退出即卸载,不做对称动画) */
 @keyframes page-in {
@@ -15,139 +17,185 @@
 }
 @layer components {
   .view-in {
-    animation: page-in 240ms var(--spring-enter);
+    animation: page-in 250ms var(--ease-emphasized);
   }
 
   /* ---- 历史会话页 ---- */
-  /* 日期组头:滚动时吸顶,像 ChatGPT 历史侧栏的分段 */
+  /* 日期组头:滚动时吸顶,底色与页面一致(否则行从字下穿过) */
   .sessions-group-head {
     position: sticky;
     top: 0;
     z-index: 10;
     margin: 4px 0 2px;
     padding: 4px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    color: var(--muted);
-    background: var(--paper);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container);
   }
   /* 行入场:按序交错淡入(延迟由行内 style 提供,封顶 8 行) */
   .sessions-row-in {
-    animation: msg-in 240ms var(--spring-enter) backwards;
+    animation: msg-in 250ms var(--ease-emphasized) backwards;
   }
-}
 
-@layer components {
-  /* 大写小标签(标题眉题 / 分组标题共用) */
+  /* ---- 分组小标题(卡片上方的节标题)----
+     中文不吃 uppercase/宽字距,就是普通 title:13/500 次级色 */
   .settings-eyebrow {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
   }
 
-  /* 分组卡片:实心表面。垂直节奏由子块自带,卡片只管左右包边 */
+  /* 分组卡:M3 填充卡 —— 页面 container 底上的「白卡」,色调分层表达海拔。
+     卡内行与行不画分隔线:M3 里分隔线只用于分组,组内靠留白区分
+     (发丝线是 iOS 分组列表的习惯);留白节奏相应放大 */
   .settings-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 14px;
+    background: var(--md-sys-color-surface-container-lowest);
+    border-radius: var(--radius-lg);
     padding: 1px 14px;
-    box-shadow: var(--shadow-sm);
   }
-  /* 卡片内直接子块统一 9px 垂直节奏,子块之间一条发丝线(iOS 分组列表式) */
   .settings-card > * {
-    padding: 9px 0;
-  }
-  .settings-card > * + * {
-    border-top: 1px solid var(--line-soft);
+    padding: 11px 0;
   }
 
   /* 子块三件套:纵向字段 / 单行 / 复合块。
      行的 padding 只在作为卡片直接子块时生效 —— 嵌在 block 里的行不再自垫,
-     否则双层 padding 叠加会导致各卡首行文字起点不一致 */
+     否则双层 padding 叠加会导致各卡首行文字起点不一致。
+     行统一 40px 最小高度:纯文字行与带开关的行(开关 32px 高)同节奏,
+     开关不再顶着卡片边、与文字错半头 */
   .settings-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    min-height: 40px;
   }
   .settings-field .field-label {
     margin: 4px 0 6px;
   }
   .settings-row-label {
     flex-shrink: 0;
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 500;
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
   }
 
-  /* 次级按钮(获取列表 / 添加):与 field-input 同圆角同高度 */
+  /* ---- 按钮:M3 outlined(pill 外形、主色文字、状态层) ----
+     36px 标准高度,与输入框同排时齐平 */
   .settings-btn {
     flex-shrink: 0;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 7px 12px;
-    font-size: 12px;
-    color: var(--ink);
-    transition: background 150ms ease, opacity 150ms ease;
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 16px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--radius-full);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--md-sys-color-primary);
+    transition: background 150ms var(--ease-emphasized);
   }
   .settings-btn:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  }
+  .settings-btn:active {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
   }
   .settings-btn:disabled {
-    opacity: 0.5;
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+    border-color: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  }
+
+  /* ---- 按钮:M3 text(无底文字钮,状态层反馈;危险态换 error 角色) ---- */
+  .btn-text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: var(--radius-full);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--md-sys-color-primary);
+    transition: background 150ms var(--ease-emphasized);
+  }
+  .btn-text:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+  }
+  .btn-text:active {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+  }
+  /* 两段确认的「平静态」:中性文字,确认态换 .danger(文字 + 底色一起变)。
+     注意 .danger 写在 .muted 之后,两态叠加时 danger 胜出 */
+  .btn-text.muted {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .btn-text.muted:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
+  .btn-text.danger {
+    color: var(--md-sys-color-error);
+  }
+  .btn-text.danger:hover {
+    background: color-mix(in srgb, var(--md-sys-color-error) 8%, transparent);
+  }
+  .btn-text:disabled {
+    pointer-events: none;
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
   }
 
   /* 堆叠字段:标签在上,控件全宽在下 */
   .field-label {
     display: block;
     margin: 10px 0 6px;
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 500;
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
   }
   .field-input {
     width: 100%;
-    padding: 7px 12px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--surface);
+    padding: 8px 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--radius-xs);
+    background: transparent;
     font-size: 13px;
-    color: var(--ink);
-    caret-color: var(--accent);
+    color: var(--md-sys-color-on-surface);
+    caret-color: var(--md-sys-color-primary);
     outline: none;
-    transition:
-      border-color 150ms ease,
-      box-shadow 150ms ease;
+    transition: border-color 150ms var(--ease-emphasized);
   }
   .field-input::placeholder {
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
     opacity: 0.65;
   }
+  .field-input:hover {
+    border-color: var(--md-sys-color-on-surface);
+  }
+  /* M3 outlined focus:主色描边加粗(内衬避免布局位移),不做光圈 */
   .field-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
+    border-color: var(--md-sys-color-primary);
+    box-shadow: inset 0 0 0 1px var(--md-sys-color-primary);
   }
   .field-hint {
-    margin: 4px 0 0;
+    margin: 6px 0 0;
     font-size: 11px;
     line-height: 1.45;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
-  /* 浮层基座(聊天区模型选择弹层):吸附在锚点旁的自然小弹窗 */
+  /* 浮层基座(聊天区模型选择弹层):M3 menu —— container 底、xs 圆角、2 级海拔,
+     菜单项全出血方角(状态层贴边),不再是旧圆角卡片 */
   .combo-pop {
     position: absolute;
     z-index: 20;
     max-height: 180px;
     overflow-y: auto;
-    padding: 4px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: var(--shadow-md);
+    padding: 6px 0;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--radius-xs);
+    box-shadow: var(--shadow-2);
   }
   /* 从锚点上方弹出;宽度随内容,封顶防溢出面板(超长 ID 截断) */
   .combo-pop--up {
@@ -161,118 +209,170 @@
     display: block;
     width: 100%;
     overflow: hidden;
-    padding: 6px 10px;
-    border-radius: 7px;
+    padding: 7px 12px;
     text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 12.5px;
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
+    transition: background 150ms var(--ease-emphasized);
   }
   .combo-option:hover,
-  .combo-option[data-active="true"],
-  .combo-option[aria-selected="true"] {
-    background: var(--surface-2);
+  .combo-option[data-active="true"] {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
+  .combo-option:active {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
   }
   .combo-option[aria-selected="true"] {
-    color: var(--accent); /* 选中项高亮:长 ID 被截断时 ✓ 不可见,靠颜色兜底 */
+    color: var(--md-sys-color-primary);
+    font-weight: 500;
   }
 
-  /* 分段控件:选中滑块测量定位,弹簧滑动 */
+  /* M3 分段按钮(connected button group):无滑块,选中段填 secondaryContainer + 勾 */
   .segmented {
-    position: relative;
     display: flex;
     width: 100%;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 2px;
-  }
-  .segmented-thumb {
-    position: absolute;
-    top: 2px;
-    bottom: 2px;
-    left: 0;
-    width: 0;
-    background: var(--surface);
-    border-radius: 8px;
-    box-shadow: var(--shadow-sm);
-    transition:
-      left 240ms cubic-bezier(0.16, 1, 0.3, 1),
-      width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--radius-full);
+    overflow: hidden;
   }
   .segmented button {
-    position: relative;
-    z-index: 1;
     flex: 1;
-    padding: 6px 6px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--muted);
-    white-space: nowrap;
-    transition: color 150ms ease;
-  }
-  .segmented button.selected {
-    color: var(--ink);
-  }
-
-  /* 开关:on 变 accent,旋钮弹簧位移 */
-  .switch {
-    position: relative;
-    flex-shrink: 0;
-    width: 42px;
-    height: 26px;
-    border-radius: 999px;
-    background: var(--line-strong);
-    transition: background 200ms ease;
-  }
-  .switch-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    background: var(--on-accent);
-    box-shadow:
-      0 2px 4px rgba(0, 0, 0, 0.22),
-      0 0 1px rgba(0, 0, 0, 0.1);
-    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .switch[aria-checked="true"] {
-    background: var(--accent);
-  }
-  .switch[aria-checked="true"] .switch-knob {
-    transform: translateX(16px);
-  }
-
-  /* 图标按钮(返回 / 显隐):反馈在按下瞬间 */
-  .settings-icon-btn {
-    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 7px;
-    color: var(--muted);
+    gap: 4px;
+    padding: 7px 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    white-space: nowrap;
     transition:
-      color 120ms ease,
-      background 120ms ease,
-      transform 120ms ease;
+      background 150ms var(--ease-emphasized),
+      color 150ms var(--ease-emphasized);
   }
-  .settings-icon-btn:hover {
-    background: var(--surface-2);
-    color: var(--ink);
+  .segmented button:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
   }
-  .settings-icon-btn:active {
-    transform: scale(0.92);
+  .segmented button:active {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+  }
+  /* 内部分隔线只在未选中段之间保留,紧贴选中段的两侧不画
+     (选中段已是填充色,再多一条线就重了) */
+  .segmented button + button {
+    border-left: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .segmented button.selected {
+    border-left: 0;
+  }
+  .segmented button.selected + button {
+    border-left: 0;
+  }
+  .segmented button.selected {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .segmented button.selected::before {
+    content: "";
+    width: 13px;
+    height: 6px;
+    border-left: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
   }
 
-  /* 眼睛按钮:浮在 input 右缘内部,不占布局 */
+  /* 主题色色板:源色小圆点,选中套当前 primary 描一圈(环色随所选主题色走) */
+  .swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-full);
+    transition: box-shadow 150ms var(--ease-emphasized);
+  }
+  .swatch[aria-checked="true"] {
+    box-shadow:
+      0 0 0 2px var(--md-sys-color-surface-container-lowest),
+      0 0 0 4px var(--md-sys-color-primary);
+  }
+
+  /* M3 开关:52×32 轨道,off 描边小旋钮 / on 主色轨道 + 旋钮变大带勾,
+     按压旋钮拉伸(expressive pressed handle) */
+  .switch {
+    position: relative;
+    flex-shrink: 0;
+    width: 52px;
+    height: 32px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-surface-container-highest);
+    border: 2px solid var(--md-sys-color-outline);
+    transition:
+      background 250ms var(--ease-emphasized),
+      border-color 250ms var(--ease-emphasized);
+  }
+  .switch-knob {
+    position: absolute;
+    top: 50%;
+    left: 6px;
+    width: 16px;
+    height: 16px;
+    margin-top: -8px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-outline);
+    transition: all 250ms var(--ease-emphasized);
+  }
+  .switch:active .switch-knob {
+    width: 20px;
+  }
+  .switch[aria-checked="true"] {
+    background: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-primary);
+  }
+  .switch[aria-checked="true"] .switch-knob {
+    left: 20px;
+    width: 24px;
+    height: 24px;
+    margin-top: -12px;
+    background: var(--md-sys-color-on-primary);
+  }
+  .switch:active[aria-checked="true"] .switch-knob {
+    left: 18px;
+    width: 28px;
+  }
+  /* 对勾:整个 knob 内几何居中(inset+margin:auto),绕自身中心转 -45°,
+     旋钮按压拉伸时也自动保持居中,不靠手调坐标 */
+  .switch[aria-checked="true"] .switch-knob::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 11px;
+    height: 6px;
+    border-left: 2px solid var(--md-sys-color-primary);
+    border-bottom: 2px solid var(--md-sys-color-primary);
+    transform: rotate(-45deg);
+  }
+
+  /* M3 搜索条(历史会话页):胶囊 + 最高容器底,无描边 */
+  .search-bar {
+    width: 100%;
+    padding: 8px 14px 8px 34px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-surface-container-highest);
+    font-size: 12.5px;
+    color: var(--md-sys-color-on-surface);
+    caret-color: var(--md-sys-color-primary);
+    outline: none;
+  }
+  .search-bar::placeholder {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.65;
+  }
+
+  /* 眼睛按钮:浮在 input 右缘内部,不占布局(圆形热区,同状态层) */
   .settings-eye-btn {
     position: absolute;
-    right: 5px;
+    right: 4px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -280,19 +380,15 @@
     justify-content: center;
     width: 26px;
     height: 26px;
-    border-radius: 7px;
-    color: var(--muted);
+    border-radius: var(--radius-full);
+    color: var(--md-sys-color-on-surface-variant);
     transition:
-      color 120ms ease,
-      background 120ms ease,
-      transform 120ms ease;
+      color 150ms var(--ease-emphasized),
+      background 150ms var(--ease-emphasized);
   }
   .settings-eye-btn:hover {
-    background: var(--surface-2);
-    color: var(--ink);
-  }
-  .settings-eye-btn:active {
-    transform: translateY(-50%) scale(0.92);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+    color: var(--md-sys-color-on-surface);
   }
   .field-input.has-eye {
     padding-right: 36px; /* 给浮在右缘的眼睛按钮留位 */
@@ -303,20 +399,18 @@
     margin: 6px 2px 0;
     font-size: 11px;
     line-height: 1.45;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
-  /* ---- 模型列表:卡片内的二级分组,用填充色区分层级(不做卡中卡) ---- */
+  /* ---- 模型列表:白卡内的二级分组,低一级容器色区分层级(不做卡中卡)。
+     行间不画线,靠底色块 + 行内留白区分(M3:组内不加分隔线) ---- */
   .model-list {
     display: flex;
     flex-direction: column;
     margin-top: 10px;
-    border-radius: 10px;
-    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    background: var(--md-sys-color-surface-container-low);
     overflow: hidden;
-  }
-  .model-row + .model-row {
-    border-top: 1px solid var(--line-soft);
   }
   .model-row-head {
     display: flex;
@@ -325,10 +419,13 @@
     width: 100%;
     padding: 8px 10px;
     text-align: left;
-    transition: background 120ms ease;
+    transition: background 150ms var(--ease-emphasized);
   }
   .model-row-head:hover {
-    background: var(--line);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
+  .model-row-head:active {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
   }
   .model-row-name {
     flex: 1;
@@ -338,21 +435,21 @@
     white-space: nowrap;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 12.5px;
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
   }
   .model-badge {
     flex-shrink: 0;
-    padding: 1px 6px;
-    border-radius: 5px;
-    background: var(--accent-soft);
-    color: var(--accent);
+    padding: 1px 8px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
     font-size: 10.5px;
-    font-weight: 600;
+    font-weight: 500;
   }
   .model-row-chevron {
     flex-shrink: 0;
-    color: var(--muted);
-    transition: transform 200ms var(--spring-enter);
+    color: var(--md-sys-color-on-surface-variant);
+    transition: transform 200ms var(--ease-emphasized);
   }
   .model-row-head[aria-expanded="true"] .model-row-chevron {
     transform: rotate(90deg);
@@ -364,16 +461,16 @@
     opacity: 0;
     visibility: hidden;
     transition:
-      grid-template-rows 240ms var(--spring-enter),
+      grid-template-rows 250ms var(--ease-emphasized),
       opacity 200ms ease,
-      visibility 0s 240ms;
+      visibility 0s 250ms;
   }
   .model-row-body[data-open="true"] {
     grid-template-rows: 1fr;
     opacity: 1;
     visibility: visible;
     transition:
-      grid-template-rows 240ms var(--spring-enter),
+      grid-template-rows 250ms var(--ease-emphasized),
       opacity 200ms ease,
       visibility 0s;
   }
@@ -381,7 +478,7 @@
     min-height: 0;
     overflow: hidden;
     padding: 0 10px;
-    transition: padding 240ms var(--spring-enter);
+    transition: padding 250ms var(--ease-emphasized);
   }
   .model-row-body[data-open="true"] .model-row-body-inner {
     padding: 2px 10px 10px;
@@ -390,23 +487,31 @@
     margin: 4px 0 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 11px;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* 行内动作:M3 text 按钮(紧凑 30px,主色 / 危险态 error) */
   .model-row-action {
-    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: var(--radius-full);
     font-size: 12.5px;
-    color: var(--accent);
-    transition: opacity 120ms ease;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--md-sys-color-primary);
+    transition: background 150ms var(--ease-emphasized);
   }
   .model-row-action:hover {
-    opacity: 0.7;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
   }
-  .model-row-action-danger,
+  .model-row-action-danger {
+    color: var(--md-sys-color-error);
+  }
   .model-row-action-danger:hover {
-    color: var(--danger);
-    opacity: 1;
+    background: color-mix(in srgb, var(--md-sys-color-error) 8%, transparent);
   }
 }

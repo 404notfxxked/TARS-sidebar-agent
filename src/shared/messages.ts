@@ -11,6 +11,7 @@ export const MSG = {
   LIST_SESSIONS: 'list_sessions',
   DELETE_SESSION: 'delete_session',
   CLEAR_ALL_HISTORY: 'clear_all_history',
+  GET_IMAGE: 'get_image',
 
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
@@ -23,17 +24,37 @@ export const MSG = {
   AGENT_ERROR: 'agent_error',
   HISTORY: 'history',
   SESSIONS: 'sessions',
+  IMAGE_DATA: 'image_data',
 } as const
 
 export type MsgType = (typeof MSG)[keyof typeof MSG]
 
 // ---------- Payload 类型 ----------
 
+/** 图片附件元信息:历史引用与气泡渲染用,不含字节 */
+export interface ImageMeta {
+  id: string;
+  mime: string;
+  w: number;
+  h: number;
+}
+
+/** 面板 → 后端的图片负载:压缩结果以 base64 传输(port 消息是 JSON 语义,
+ *  ArrayBuffer 过不去,见 shared/imageCodec) */
+export interface ImageUpload {
+  mime: string;
+  base64: string;
+  w: number;
+  h: number;
+}
+
 export interface UserMessagePayload {
   text: string
   sessionId?: string
   /** 提交时激活的 tab,供 agent 工具读取(避免执行时误读切换后的 tab) */
   tabId?: number
+  /** 随消息发送的图片(面板已完成门控/压缩;agent 侧按模型能力二次把关) */
+  images?: ImageUpload[]
 }
 
 export interface CancelRunPayload {
@@ -47,6 +68,7 @@ export type SideToBg =
   | { type: typeof MSG.LIST_SESSIONS }
   | { type: typeof MSG.DELETE_SESSION; sessionId: string }
   | { type: typeof MSG.CLEAR_ALL_HISTORY }
+  | { type: typeof MSG.GET_IMAGE; id: string }
 
 // ---------- 面板展示用消息(前后端一致的精简形状) ----------
 
@@ -59,10 +81,12 @@ export interface SessionMeta {
   msgCount: number;
 }
 
-/** 前端渲染用:只含 user/assistant 文本,不含 tool 内部消息 */
+/** 前端渲染用:只含 user/assistant 文本(+ 图片元信息),不含 tool 内部消息。
+ *  图片字节经 GET_IMAGE/IMAGE_DATA 单独取,不随消息列表传 */
 export interface ChatRecord {
   role: "user" | "assistant";
   content: string;
+  images?: ImageMeta[];
 }
 
 // ---------- Agent 流式事件（discriminated union） ----------
@@ -92,3 +116,12 @@ export type AgentEvent =
   | { type: typeof MSG.AGENT_ERROR; error: string }
   | { type: typeof MSG.HISTORY; messages: ChatRecord[] }
   | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
+  /** base64 缺省 = 图片已不存在(被清理/清空),面板显示失效占位 */
+  | {
+      type: typeof MSG.IMAGE_DATA;
+      id: string;
+      mime?: string;
+      base64?: string;
+      w?: number;
+      h?: number;
+    }

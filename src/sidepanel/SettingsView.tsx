@@ -4,7 +4,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -13,12 +12,13 @@ import {
   saveConfig,
   savePrefs,
   forgetApiKey,
+  type AccentPref,
   type ModelEntry,
   type ThemePref,
 } from "../shared/configStore";
 import { fetchModels } from "../background/provider";
 import { clearAllLogs, readAllLogEntries, toJsonl } from "../shared/logger";
-import { applyThemePreference } from "./theme";
+import { applyThemePreference, applyAccent } from "./theme";
 import { MSG, PORT_NAME } from "../shared/messages";
 
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
@@ -37,6 +37,19 @@ const RETENTION_OPTIONS: { value: "7" | "30" | "0"; label: string }[] = [
   { value: "0", label: "全部" },
 ];
 
+/** 重点色候选:与 scripts/generate-m3.mjs 的 ACCENTS 一一对应,
+ *  color 用各源色本身(色板小圆点展示的是"你选的那个颜色") */
+const ACCENT_OPTIONS: { value: AccentPref; label: string; color: string }[] = [
+  { value: "green", label: "青绿", color: "#16a34a" },
+  { value: "ocean", label: "湖蓝", color: "#0b57d0" },
+  { value: "teal", label: "青碧", color: "#0d9488" },
+  { value: "indigo", label: "靛蓝", color: "#4f46e5" },
+  { value: "lilac", label: "丁香", color: "#6750a4" },
+  { value: "coral", label: "珊瑚", color: "#ea580c" },
+  { value: "rose", label: "玫红", color: "#e11d48" },
+  { value: "graphite", label: "石墨", color: "#5f6368" },
+];
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -45,7 +58,7 @@ function formatBytes(bytes: number): string {
 
 type FetchState = "idle" | "loading" | "error";
 
-/** 分段控件:滑块测量选中按钮的实际位置/宽度,弹簧滑动跟随 */
+/** M3 分段按钮(connected button group):选中段填 secondaryContainer,勾号由 CSS 提供 */
 function Segmented<T extends string>({
   value,
   options,
@@ -57,23 +70,8 @@ function Segmented<T extends string>({
   onChange: (v: T) => void;
   ariaLabel: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [thumb, setThumb] = useState({ left: 0, width: 0 });
-
-  useLayoutEffect(() => {
-    const btn = ref.current?.querySelector<HTMLButtonElement>(
-      `[data-v="${value}"]`,
-    );
-    if (btn) setThumb({ left: btn.offsetLeft, width: btn.offsetWidth });
-  }, [value]);
-
   return (
-    <div ref={ref} role="radiogroup" aria-label={ariaLabel} className="segmented">
-      <span
-        className="segmented-thumb"
-        style={{ left: thumb.left, width: thumb.width }}
-        aria-hidden="true"
-      />
+    <div role="radiogroup" aria-label={ariaLabel} className="segmented">
       {options.map((o) => (
         <button
           key={o.value}
@@ -142,7 +140,7 @@ function ModelRow({
         <div className="model-row-body-inner">
           {entry.alias && <p className="model-row-id">{entry.id}</p>}
           <label className="field-label" htmlFor={`model-alias-${entry.id}`}>
-            别名<span className="font-normal text-muted">（选填）</span>
+            别名<span className="font-normal text-on-surface-variant">（选填）</span>
           </label>
           <input
             id={`model-alias-${entry.id}`}
@@ -156,7 +154,7 @@ function ModelRow({
             className="field-input"
           />
           <div className="mt-2.5 flex items-center justify-between">
-            <span className="text-[12.5px] font-medium text-ink">多模态</span>
+            <span className="text-[12.5px] font-medium text-on-surface">多模态</span>
             <button
               type="button"
               role="switch"
@@ -266,6 +264,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   const [model, setModel] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [theme, setTheme] = useState<ThemePref>("system");
+  const [accent, setAccent] = useState<AccentPref>("green");
   const [webSearch, setWebSearch] = useState(true);
   // ── 模型列表(持久化):拉取 merge、手动添加、每模型独立配置 ──
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
@@ -319,6 +318,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
       setModelList(c.models);
       setBaseUrl(c.baseUrl);
       setTheme(c.theme);
+      setAccent(c.accent);
       setWebSearch(c.webSearch);
       setRetention(
         c.historyRetention === 0 || c.historyRetention === 30
@@ -399,6 +399,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         models: modelList,
         baseUrl,
         theme,
+        accent,
         webSearch,
         historyRetention: Number(retention),
       }),
@@ -539,7 +540,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
           type="button"
           onClick={onBack}
           aria-label="返回对话"
-          className="settings-icon-btn h-7 w-7"
+          className="icon-btn"
         >
           <svg
             width="14"
@@ -555,12 +556,10 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
             <path d="M10 3 5 8l5 5" />
           </svg>
         </button>
-        <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em] text-ink">
-          设置
-        </h2>
+        <h2 className="m-0 text-[16px] font-medium text-on-surface">设置</h2>
         <span
           aria-live="polite"
-          className={`ml-auto pr-1 text-[11px] text-accent transition-opacity duration-300 ${
+          className={`ml-auto pr-1 text-[11px] text-primary transition-opacity duration-300 ${
             savedFlash ? "opacity-100" : "opacity-0"
           }`}
         >
@@ -570,7 +569,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {saveError && (
-          <p className="mb-1 mt-2 text-[12px] text-danger">
+          <p className="mb-1 mt-2 text-[12px] text-error">
             保存失败，请修改后重试。
           </p>
         )}
@@ -580,7 +579,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         <div className="settings-card">
           <div className="settings-field">
             <label className="field-label" htmlFor="settings-name">
-              名称<span className="font-normal text-muted">（选填）</span>
+              名称<span className="font-normal text-on-surface-variant">（选填）</span>
             </label>
             <input
               id="settings-name"
@@ -706,13 +705,13 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
                 type="button"
                 onClick={fetchList}
                 disabled={fetchState === "loading"}
-                className="settings-btn"
+                className="btn-text"
               >
                 {fetchState === "loading" ? "拉取中…" : "获取列表"}
               </button>
             </div>
           {fetchState === "error" && (
-            <p className="field-hint text-danger">获取失败：{fetchError}</p>
+            <p className="field-hint text-error">获取失败：{fetchError}</p>
           )}
           {modelList.length > 0 ? (
             <div className="model-list">
@@ -785,6 +784,37 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               }}
             />
           </div>
+
+          {/* 重点色:色板 = 各源色,选中套整个 scheme(m3.css 的 data-accent) */}
+          <div className="settings-field">
+            <span className="field-label">重点色</span>
+            <div
+              role="radiogroup"
+              aria-label="重点色"
+              className="flex items-center gap-2.5"
+            >
+              {ACCENT_OPTIONS.map((a) => (
+                <button
+                  key={a.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={accent === a.value}
+                  aria-label={`重点色：${a.label}`}
+                  title={a.label}
+                  onClick={() => {
+                    setAccent(a.value);
+                    applyAccent(a.value);
+                    run(savePrefs({ accent: a.value }));
+                  }}
+                  className="swatch"
+                  style={{ backgroundColor: a.color }}
+                />
+              ))}
+              <span className="ml-1 text-[11px] text-on-surface-variant">
+                {ACCENT_OPTIONS.find((a) => a.value === accent)?.label}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* ── 联网 ── */}
@@ -834,7 +864,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
           </div>
           <div className="settings-row">
             <span className="settings-row-label">本地占用</span>
-            <span className="font-mono text-[12px] text-muted">
+            <span className="font-mono text-[12px] text-on-surface-variant">
               {usage ?? "—"}
             </span>
           </div>
@@ -842,9 +872,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
             <button
               type="button"
               onClick={clearAllHistory}
-              className={`text-[13px] transition-colors ${
-                confirmClear ? "text-danger" : "text-muted hover:text-danger"
-              }`}
+              className={`btn-text ${confirmClear ? "danger" : "muted"}`}
             >
               {confirmClear ? "再点一次确认清空" : "清空全部历史"}
             </button>
@@ -859,7 +887,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         <div className="settings-card">
           <div className="settings-row">
             <span className="settings-row-label">运行日志</span>
-            <span className="font-mono text-[12px] text-muted">
+            <span className="font-mono text-[12px] text-on-surface-variant">
               {logCount === null
                 ? "读取中…"
                 : logCount < 0
@@ -867,25 +895,17 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
                   : `${logCount} 条`}
             </span>
           </div>
-          <div className="settings-block flex items-center gap-4">
-            <button
-              type="button"
-              onClick={copyLogs}
-              className="text-[13px] text-accent transition-opacity hover:opacity-70"
-            >
+          <div className="settings-block flex items-center gap-2">
+            <button type="button" onClick={copyLogs} className="btn-text">
               {copied ? "已复制 ✓" : "复制 JSONL"}
             </button>
-            <button
-              type="button"
-              onClick={downloadLogs}
-              className="text-[13px] text-accent transition-opacity hover:opacity-70"
-            >
+            <button type="button" onClick={downloadLogs} className="btn-text">
               下载日志
             </button>
             <button
               type="button"
               onClick={clearLogs}
-              className="text-[13px] text-muted transition-colors hover:text-danger"
+              className="btn-text danger"
             >
               清空
             </button>
@@ -900,8 +920,8 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
           <button
             type="button"
             onClick={forget}
-            className={`mt-4 block w-full pb-1 text-[13px] transition-colors ${
-              confirmForget ? "text-danger" : "text-muted hover:text-danger"
+            className={`btn-text muted mt-2 block w-full ${
+              confirmForget ? "danger" : ""
             }`}
           >
             {confirmForget ? "再点一次确认忘记" : "忘记已保存的 Key"}

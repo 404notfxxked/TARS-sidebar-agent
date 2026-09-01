@@ -6,13 +6,34 @@
 
 export type ThemePref = "system" | "light" | "dark";
 
+/** 重点色(配色方案):generate-m3.mjs 里 ACCENTS 的 id,green = 默认源色 */
+export type AccentPref =
+  | "green"
+  | "ocean"
+  | "teal"
+  | "indigo"
+  | "lilac"
+  | "coral"
+  | "rose"
+  | "graphite";
+const ACCENT_IDS: AccentPref[] = [
+  "green",
+  "ocean",
+  "teal",
+  "indigo",
+  "lilac",
+  "coral",
+  "rose",
+  "graphite",
+];
+
 /** 模型列表条目(存 local 的 models key) */
 export interface ModelEntry {
   /** wire 模型名,列表内唯一键 */
   id: string;
   /** 显示别名(选填):聊天区选择器优先显示它,模型 ID 太长时用 */
   alias?: string;
-  /** 多模态标记:纯元数据,图片通路接入后生效,当前不改变任何行为 */
+  /** 多模态标记:聊天区图片入口(选择/粘贴)与请求侧图片投影都以此为准 */
   vision?: boolean;
   /** 上下文窗口 tokens:仅用作对话顶部用量条的分子/分母;0/缺省 = 不展示 */
   contextTokens?: number;
@@ -46,6 +67,8 @@ export interface AppConfig {
   models: ModelEntry[];
   baseUrl: string; // 空 = 用 OpenAI 官方地址;约定含 /v1,如 https://api.deepseek.com/v1
   theme: ThemePref;
+  /** 重点色:决定整套 M3 scheme 的源色(表面底色不随它变,只换强调/主色系) */
+  accent: AccentPref;
   /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 开 */
   webSearch: boolean;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
@@ -62,6 +85,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "baseUrl",
     "maxContextTokens",
     "theme",
+    "accent",
     "webSearch",
     "historyRetention",
   ]);
@@ -82,6 +106,9 @@ export async function loadConfig(): Promise<AppConfig> {
     models,
     baseUrl: l.baseUrl ?? "",
     theme: l.theme ?? "system",
+    accent: ACCENT_IDS.includes(l.accent as AccentPref)
+      ? (l.accent as AccentPref)
+      : "green",
     // 旧版本没有这个 key:undefined 视为开启(能力默认可用,开关只做显式关闭)
     webSearch: l.webSearch !== false,
     // 历史保留天数:与 sessionHistory.retentionDays 的缺省保持一致(7 天)
@@ -103,6 +130,7 @@ export async function savePrefs(
       | "models"
       | "baseUrl"
       | "theme"
+      | "accent"
       | "webSearch"
       | "historyRetention"
     >

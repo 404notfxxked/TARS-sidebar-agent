@@ -1,6 +1,7 @@
-/* ---- Agent 执行轨迹(思考行 + 工具行) ----
-   实心表面 + 1px 边框 + 轻投影,行间内凹发丝分隔线;
-   是「过程性信息」,视觉层级刻意低于消息正文(小一号、muted 色) */
+/* ---- Agent 执行轨迹(思考行 + 工具行)----
+   M3 填充卡(surface-container 色调分层,无边框无阴影),行间内凹发丝分隔线;
+   行为 = M3 list item(hover 8% / 按下 12% on-surface 状态层);
+   是「过程性信息」,视觉层级刻意低于消息正文(小一号、on-surface-variant) */
 
 /* keyframes 留在级联层外(动画名解析不受 layer 影响) */
 @keyframes trace-spin {
@@ -36,29 +37,27 @@
 /* 状态翻转瞬间在行上轻扫一层色再退回:反馈「刚完成 / 刚失败」 */
 @keyframes trace-row-ok {
   from {
-    background-color: var(--accent-soft);
+    background-color: var(--md-sys-color-primary-container);
   }
 }
 @keyframes trace-row-err {
   from {
-    background-color: var(--danger-soft);
+    background-color: var(--md-sys-color-error-container);
   }
 }
 
 @layer components {
   .trace {
     max-width: 100%;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--shadow-sm);
+    border-radius: var(--radius-md);
+    background: var(--md-sys-color-surface-container);
     overflow: hidden;
   }
 
   /* 新行入场:轻微浮升;done/error 追加一次性色扫 */
   .trace-row {
     position: relative;
-    animation: trace-row-in 180ms var(--spring-enter);
+    animation: trace-row-in 250ms var(--ease-emphasized);
   }
   .trace-row + .trace-row::before {
     content: "";
@@ -67,16 +66,16 @@
     left: 12px;
     right: 0;
     height: 1px;
-    background: var(--line);
+    background: var(--md-sys-color-outline-variant);
   }
   .trace-row[data-status="done"] {
     animation:
-      trace-row-in 180ms var(--spring-enter),
+      trace-row-in 250ms var(--ease-emphasized),
       trace-row-ok 700ms ease-out;
   }
   .trace-row[data-status="error"] {
     animation:
-      trace-row-in 180ms var(--spring-enter),
+      trace-row-in 250ms var(--ease-emphasized),
       trace-row-err 700ms ease-out;
   }
 
@@ -89,20 +88,17 @@
     width: 100%;
     padding: 6px 12px;
     font-size: 12px;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
-  /* 头部行:整行热区可点,按下即反馈 */
+  /* 头部行:整行热区可点,状态层反馈(M3 list item) */
   .trace-header {
-    transition:
-      background 120ms ease,
-      color 120ms ease;
+    transition: background 150ms var(--ease-emphasized);
   }
   .trace-header:hover {
-    background: var(--surface-2);
-    color: var(--ink);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
   }
   .trace-header:active {
-    background: var(--line);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
   }
 
   .trace-icon {
@@ -112,7 +108,7 @@
     justify-content: center;
     width: 13px;
     height: 13px;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
   /* 思考中:图标与 shimmer 标题同周期呼吸(harmony) */
   .trace-row[data-active="true"] .trace-icon {
@@ -126,19 +122,19 @@
     white-space: nowrap;
     font-weight: 500;
     letter-spacing: 0.01em;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
   .trace-row[data-kind="tool"] .trace-label {
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
   }
 
   /* 思考中的标题:高光横扫 */
   .trace-shimmer {
     background: linear-gradient(
       100deg,
-      var(--muted) 35%,
-      var(--ink) 50%,
-      var(--muted) 65%
+      var(--md-sys-color-on-surface-variant) 35%,
+      var(--md-sys-color-on-surface) 50%,
+      var(--md-sys-color-on-surface-variant) 65%
     );
     background-size: 200% 100%;
     -webkit-background-clip: text;
@@ -157,18 +153,18 @@
   }
   .trace-status {
     font-size: 11px;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
   .trace-row[data-status="error"] .trace-status {
-    color: var(--danger);
+    color: var(--md-sys-color-error);
   }
 
   /* chevron:单个 SVG 沿同一路径旋转(spatial consistency),不换字形 */
   .trace-chevron {
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
     opacity: 0.7;
     transform: rotate(0deg);
-    transition: transform 220ms var(--spring-enter);
+    transition: transform 200ms var(--ease-emphasized);
   }
   .trace-chevron path,
   .trace-mark path {
@@ -190,8 +186,8 @@
     width: 12px;
     height: 12px;
     border-radius: 999px;
-    border: 1.5px solid var(--line);
-    border-top-color: var(--accent);
+    border: 1.5px solid var(--md-sys-color-outline-variant);
+    border-top-color: var(--md-sys-color-primary);
     animation: trace-spin 700ms linear infinite;
   }
 
@@ -206,7 +202,7 @@
 
   /* 对勾/叉:状态翻转时以描边「画」出来 */
   .trace-mark {
-    color: var(--accent);
+    color: var(--md-sys-color-primary);
   }
   .trace-mark path {
     stroke-width: 1.6;
@@ -214,15 +210,15 @@
   .trace-mark.mark-ok path {
     stroke-dasharray: 11;
     stroke-dashoffset: 11;
-    animation: trace-draw 240ms 40ms var(--spring-enter) forwards;
+    animation: trace-draw 240ms 40ms var(--ease-emphasized) forwards;
   }
   .trace-mark.mark-error {
-    color: var(--danger);
+    color: var(--md-sys-color-error);
   }
   .trace-mark.mark-error path {
     stroke-dasharray: 16.5;
     stroke-dashoffset: 16.5;
-    animation: trace-draw 240ms 40ms var(--spring-enter) forwards;
+    animation: trace-draw 240ms 40ms var(--ease-emphasized) forwards;
   }
 
   /* 展开区:grid 行高 0fr→1fr 过渡 + 淡入;visibility 延迟隐藏防读屏读到折叠内容 */
@@ -232,16 +228,16 @@
     opacity: 0;
     visibility: hidden;
     transition:
-      grid-template-rows 260ms var(--spring-enter),
+      grid-template-rows 250ms var(--ease-emphasized),
       opacity 200ms ease,
-      visibility 0s 260ms;
+      visibility 0s 250ms;
   }
   .trace-row[data-open="true"] .trace-body-wrap {
     grid-template-rows: 1fr;
     opacity: 1;
     visibility: visible;
     transition:
-      grid-template-rows 260ms var(--spring-enter),
+      grid-template-rows 250ms var(--ease-emphasized),
       opacity 200ms ease,
       visibility 0s;
   }
@@ -251,12 +247,12 @@
     padding: 0 12px;
     border-top: 1px solid transparent;
     transition:
-      padding 260ms var(--spring-enter),
+      padding 250ms var(--ease-emphasized),
       border-color 200ms ease;
   }
   .trace-row[data-open="true"] .trace-body {
     padding: 2px 12px 8px;
-    border-top-color: var(--line);
+    border-top-color: var(--md-sys-color-outline-variant);
   }
 
   /* 展开区小节标题 + 复制全文按钮 */
@@ -269,31 +265,29 @@
   .trace-sec {
     margin: 5px 0 2px;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0.06em;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
   .trace-copy-btn {
     flex-shrink: 0;
-    margin: 4px 0 2px;
-    padding: 1px 7px;
-    border-radius: 5px;
+    margin: 3px 0 2px;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
     font-size: 10.5px;
-    color: var(--muted);
-    transition:
-      color 120ms ease,
-      background 120ms ease;
+    font-weight: 500;
+    color: var(--md-sys-color-primary);
+    transition: background 150ms var(--ease-emphasized);
   }
   .trace-copy-btn:hover {
-    background: var(--line);
-    color: var(--ink);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
   }
   .trace-pre {
     margin: 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 11px;
     line-height: 1.5;
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -302,7 +296,7 @@
   .reasoning-text {
     font-size: 12px;
     line-height: 1.6;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -315,7 +309,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis; /* JS 截宽的兜底:极窄面板下不再加 …,直接右裁 */
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
     opacity: 0.85;
   }
 
@@ -326,7 +320,7 @@
     font-weight: 500;
     letter-spacing: 0.01em;
     font-feature-settings: "tnum";
-    color: var(--ink);
+    color: var(--md-sys-color-on-surface);
   }
   .trace-summary-chain {
     flex: 1;
@@ -335,7 +329,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
 
   /* 摘要展开区:与行内展开同一套 grid 0fr→1fr 过渡 */
@@ -345,16 +339,16 @@
     opacity: 0;
     visibility: hidden;
     transition:
-      grid-template-rows 260ms var(--spring-enter),
+      grid-template-rows 250ms var(--ease-emphasized),
       opacity 200ms ease,
-      visibility 0s 260ms;
+      visibility 0s 250ms;
   }
   .trace[data-open="true"] .trace-rows-wrap {
     grid-template-rows: 1fr;
     opacity: 1;
     visibility: visible;
     transition:
-      grid-template-rows 260ms var(--spring-enter),
+      grid-template-rows 250ms var(--ease-emphasized),
       opacity 200ms ease,
       visibility 0s;
   }
@@ -363,7 +357,7 @@
     overflow: hidden;
   }
   .trace[data-open="true"] .trace-rows {
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--md-sys-color-outline-variant);
   }
 }
 
@@ -371,7 +365,7 @@
 @media (prefers-reduced-motion: reduce) {
   .trace-shimmer {
     background: none;
-    color: var(--muted);
+    color: var(--md-sys-color-on-surface-variant);
   }
   .trace-row[data-active="true"] .trace-icon {
     animation: none;

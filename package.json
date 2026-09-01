@@ -12,7 +12,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/postbuild-offscreen.mjs",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "icons:export": "node scripts/export-icons.mjs",
+    "tokens:m3": "node scripts/generate-m3.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -24,6 +26,7 @@
     "turndown-plugin-gfm": "^1.0.2"
   },
   "devDependencies": {
+    "@material/material-color-utilities": "^0.3.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/chrome": "^0.0.270",
     "@types/react": "^19.2.0",

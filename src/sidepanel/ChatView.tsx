@@ -31,7 +31,8 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
-import { MSG, PORT_NAME, type AgentEvent } from "../shared/messages";
+import { MSG, PORT_NAME, type AgentEvent, type ImageMeta } from "../shared/messages";
+import { base64ToBytes } from "../shared/imageCodec";
 import { getActiveTabId } from "../shared/contentTools";
 import { loadConfig, savePrefs, type ModelEntry } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
@@ -44,6 +45,8 @@ interface ChatMsg {
   content: string;
   /** 所属会话:多会话各自隔离,同屏只渲染 currentSession 的消息 */
   sessionId: string;
+  /** 随消息发送的图片(元数据;字节经 GET_IMAGE/IMAGE_DATA 单独取) */
+  images?: ImageMeta[];
   /** 后台报错:以 ErrorBubble 呈现,不走 markdown */
   error?: boolean;
   /** 系统运行提示(如步数耗尽):以 NoticeBubble 呈现 */
@@ -89,6 +92,118 @@ type ToolResultEvent = Extract<
 const PREVIEW_CHARS = 500;
 const REASONING_MAX_CHARS = 2000;
 
+// ---- 图片附件:压缩管线 + 字节缓存 ----
+// 入口(文件选择/粘贴)只交 File,统一走 compressImage。压缩必须在面板做 ——
+// MV3 SW 没有 canvas 和 URL.createObjectURL
+
+const MAX_ATTACHMENTS = 4;
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_EDGE = 1600;
+
+interface PendingImage {
+  id: string;
+  mime: string;
+  w: number;
+  h: number;
+  /** 压缩结果的 base64(port 消息是 JSON 语义,只能传字符串,见 imageCodec) */
+  base64: string;
+  /** 面板本地预览 URL(objectURL);发送后转入气泡缓存,不再单独撤销 */
+  url: string;
+}
+
+/** 解码 → 长边缩放 → 按类型重编码(PNG/WebP→WebP 保透明,其余→JPEG)。
+ *  结果仍超 2MB 时降质重试一次;解码不出(HEIC 等)直接抛给调用方提示 */
+async function compressImage(file: File): Promise<PendingImage> {
+  const bmp = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas unavailable");
+    ctx.drawImage(bmp, 0, 0, w, h);
+    const mime =
+      file.type === "image/png" || file.type === "image/webp"
+        ? "image/webp"
+        : "image/jpeg";
+    let blob = await canvasToBlob(canvas, mime, 0.85);
+    if (blob && blob.size > MAX_IMAGE_BYTES) {
+      blob = await canvasToBlob(canvas, mime, 0.7);
+    }
+    if (!blob) throw new Error("image encode failed");
+    const base64 = await blobToBase64(blob);
+    return {
+      id: crypto.randomUUID(),
+      mime,
+      w,
+      h,
+      base64,
+      url: URL.createObjectURL(blob),
+    };
+  } finally {
+    bmp.close();
+  }
+}
+
+/** Blob → 纯 base64(去掉 data URL 前缀) */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      const dataUrl = String(fr.result);
+      resolve(dataUrl.slice(dataUrl.indexOf(",") + 1));
+    };
+    fr.onerror = () => reject(fr.error ?? new Error("read failed"));
+    fr.readAsDataURL(blob);
+  });
+}
+
+function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  mime: string,
+  quality: number,
+): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, mime, quality));
+}
+
+// 历史图片的 objectURL 缓存:id → url。面板生命周期内不淘汰(侧栏关闭即销毁,
+// 量级小);字节缺失时经 GET_IMAGE 消息向后台取,IMAGE_DATA 事件回填
+const imgUrlCache = new Map<string, string>();
+const imgInflight = new Map<string, Promise<string | null>>();
+const imgWaiters = new Map<string, (url: string | null) => void>();
+let sendGetImage: ((id: string) => void) | null = null;
+
+function requestImgUrl(id: string): Promise<string | null> {
+  const cached = imgUrlCache.get(id);
+  if (cached) return Promise.resolve(cached);
+  const inflight = imgInflight.get(id);
+  if (inflight) return inflight;
+  const p = new Promise<string | null>((resolve) => {
+    imgWaiters.set(id, resolve);
+  });
+  imgInflight.set(id, p);
+  sendGetImage?.(id);
+  return p;
+}
+
+function resolveImageData(evt: { id: string; mime?: string; base64?: string }): void {
+  const waiter = imgWaiters.get(evt.id);
+  imgWaiters.delete(evt.id);
+  imgInflight.delete(evt.id);
+  if (!evt.base64) {
+    waiter?.(null); // 图片已随会话被清理/清空
+    return;
+  }
+  const url = URL.createObjectURL(
+    new Blob([base64ToBytes(evt.base64)], { type: evt.mime ?? "image/png" }),
+  );
+  imgUrlCache.set(evt.id, url);
+  waiter?.(url);
+}
+
 export default function ChatView({
   onOpenSettings,
   onOpenSessions,
@@ -121,6 +236,14 @@ export default function ChatView({
   const [modelId, setModelId] = useState("");
   const [modelPopOpen, setModelPopOpen] = useState(false);
   const modelPopRef = useRef<HTMLDivElement | null>(null);
+  /** 当前模型是否支持视觉:图片入口的门控依据 */
+  const visionOk = !!modelList.find((m) => m.id === modelId)?.vision;
+
+  // ---- 图片附件状态 ----
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [attachHint, setAttachHint] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const hintTimer = useRef<number | null>(null);
 
   // ---- 本轮执行流状态:segs + ref 镜像 ----
   // ref 镜像让 port 事件回调(只注册一次)总是读到最新段序列,
@@ -435,6 +558,10 @@ export default function ChatView({
             setCurrentSession(historyReqRef.current);
           }
           break;
+        case MSG.IMAGE_DATA:
+          // 历史图片字节回填 → 换成 objectURL 交给气泡
+          resolveImageData(evt);
+          break;
       }
     });
 
@@ -499,6 +626,8 @@ export default function ChatView({
   // 挂载:建 port、读配置。面板打开即新会话,不拉任何历史。
   useEffect(() => {
     connect();
+    // 历史图片取字节的发送通道(ChatImage 组件经模块级 requestImgUrl 调用)
+    sendGetImage = (id) => connect().postMessage({ type: MSG.GET_IMAGE, id });
     // 设置页悬浮关闭后不重挂,配置变更靠 storage 事件同步模型列表
     const onStorage = (
       changes: Record<string, chrome.storage.StorageChange>,
@@ -528,6 +657,7 @@ export default function ChatView({
       chrome.storage.onChanged.removeListener(onStorage);
       portRef.current?.disconnect();
       portRef.current = null;
+      if (hintTimer.current) window.clearTimeout(hintTimer.current);
     };
   }, []);
 
@@ -613,22 +743,116 @@ export default function ChatView({
     el.style.overflowY = el.scrollHeight > 116 ? "auto" : "hidden";
   }, [input]);
 
+  const flashHint = (msg: string) => {
+    setAttachHint(msg);
+    if (hintTimer.current) window.clearTimeout(hintTimer.current);
+    hintTimer.current = window.setTimeout(() => setAttachHint(""), 3000);
+  };
+
+  /** 图片附件统一入口(文件选择/粘贴都走这里):门控 → 限量 → 解码压缩。
+   *  异步逐张处理,解不出的格式逐张提示,不影响其他图 */
+  const addAttachments = async (files: File[]) => {
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+    if (!visionOk) {
+      flashHint("当前模型未开启「多模态」，需在设置里勾选后才能发图");
+      return;
+    }
+    const room = MAX_ATTACHMENTS - pendingImages.length;
+    if (room <= 0) {
+      flashHint(`一条消息最多带 ${MAX_ATTACHMENTS} 张图`);
+      return;
+    }
+    if (images.length > room) flashHint(`一次最多再添加 ${room} 张图`);
+    const added: PendingImage[] = [];
+    for (const file of images.slice(0, room)) {
+      try {
+        added.push(await compressImage(file));
+      } catch {
+        flashHint(`无法解码图片：${file.name || "剪贴板内容"}`);
+      }
+    }
+    if (added.length > 0) setPendingImages((prev) => [...prev, ...added]);
+  };
+
+  const removePending = (id: string) => {
+    setPendingImages((prev) => {
+      const hit = prev.find((p) => p.id === id);
+      if (hit) URL.revokeObjectURL(hit.url);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  // 粘贴监听只在挂载时注册一次,addAttachments 闭包随渲染刷新 → ref 转发。
+  // 监听在 document 级:用户截完图焦点常不在输入框。只在剪贴板真有图片时
+  // preventDefault,普通文字粘贴不受影响
+  const addAttachmentsRef = useRef(addAttachments);
+  addAttachmentsRef.current = addAttachments;
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.items ?? [])
+        .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+        .map((it) => it.getAsFile())
+        .filter((f): f is File => f !== null);
+      if (files.length === 0) return;
+      e.preventDefault();
+      void addAttachmentsRef.current(files);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   const submit = async () => {
     const text = input.trim();
-    if (!text || status !== "idle") return;
+    if ((!text && pendingImages.length === 0) || status !== "idle") return;
+    // 附件是开着视觉模型时贴的、发送前切到了非视觉模型:照常发送(图片仍会
+    // 入库,切回视觉模型后可继续引用),但明确告知本次模型看不到
+    if (pendingImages.length > 0 && !visionOk) {
+      flashHint(
+        "当前模型不支持视觉，图片不会随本次提问发送；图片已保存，切回视觉模型后可继续引用",
+      );
+    }
     // 会话全局唯一;tabId 记录本次提问的页面上下文(工具去该 tab 执行)
     const { tabId, sessionId } = await resolveContext();
     sessionRef.current = sessionId;
     setCurrentSession(sessionId);
-    log.info("chat", "submit", { text, sessionId, tabId });
+    log.info("chat", "submit", {
+      text,
+      sessionId,
+      tabId,
+      images: pendingImages.length,
+    });
     // 先归档上一轮文本段(保证它排在本条 user 消息之前),再清空执行流开新一轮
     flushRunTexts();
-    setMessages((ms) => [...ms, { role: "user", content: text, sessionId }]);
+    // 本地回显:预览 url 直接转入气泡缓存,渲染无需再向后台取字节
+    const metas = pendingImages.map(({ id, mime, w, h }) => ({ id, mime, w, h }));
+    for (const p of pendingImages) imgUrlCache.set(p.id, p.url);
+    setMessages((ms) => [
+      ...ms,
+      {
+        role: "user",
+        content: text,
+        sessionId,
+        ...(metas.length ? { images: metas } : {}),
+      },
+    ]);
     setInput("");
+    const uploads = pendingImages.map(({ mime, base64, w, h }) => ({
+      mime,
+      base64,
+      w,
+      h,
+    }));
+    setPendingImages([]);
     clearRun(); // AGENT_STARTED 会再兜一次
     connect().postMessage({
       type: MSG.USER_MESSAGE,
-      payload: { text, sessionId, tabId },
+      payload: {
+        text,
+        sessionId,
+        tabId,
+        ...(uploads.length ? { images: uploads } : {}),
+      },
     });
   };
 
@@ -638,9 +862,6 @@ export default function ChatView({
         {(() => {
           // 运行中置灰「新对话 / 历史会话」:二者在运行中都不可用(切换能力后续再做)
           const busy = status !== "idle";
-          const cls = busy
-            ? "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted opacity-30"
-            : "flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90";
           return (
             <>
               <button
@@ -649,7 +870,7 @@ export default function ChatView({
                 disabled={busy}
                 aria-label="开始新对话"
                 title={busy ? "回复结束后可开始新对话" : undefined}
-                className={cls}
+                className={busy ? "icon-btn opacity-30" : "icon-btn"}
               >
                 <PlusIcon />
               </button>
@@ -659,7 +880,7 @@ export default function ChatView({
                 disabled={busy}
                 aria-label="历史会话"
                 title={busy ? "回复结束后可查看历史会话" : undefined}
-                className={cls}
+                className={busy ? "icon-btn opacity-30" : "icon-btn"}
               >
                 <HistoryIcon />
               </button>
@@ -670,7 +891,7 @@ export default function ChatView({
           type="button"
           onClick={onOpenSettings}
           aria-label="打开设置"
-          className="flex h-7 w-7 items-center justify-center rounded-[5px] text-muted transition-all duration-150 hover:bg-line hover:text-ink active:scale-90"
+          className="icon-btn"
         >
           <SettingsIcon />
         </button>
@@ -694,7 +915,7 @@ export default function ChatView({
           return visible.flatMap((m, i) => {
             const node =
               m.role === "user" ? (
-                <UserBubble key={i} text={m.content} />
+                <UserBubble key={i} text={m.content} images={m.images} />
               ) : m.error ? (
                 <ErrorBubble key={i} text={m.content} />
               ) : m.notice ? (
@@ -722,7 +943,7 @@ export default function ChatView({
         {/* 网络等待等「无过程可看」时的活动指示;思考 ticker 存在时由 ticker 表达,不重复 */}
         {status === "thinking" &&
           !runSegs.some((s) => s.kind === "reasoning" && s.active) && (
-            <div className="flex items-center gap-1.5 py-1 pl-1 text-muted">
+            <div className="flex items-center gap-1.5 py-1 pl-1 text-on-surface-variant">
               <span className="h-1 w-1 animate-pulse rounded-full bg-current" />
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
@@ -735,8 +956,34 @@ export default function ChatView({
           e.preventDefault();
           submit();
         }}
-        className="mx-3 mb-3 rounded-2xl border border-line bg-surface shadow-md transition-all duration-200 focus-within:border-accent focus-within:shadow-lg"
+        className="mx-3 mb-3 rounded-xl bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
       >
+        {pendingImages.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-3.5 pt-2">
+            {pendingImages.map((p) => (
+              <div key={p.id} className="group relative">
+                <img
+                  src={p.url}
+                  alt={`待发送图片 ${p.w}×${p.h}`}
+                  className="h-14 w-14 rounded-lg object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePending(p.id)}
+                  aria-label="移除图片"
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-on-surface text-[10px] leading-none text-surface-container-high shadow-sm"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {attachHint && (
+          <p className="px-3.5 pt-1.5 text-[11.5px] text-on-surface-variant">
+            {attachHint}
+          </p>
+        )}
         <div className="px-3.5 pt-2">
           <textarea
             ref={inputRef}
@@ -757,10 +1004,30 @@ export default function ChatView({
             placeholder="问点什么，或让 TARS 去查"
             aria-label="提问"
             disabled={status !== "idle"}
-            className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-ink outline-none placeholder:text-muted disabled:opacity-50"
+            className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant disabled:opacity-50"
           />
         </div>
         <div className="flex items-center gap-2 px-2 pb-2 pt-0.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            hidden
+            onChange={(e) => {
+              void addAttachments(Array.from(e.target.files ?? []));
+              e.target.value = ""; // 重置:同一文件可再次选择
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            aria-label="添加图片"
+            title={visionOk ? "添加图片" : "当前模型未开启「多模态」"}
+            className="icon-btn"
+          >
+            <ImageIcon />
+          </button>
           {modelList.length > 0 && (
             <div ref={modelPopRef} className="relative min-w-0">
               <button
@@ -769,7 +1036,7 @@ export default function ChatView({
                 aria-haspopup="listbox"
                 aria-expanded={modelPopOpen}
                 aria-label="选择模型"
-                className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-[12px] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
               >
                 <span className="min-w-0 truncate">
                   {modelList.find((m) => m.id === modelId)?.alias ||
@@ -816,9 +1083,9 @@ export default function ChatView({
           {status === "idle" ? (
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!input.trim() && pendingImages.length === 0}
               aria-label="发送"
-              className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] leading-none text-on-accent transition-all duration-150 hover:bg-accent-strong active:scale-90 disabled:opacity-25 disabled:scale-100"
+              className="icon-btn-filled ml-auto h-8 w-8 text-[14px] leading-none"
             >
               ↑
             </button>
@@ -827,7 +1094,7 @@ export default function ChatView({
               type="button"
               onClick={cancel}
               aria-label="停止"
-              className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger text-on-danger transition-all duration-150 hover:opacity-85 active:scale-90"
+              className="icon-btn-filled error ml-auto h-8 w-8"
             >
               <svg
                 width="10"
@@ -906,7 +1173,7 @@ function SettingsIcon() {
 function EmptyState() {
   return (
     <div className="px-2 py-10 text-center">
-      <p className="mx-auto max-w-[220px] text-[16px] leading-relaxed text-muted">
+      <p className="mx-auto max-w-[220px] text-[15px] leading-relaxed text-on-surface-variant">
         有什么问题，直接问。
         <br />
         我可以读取当前页面、联网搜索，也能帮你点按、填写。
@@ -1298,13 +1565,92 @@ const MD_COMPONENTS: NonNullable<MarkdownOptions["components"]> = {
   pre: CodeBlock,
 };
 
-const UserBubble = memo(function UserBubble({ text }: { text: string }) {
+const UserBubble = memo(function UserBubble({
+  text,
+  images,
+}: {
+  text: string;
+  images?: ImageMeta[];
+}) {
   return (
-    <div className="msg-in ml-auto w-fit max-w-[86%] whitespace-pre-wrap break-words rounded-xl rounded-br-md bg-accent-soft px-3.5 py-2 text-[13px] leading-relaxed shadow-[var(--shadow-sm)]">
-      {text}
+    <div className="msg-in ml-auto flex w-fit max-w-[86%] flex-col items-end gap-1.5">
+      {images && images.length > 0 && (
+        <div className="flex max-w-full flex-wrap justify-end gap-1.5">
+          {images.map((im) => (
+            <ChatImage key={im.id} meta={im} />
+          ))}
+        </div>
+      )}
+      {text && (
+        <div className="whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
+          {text}
+        </div>
+      )}
     </div>
   );
 });
+
+/** 气泡里的图片:优先 objectURL 缓存(刚发送的已在),缺失时向后台取字节;
+ *  取不到(随会话被清理)显示失效占位。点击原图新开查看 */
+function ChatImage({ meta }: { meta: ImageMeta }) {
+  const [url, setUrl] = useState<string | null>(
+    () => imgUrlCache.get(meta.id) ?? null,
+  );
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (url) return;
+    let alive = true;
+    requestImgUrl(meta.id).then((u) => {
+      if (!alive) return;
+      if (u) setUrl(u);
+      else setFailed(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [meta.id, url]);
+  if (failed) {
+    return (
+      <div className="flex h-20 w-28 items-center justify-center rounded-lg bg-surface-container-high text-[11px] text-on-surface-variant">
+        图片已失效
+      </div>
+    );
+  }
+  if (!url) {
+    return (
+      <div className="h-20 w-28 animate-pulse rounded-lg bg-surface-container-high" />
+    );
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer">
+      <img
+        src={url}
+        alt={`图片 ${meta.w}×${meta.h}`}
+        className="max-h-48 rounded-lg object-contain"
+      />
+    </a>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <circle cx="5.8" cy="6.3" r="1.2" />
+      <path d="m2.5 11.5 3-3 2.5 2.5 2-2 3.5 3.5" />
+    </svg>
+  );
+}
 
 const AssistantBubble = memo(function AssistantBubble({
   text,
@@ -1326,7 +1672,7 @@ const AssistantBubble = memo(function AssistantBubble({
 
 const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-xl border border-danger/25 bg-danger-soft px-3.5 py-2.5 text-[13px] leading-relaxed text-danger">
+    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-error-container px-3.5 py-2.5 text-[13px] leading-relaxed text-on-error-container">
       <WarnIcon />
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
         {text}
@@ -1338,7 +1684,7 @@ const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
 /** 系统运行提示条(非错误):步数耗尽等状态说明,视觉层级低于错误 */
 const NoticeBubble = memo(function NoticeBubble() {
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-muted">
+    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
       <InfoIcon />
       <span className="min-w-0 flex-1">
         本轮已达到步数上限,任务未完成 —— 发送「继续」可以接着做。

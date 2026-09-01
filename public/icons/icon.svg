@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- 黑白 1「黑底白泡」:黑圆角底板,白色气泡,分段以镂空表现 -->
+  <rect width="128" height="128" rx="28" fill="#0A0A0A"/>
+  <path d="M42 28h44a18 18 0 0 1 18 18v36a18 18 0 0 1-18 18H62L42 104V82a18 18 0 0 1-18-18V46a18 18 0 0 1 18-18Z" fill="#FFFFFF"/>
+  <g fill="#0A0A0A">
+    <rect x="36" y="44" width="10" height="26" rx="5"/>
+    <rect x="52" y="44" width="10" height="26" rx="5"/>
+    <rect x="68" y="44" width="10" height="26" rx="5"/>
+    <rect x="84" y="44" width="10" height="26" rx="5"/>
+  </g>
+</svg>
