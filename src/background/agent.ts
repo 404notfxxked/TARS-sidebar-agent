@@ -7,15 +7,23 @@ import {
   type UserMessagePayload,
 } from "../shared/messages";
 import { getTool, toProviderToolSchemas } from "./tools";
-import { OpenAIAdapter, type InternalMsg } from "./provider";
+import { OpenAIAdapter, type InternalMsg, type MessageImage } from "./provider";
 import { loadConfig, inferMaxTokensField } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
-import { loadHistory, saveHistory } from "./sessionHistory";
+import { base64ToBytes } from "../shared/imageCodec";
+import { loadImage, loadHistory, saveHistory } from "./sessionHistory";
 import { setToolExecutionContext } from "./toolContext";
 
 const log = createLogger({ ctx: "bg" });
 
 const MAX_TURNS = 10;
+
+// ---- 图片附件(多模态) ----
+// 每张图片的 token 估值(detail auto、1600px 长边压缩后约 3~4 个 512px 块,
+// 宁可高估防超窗);随请求发送的字节预算 —— 超出时最旧的图不再随请求发送,
+// 只留文字。50MB 请求上限与上下文窗口都靠它兜底
+const IMAGE_TOKEN_ESTIMATE = 1500;
+const IMAGE_WIRE_BUDGET_BYTES = 8 * 1024 * 1024;
 
 // 步数耗尽后的收尾指令:只随最后一次「无工具」请求发送,不写入持久化历史。
 // 目的:让模型向用户交代进展与剩余步骤,而不是被无声砍断在工具调用中间。
@@ -103,6 +111,17 @@ export async function runAgentLoop(
     // 起始下标)。溢出裁剪会丢弃最早几轮,让两者错开 —— 裁剪只影响本轮
     // prompt,不写回库里,落盘保持全量历史
     const persistedSeqs = history.length;
+    // 随消息附带的图片:分配 id 后挂到本轮 user 消息上(字节只存内存,
+    // 落盘时进 images store;历史里的旧图发送前按需水合)
+    const visionOk = !!modelEntry?.vision;
+    const runImages: MessageImage[] = (payload.images ?? []).map((im) => ({
+      id: crypto.randomUUID(),
+      mime: im.mime,
+      w: im.w,
+      h: im.h,
+      // port 传来的是 base64(JSON 语义消息),转回字节供 wire 与落库使用
+      bytes: base64ToBytes(im.base64),
+    }));
     const userContent = await buildUserContent(payload.text);
     const messages: InternalMsg[] = [
       {
@@ -116,9 +135,15 @@ export async function runAgentLoop(
         contextTokens: modelEntry?.contextTokens,
         maxTokens: modelEntry?.maxTokens,
         currentEstimate:
-          estimateTokens(SYSTEM_PROMPT) + estimateTokens(userContent),
+          estimateTokens(SYSTEM_PROMPT) +
+          estimateTokens(userContent) +
+          runImages.length * IMAGE_TOKEN_ESTIMATE,
       }),
-      { role: "user", content: userContent },
+      {
+        role: "user",
+        content: userContent,
+        ...(runImages.length ? { images: runImages } : {}),
+      },
     ];
     // 构造完再取:messages = [system, ...旧历史, 本轮 user],旧历史条数 =
     // 总长 - 2(本轮 user 也是新增,不算旧)
@@ -148,13 +173,86 @@ export async function runAgentLoop(
     /** 循环是否以最终回答收束;false = 步数耗尽,循环外做收尾兜底 */
     let completed = false;
 
+    /** 本 run 内已水合的图片字节缓存(按 id):跨轮复用,避免每轮重读 IDB */
+    const imageBytes = new Map<string, Uint8Array>();
+
+    /** 组装本轮请求消息:按视觉能力与字节预算决定哪些图片随请求发送。
+     *  只做请求侧投影,不改内存 messages(溢出裁剪同理,落盘保持全量)。
+     *  图片只在 user 角色发送 —— OpenAI 规范的 tool/assistant 消息不支持
+     *  image_url,兼容端点同此 */
+    const projectForRequest = async (
+      msgs: InternalMsg[],
+    ): Promise<InternalMsg[]> => {
+      const hasImages = msgs.some(
+        (m) => m.role === "user" && (m.images?.length ?? 0) > 0,
+      );
+      if (!hasImages) return msgs;
+      // 水合:优先用内存字节(本轮新图),其次 images store(历史旧图)
+      for (const m of msgs) {
+        if (m.role !== "user" || !m.images) continue;
+        for (const im of m.images) {
+          if (im.bytes) {
+            imageBytes.set(im.id, im.bytes);
+          } else if (!imageBytes.has(im.id)) {
+            const row = await loadImage(im.id).catch(() => undefined);
+            if (row) imageBytes.set(im.id, row.bytes);
+          }
+        }
+      }
+      if (!visionOk) {
+        // 模型不支持视觉:全部图片不进请求(面板本就禁止发图,这里兜底,
+        // 防「发完图切到非视觉模型再追问」这类路径把 400 炸出来)。
+        // 被剥离的消息追加系统注,让模型知道用户发过图、为何看不见 ——
+        // 只改请求侧投影,落盘与内存的 messages 不受影响
+        return msgs.map((m) => {
+          if (m.role !== "user" || !m.images?.length) return m;
+          return {
+            role: "user",
+            content: `${m.content}\n[系统注：此消息原本附有 ${m.images.length} 张图片；当前模型不支持视觉识别，图片未随本次请求发送]`,
+          };
+        });
+      }
+      // 字节预算:从最新的图片往回分配,超支的旧图不出现在请求里
+      const included = new Set<string>();
+      let budget = IMAGE_WIRE_BUDGET_BYTES;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (m.role !== "user" || !m.images) continue;
+        for (let j = m.images.length - 1; j >= 0; j--) {
+          const im = m.images[j];
+          const size = imageBytes.get(im.id)?.byteLength ?? 0;
+          if (size > 0 && size <= budget) {
+            budget -= size;
+            included.add(im.id);
+          }
+        }
+      }
+      log.debug("agent", "image projection", {
+        visionOk,
+        hydrated: [...imageBytes.entries()].map(
+          ([id, b]) => `${id.slice(0, 8)}:${b.byteLength}`,
+        ),
+        included: included.size,
+      });
+      return msgs.map((m) => {
+        if (m.role !== "user") return m;
+        const imgs = (m.images ?? []).filter((im) => included.has(im.id));
+        if (imgs.length === 0) return { role: "user", content: m.content };
+        return {
+          role: "user",
+          content: m.content,
+          images: imgs.map((im) => ({ ...im, bytes: imageBytes.get(im.id) })),
+        };
+      });
+    };
+
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       turnNo = turn + 1;
       log.debug("agent", `turn ${turn + 1}/${MAX_TURNS}`);
       port.postMessage({ type: MSG.AGENT_THINKING, turn });
 
       const result = await provider.chat({
-        messages,
+        messages: await projectForRequest(messages),
         tools,
         onDelta: (delta) =>
           // 流式把输出推给前端
@@ -250,7 +348,10 @@ export async function runAgentLoop(
       });
       port.postMessage({ type: MSG.AGENT_THINKING, turn: MAX_TURNS - 1 });
       const wrap = await provider.chat({
-        messages: [...messages, { role: "user", content: WRAP_UP_NUDGE }],
+        messages: await projectForRequest([
+          ...messages,
+          { role: "user", content: WRAP_UP_NUDGE },
+        ]),
         // 故意不传 tools:收尾轮禁止再调工具
         onDelta: (delta) =>
           port.postMessage({ type: MSG.AGENT_MESSAGE, delta }),
@@ -423,7 +524,12 @@ function trimHistoryForWindow(
   const sum = (from: number) => {
     let n = opts.currentEstimate;
     for (let i = from; i < history.length; i++) {
-      n += estimateTokens(messageText(history[i]));
+      const m = history[i];
+      n += estimateTokens(messageText(m));
+      // 图片按固定估值计入(字节本身不进文本估算,防止 base64 撑爆估算)
+      if (m.role === "user" && m.images) {
+        n += m.images.length * IMAGE_TOKEN_ESTIMATE;
+      }
     }
     return n;
   };

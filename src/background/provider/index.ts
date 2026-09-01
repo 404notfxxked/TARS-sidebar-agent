@@ -9,6 +9,7 @@ export type {
   ChatRequest,
   ChatResult,
   InternalMsg,
+  MessageImage,
   ToolSchema,
   ToolCall,
 } from "./types";

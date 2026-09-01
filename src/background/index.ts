@@ -5,6 +5,7 @@
 // - content script 的调用走 shared/contentTools(onMessage),不走这里
 
 import { MSG, PORT_NAME, type SideToBg } from "../shared/messages";
+import { bytesToBase64 } from "../shared/imageCodec";
 import {
   LOG_HELLO,
   LOG_HELLO_ACK,
@@ -16,6 +17,7 @@ import {
   clearAllSessions,
   deleteSession,
   listSessions,
+  loadImage,
   loadHistory,
   migrateLegacySessionStorage,
   pruneExpiredSessions,
@@ -149,6 +151,28 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
       }
       case MSG.CLEAR_ALL_HISTORY: {
         await clearAllSessions();
+        break;
+      }
+      case MSG.GET_IMAGE: {
+        // 历史气泡渲染图片:字节单独走这条通道(消息列表只带元数据)。
+        // base64 传输 —— port 消息是 JSON 语义,TypedArray 过不去
+        const img = await loadImage(msg.id).catch(() => undefined);
+        try {
+          port.postMessage({
+            type: MSG.IMAGE_DATA,
+            id: msg.id,
+            ...(img
+              ? {
+                  mime: img.mime,
+                  base64: bytesToBase64(img.bytes),
+                  w: img.w,
+                  h: img.h,
+                }
+              : {}),
+          });
+        } catch {
+          /* 端口已断开,面板侧反正也收不到 */
+        }
         break;
       }
     }

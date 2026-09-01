@@ -33,7 +33,7 @@ export interface ModelEntry {
   id: string;
   /** 显示别名(选填):聊天区选择器优先显示它,模型 ID 太长时用 */
   alias?: string;
-  /** 多模态标记:纯元数据,图片通路接入后生效,当前不改变任何行为 */
+  /** 多模态标记:聊天区图片入口(选择/粘贴)与请求侧图片投影都以此为准 */
   vision?: boolean;
   /** 上下文窗口 tokens:仅用作对话顶部用量条的分子/分母;0/缺省 = 不展示 */
   contextTokens?: number;
