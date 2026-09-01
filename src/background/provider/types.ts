@@ -22,9 +22,20 @@ export interface ToolCall {
   args: unknown;
 }
 
+/** 用户消息携带的图片。bytes 只在内存中存在(本 run 发送用);落盘/从历史
+ *  加载的只有元数据,发送前由 agent 从 images store 按需水合 */
+export interface MessageImage {
+  id: string;
+  mime: string;
+  w: number;
+  h: number;
+  bytes?: Uint8Array;
+}
+
 /** 内部消息格式 —— OpenAI 扁平形状(见记忆 agent-loop-byok-design) */
 export type InternalMsg =
-  | { role: "system" | "user"; content: string }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string; images?: MessageImage[] }
   | {
       role: "assistant";
       content: string | null;

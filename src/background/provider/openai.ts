@@ -3,11 +3,13 @@
 // 类型用本地 SSEChunk / ToolSchema 即可,暂不引入第三方类型包(@open-schemas/types)
 
 import { apiFetch } from "./client";
+import { bytesToBase64 } from "../../shared/imageCodec";
 import type {
   ChatProvider,
   ChatRequest,
   ChatResult,
   InternalMsg,
+  MessageImage,
   ToolSchema,
   ToolCall,
 } from "./types";
@@ -134,8 +136,9 @@ function toWireMessages(msgs: InternalMsg[]): unknown[] {
   return msgs.map((message) => {
     switch (message.role) {
       case "system":
-      case "user":
         return { role: message.role, content: message.content };
+      case "user":
+        return toWireUserMessage(message);
       case "assistant":
         return {
           role: "assistant",
@@ -162,6 +165,32 @@ function toWireToolCall(toolCall: ToolCall) {
     id: toolCall.id,
     type: "function",
     function: { name: toolCall.name, arguments: JSON.stringify(toolCall.args) },
+  };
+}
+
+/** user 消息 → wire。带图片时 content 变 parts 数组:文本在前、图片在后,
+ *  data URL + detail auto(OpenAI 视觉形状,vLLM/OpenRouter/DeepSeek 等同形)。
+ *  只有无 bytes 的图片(没被水合/被预算裁掉)直接跳过 —— tool/assistant 角色
+ *  不能携带 image_url,所以图片只经 user 消息发(见 provider/types 注释) */
+function toWireUserMessage(message: Extract<InternalMsg, { role: "user" }>) {
+  const images = (message.images ?? []).filter((im) => im.bytes);
+  if (images.length === 0) return { role: "user", content: message.content };
+  return {
+    role: "user",
+    content: [
+      { type: "text", text: message.content },
+      ...images.map((im) => toWireImage(im)),
+    ],
+  };
+}
+
+function toWireImage(im: MessageImage) {
+  return {
+    type: "image_url",
+    image_url: {
+      url: `data:${im.mime};base64,${bytesToBase64(im.bytes!)}`,
+      detail: "auto",
+    },
   };
 }
 
