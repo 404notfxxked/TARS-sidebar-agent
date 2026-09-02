@@ -1,9 +1,10 @@
 // 从源色生成 M3 scheme CSS 变量(亮 / 暗两套),写入 src/sidepanel/styles/m3.css。
 // 跑法:pnpm tokens:m3;产物是生成文件,提交入库,运行时零依赖。
 //
-// 重点色:ACCENTS 里每个源色一套浅色 scheme,挂 html[data-accent] 切换
-// (默认 green 不用属性)。深色暂不跟随重点色([data-theme] 在最后,优先级最高,
-// 深色恒为默认绿)—— 深色各重点色的 surface 色调待定稿后统一生成。
+// 重点色:ACCENTS 里每个源色各生成 浅色 + 暗色 两套 scheme。浅色挂
+// html[data-accent](默认 green 不用属性);暗色挂 [data-theme][data-accent]
+// 组合(特异性 0,2,0,同时存在两属性时必然胜出)。石墨是手工 monochrome
+// (灰源色经 CAM16 会偏蓝,按 M3 monochrome 规范用 neutral 色调生成)。
 //
 // 注:@material/material-color-utilities 锁 0.3.0(0.4.x 的 ESM 打包缺扩展名,Node 无法加载)。
 // 0.3.0 的 scheme 缺 surfaceContainer* 五级,这里按 M3 官方规范用 neutral 色板补齐:
@@ -93,28 +94,6 @@ const themes = ACCENTS.map((a) => ({
   theme: themeFromSourceColor(argbFromHex(a.source)),
 }));
 
-function block(selector, theme) {
-  const neutral = theme.palettes.neutral;
-  const lines = Object.entries(SCHEME_ROLES).map(
-    ([role, cssName]) => `  --md-sys-color-${cssName}: ${hexFromArgb(theme.schemes.light[role])};`,
-  );
-  for (const [name, tone] of Object.entries(SURFACE_TONES.light)) {
-    lines.push(`  --md-sys-color-${name}: ${hexFromArgb(neutral.tone(tone))};`);
-  }
-  return `${selector} {\n${lines.join("\n")}\n}`;
-}
-
-function darkBlock(theme) {
-  const neutral = theme.palettes.neutral;
-  const lines = Object.entries(SCHEME_ROLES).map(
-    ([role, cssName]) => `  --md-sys-color-${cssName}: ${hexFromArgb(theme.schemes.dark[role])};`,
-  );
-  for (const [name, tone] of Object.entries(SURFACE_TONES.dark)) {
-    lines.push(`  --md-sys-color-${name}: ${hexFromArgb(neutral.tone(tone))};`);
-  }
-  return lines.join("\n");
-}
-
 /** M3 monochrome:所有色彩角色全部取 neutral 色调,只剩明度差(极简灰阶)。
  *  色调表按 M3 monochrome 对比规范(亮:40/100/90/10,暗:80/20/30/90) */
 const MONO_TONES = {
@@ -126,42 +105,64 @@ const MONO_TONES = {
     onSurface: 10, onSurfaceVariant: 40, outline: 50, outlineVariant: 80,
     inverseSurface: 20, inverseOnSurface: 100, inversePrimary: 80,
   },
+  dark: {
+    primary: 80, onPrimary: 20, primaryContainer: 30, onPrimaryContainer: 90,
+    secondary: 80, secondaryContainer: 30, onSecondaryContainer: 90,
+    tertiary: 80, tertiaryContainer: 30, onTertiaryContainer: 90,
+    error: 80, onError: 20, errorContainer: 30, onErrorContainer: 90,
+    onSurface: 90, onSurfaceVariant: 80, outline: 60, outlineVariant: 30,
+    inverseSurface: 90, inverseOnSurface: 20, inversePrimary: 40,
+  },
 };
 
-function monoBlock(selector, theme) {
+function linesFor(theme, mode, mono) {
   const neutral = theme.palettes.neutral;
-  const lines = Object.entries(SCHEME_ROLES).map(
-    ([role, cssName]) =>
-      `  --md-sys-color-${cssName}: ${hexFromArgb(neutral.tone(MONO_TONES.light[role]))};`,
-  );
-  for (const [name, tone] of Object.entries(SURFACE_TONES.light)) {
+  const roles = mono ? MONO_TONES[mode] : null;
+  const lines = Object.entries(SCHEME_ROLES).map(([role, cssName]) => {
+    const value = roles
+      ? hexFromArgb(neutral.tone(roles[role]))
+      : hexFromArgb(theme.schemes[mode][role]);
+    return `  --md-sys-color-${cssName}: ${value};`;
+  });
+  for (const [name, tone] of Object.entries(SURFACE_TONES[mode])) {
     lines.push(`  --md-sys-color-${name}: ${hexFromArgb(neutral.tone(tone))};`);
   }
-  return `${selector} {\n${lines.join("\n")}\n}`;
+  return lines.join("\n");
 }
+
+const wrap = (selector, lines) => `${selector} {\n${lines}\n}`;
 
 const lightBlocks = [
   // 默认(青绿)= :root,不带属性即生效
-  block(":root", themes[0].theme),
-  // 其余试色挂 data-accent,置于 :root 之后覆盖浅色
+  wrap(":root", linesFor(themes[0].theme, "light", false)),
+  // 其余重点色挂 data-accent,置于 :root 之后覆盖浅色
   ...themes.slice(1).map((a) =>
-    a.mono
-      ? monoBlock(`[data-accent="${a.id}"]`, a.theme)
-      : block(`[data-accent="${a.id}"]`, a.theme),
+    wrap(`[data-accent="${a.id}"]`, linesFor(a.theme, "light", a.mono)),
+  ),
+].join("\n\n");
+
+const darkBlocks = [
+  // 默认(青绿)暗色 = [data-theme],不带 accent 属性即生效
+  wrap('[data-theme="dark"]', linesFor(themes[0].theme, "dark", false)),
+  // 深色 + 重点色:双属性组合(特异性 0,2,0),压过单属性的两套
+  ...themes.slice(1).map((a) =>
+    wrap(
+      `[data-theme="dark"][data-accent="${a.id}"]`,
+      linesFor(a.theme, "dark", a.mono),
+    ),
   ),
 ].join("\n\n");
 
 const css = `/* ---- M3 scheme(生成文件,勿手改)----
    由 scripts/generate-m3.mjs 从 ACCENTS 各源色经 material-color-utilities 生成
    (surfaceContainer* 按 M3 规范取 neutral 色板 tone,见脚本内注释)。
-   默认青绿 = :root;试色挂 html[data-accent="id"](仅浅色,深色待定稿后统一做)。
+   默认青绿 = :root / [data-theme="dark"];其余重点色 = [data-accent] 与
+   [data-theme="dark"][data-accent](深浅各一套,深浅切换 + 重点色切换全生效)。
    重新生成:pnpm tokens:m3 */
 
 ${lightBlocks}
 
-[data-theme="dark"] {
-${darkBlock(themes[0].theme)}
-}
+${darkBlocks}
 `;
 
 const out = join(
