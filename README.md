@@ -1,19 +1,20 @@
 # TARS
 
 > 住在浏览器侧栏的 agent：读你正在看的页面，替你联网查，替你点按填写。
-> repo: [TARS-sidebar-agent](https://github.com/404notfxxked/TARS-sidebar-agent) · 命名致敬《星际穿越》里诚实度 90%、幽默值 75% 的那个机器人。
+> 命名致敬《星际穿越》里诚实度 90%、幽默值 75% 的那个机器人。
 
-一个 Chrome MV3 扩展，内置 ReAct agent 循环（推理 → 工具调用 → 观察），BYOK 接入任意 OpenAI 兼容 API（DeepSeek / Kimi / OpenRouter / Ollama …，Anthropic 协议待适配）。所有请求只在你的浏览器与模型端点之间流转。个人学习项目，练手 agent 架构。
+一个 Chrome MV3 扩展，内置 ReAct agent 循环（推理 → 工具调用 → 观察），BYOK 接入任意 OpenAI 兼容 API（DeepSeek / Kimi / OpenRouter / Ollama …）。所有请求只在你的浏览器与模型端点之间流转，对话与密钥全部保存在本机。
 
 ## ✨ 功能
 
-- 📖 **读页答疑** — 页面快照在 offscreen 转成结构化 markdown；长文档支持大纲、关键词定位、分窗阅读，不会刷爆上下文
+- 📖 **读页答疑** — 当前页面转成结构化 markdown 再喂给模型；长文档支持大纲、关键词定位、分窗阅读，不会刷爆上下文
 - 🖱️ **页面操作** — 模拟真实鼠标点击、表单填写与回车提交，React 受控组件也能正确感知
-- 🔍 **联网搜索** — 默认关闭；开启即可用（免 Key 抓取 Bing/DDG 结果页兜底，带 cookie 蹭行、节流与风控冷却），也可配置搜索服务 API（Tavily / 博查 / Brave）获得稳定质量；支持时间范围与域名过滤
-- 🌐 **读取网页** — 给它一个 http(s) 链接即可读正文（内网页面同样可达，GBK 等编码自动识别），与搜索结果配合使用
-- 🖼️ **图片输入** — 选图或粘贴发给视觉模型：面板内压缩转码，按模型能力门控；历史图片本地持久化
-- 🛡️ **稳态细节** — 停止按钮即时中断在途请求；工具结果超预算自动瘦身，防止撑爆上下文
-- 🌗 深浅色主题 · 多会话历史（IndexedDB 本地持久化，保留期自动清理）· 跨上下文诊断日志导出
+- 🔍 **联网搜索** — 默认关闭；开启即可用（免 Key 抓取 Bing / DuckDuckGo 结果页兜底，自动换引擎与冷却），也可配置 Tavily / 博查 / Brave 获得稳定质量，支持时间范围与域名过滤
+- 🌐 **读取网页** — 给它一个链接即可读正文，长文分页读，GBK 等编码自动识别
+- 🖼️ **图片输入** — 选图或粘贴发给视觉模型，面板内自动压缩转码，按模型能力门控
+- 🧩 **多模型多供应商** — 保存多个模型服务随时切换，模型选择器按供应商分组；每个模型可独立配置上下文窗口、最大输出与视觉能力
+- 🗜 **上下文自动压缩** — 对话过长时自动把较早轮次压成摘要，长会话不「失忆」；触发时机三档可选，摘要可指定便宜模型生成，聊天记录本身不受影响
+- 🌗 深浅色主题 · 8 套重点色 · 多会话历史（本地持久化 + 保留期清理）· 诊断日志导出
 
 ## 🚀 快速开始
 
@@ -28,24 +29,7 @@ pnpm build        # 产物输出到 dist/
 2. 点「加载已解压的扩展程序」，选择本项目的 `dist/`
 3. 点工具栏图标打开侧栏，在设置里填入 Base URL 与 API Key（例如 `https://api.deepseek.com/v1`）
 
-「联网」默认关闭：开启后默认走**免 Key 抓取通道**（直接抓取 Bing / DuckDuckGo 的搜索结果页，质量随网络出口浮动）；也可在设置里改选搜索服务（Tavily / 博查 / Brave，填 API Key），走结构化 API 获得稳定结果。关闭则 TARS 只读当前页面，不发出任何联网搜索请求。
-
-## 🛠 开发
-
-```bash
-pnpm typecheck    # 仅类型检查
-pnpm build        # 类型检查 + 构建 + offscreen 后处理
-```
-
-E2E 验证脚本与 fixtures 在本地 `tests/`（不随仓库分发），通过 CDP 拦截扩展上下文的网络流量、mock LLM 驱动真实 agent 循环：
-
-```bash
-node tests/verify-web-search.mjs   # 联网工具链路（双模式 15 组场景，mock 搜索引擎与三家 API）
-node tests/verify-cancel.mjs       # 停止按钮链路
-node tests/verify-persist.mjs      # 会话持久化（多会话/重启/保留期/迁移）
-```
-
-受限网络环境可为测试浏览器挂代理：`VERIFY_PROXY=http://127.0.0.1:8118 node tests/verify-web-search.mjs`（mock 请求在 CDP 层拦截，不受代理影响）。
+「联网搜索」默认关闭：开启后默认走免 Key 抓取通道（质量随网络出口浮动），也可在设置里改选搜索服务并填入对应的 API Key。关闭状态下 TARS 只读当前页面，不发出任何联网请求。
 
 ## 🧭 架构
 
@@ -56,4 +40,4 @@ sidepanel (React) ⇄ port ⇄ Service Worker (ReAct 循环 + provider 适配)
                                 └─ web 工具          搜索引擎 / 网页抓取
 ```
 
-设计取舍与实现细节写在各模块的文件头注释里；本地路线图见 `memory/project-roadmap.md`（不进仓库）。
+设计取舍与实现细节写在各模块的文件头注释里；版本变更见 [CHANGELOG](CHANGELOG.md)。
