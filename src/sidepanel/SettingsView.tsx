@@ -10,8 +10,11 @@ import {
 import {
   loadConfig,
   savePrefs,
+  COMPACT_LABELS,
+  COMPACT_LEVELS,
   SEARCH_PROVIDER_LABELS,
   type AccentPref,
+  type CompactLevel,
   type ModelEntry,
   type ProviderEntry,
   type SearchConfig,
@@ -552,6 +555,9 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     baseUrl: "",
     apiKey: "",
   });
+  // ── 上下文压缩:档位 + 压缩用模型引用("providerId||modelId",空 = 跟随当前) ──
+  const [compact, setCompact] = useState<CompactLevel>("standard");
+  const [compactRef, setCompactRef] = useState("");
   // ── 保存反馈 ──
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -593,6 +599,12 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
       setAccent(c.accent);
       setWebSearch(c.webSearch);
       setSearch(c.search);
+      setCompact(c.compact);
+      setCompactRef(
+        c.compactProvider && c.compactModel
+          ? `${c.compactProvider}||${c.compactModel}`
+          : "",
+      );
       setRetention(
         c.historyRetention === 0 || c.historyRetention === 30
           ? String(c.historyRetention) as "0" | "30"
@@ -634,6 +646,15 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   const changeRetention = (v: "7" | "30" | "0") => {
     setRetention(v);
     run(savePrefs({ historyRetention: Number(v) }));
+  };
+
+  /** 压缩用模型:复合值拆回双字段落盘;空 = 跟随当前模型(两个字段清空) */
+  const changeCompactModel = (v: string) => {
+    setCompactRef(v);
+    const idx = v.indexOf("||");
+    const pid = idx === -1 ? "" : v.slice(0, idx);
+    const mid = idx === -1 ? "" : v.slice(idx + 2);
+    run(savePrefs({ compactProvider: pid, compactModel: mid }));
   };
 
   const clearAllHistory = () => {
@@ -993,6 +1014,58 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               )}
             </>
           )}
+        </div>
+
+        {/* ── 上下文压缩 ── */}
+        <h3 className="settings-eyebrow mb-1.5 mt-4">上下文压缩</h3>
+        <div className="settings-card">
+          <div className="settings-field">
+            <span className="field-label">压缩时机</span>
+            <Segmented
+              value={compact}
+              options={COMPACT_LEVELS.map((l) => ({
+                value: l,
+                label: COMPACT_LABELS[l],
+              }))}
+              onChange={(v) => {
+                setCompact(v);
+                run(savePrefs({ compact: v }));
+              }}
+              ariaLabel="上下文压缩触发时机"
+            />
+            <p className="field-hint">
+              对话历史占用超过可用窗口该比例时，较早的轮次会自动压缩为一条摘要，
+              腾出空间给新对话（聊天记录本身不受影响，仍完整保留）。需要在模型配置里
+              填写「上下文窗口」后才生效。
+            </p>
+          </div>
+          <div className="settings-field">
+            <label className="field-label" htmlFor="compact-model">
+              压缩用模型
+            </label>
+            <select
+              id="compact-model"
+              value={compactRef}
+              onChange={(e) => changeCompactModel(e.target.value)}
+              className="field-input"
+            >
+              <option value="">跟随当前模型</option>
+              {providers
+                .filter((p) => p.apiKey && p.models.length > 0)
+                .map((p) => (
+                  <optgroup key={p.id} label={p.name || hostOf(p.baseUrl)}>
+                    {p.models.map((m) => (
+                      <option key={m.id} value={`${p.id}||${m.id}`}>
+                        {m.alias || m.id}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+            </select>
+            <p className="field-hint">
+              压缩摘要是机械任务，选一个便宜快速的模型可以省钱；留空则用当前对话模型。
+            </p>
+          </div>
         </div>
 
         {/* ── 数据 ── */}

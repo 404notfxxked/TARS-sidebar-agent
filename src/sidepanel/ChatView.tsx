@@ -31,7 +31,13 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
-import { MSG, PORT_NAME, type AgentEvent, type ImageMeta } from "../shared/messages";
+import {
+  MSG,
+  PORT_NAME,
+  type AgentEvent,
+  type CompactionMark,
+  type ImageMeta,
+} from "../shared/messages";
 import { base64ToBytes } from "../shared/imageCodec";
 import { getActiveTabId } from "../shared/contentTools";
 import {
@@ -55,6 +61,8 @@ interface ChatMsg {
   error?: boolean;
   /** 系统运行提示(如步数耗尽):以 NoticeBubble 呈现 */
   notice?: boolean;
+  /** 该消息在库里的 seq(仅历史回放有;压缩分隔条据此定位) */
+  seq?: number;
 }
 
 type AgentStatus = "idle" | "thinking" | "streaming";
@@ -224,6 +232,8 @@ export default function ChatView({
   onActiveSessionChange?: (sessionId: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  // 当前会话的压缩点(存在 = 更早的历史已压成摘要,列表里渲染分隔条)
+  const [compaction, setCompaction] = useState<CompactionMark | null>(null);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [currentSession, setCurrentSession] = useState("");
@@ -564,6 +574,7 @@ export default function ChatView({
               if (ms.some((m) => m.sessionId === sid)) return ms;
               return evt.messages.map((m) => ({ ...m, sessionId: sid }));
             });
+            setCompaction(evt.compaction ?? null);
             setCurrentSession(historyReqRef.current);
           }
           break;
@@ -605,6 +616,7 @@ export default function ChatView({
     if (sessionId === sessionRef.current) return; // 已是当前会话
     log.info("chat", "open session", { sessionId });
     setMessages([]);
+    setCompaction(null);
     setInput("");
     clearRun();
     setCurrentSession(sessionId);
@@ -739,6 +751,7 @@ export default function ChatView({
     if (status !== "idle") return; // 运行中不允许打断
     log.debug("chat", "new conversation", { old: sessionRef.current });
     setMessages([]);
+    setCompaction(null);
     setInput("");
     clearRun(); // 对话清空,本轮执行流也不保留
     setCurrentSession("");
@@ -929,7 +942,16 @@ export default function ChatView({
             (acc, m, i) => (m.role === "user" ? i : acc),
             -1,
           );
+          // 压缩分隔条插在第一条 seq 超过压缩点的记录之前;历史消息按 seq
+          // 升序,所以命中第一条之后不再重复插
+          let dividerPlaced = false;
           return visible.flatMap((m, i) => {
+            const showDivider =
+              compaction !== null &&
+              !dividerPlaced &&
+              (m.seq ?? Number.MAX_SAFE_INTEGER) > compaction.uptoSeq;
+            if (showDivider) dividerPlaced = true;
+            const divider = showDivider ? [<CompactionDivider key="ctx-div" />] : [];
             const node =
               m.role === "user" ? (
                 <UserBubble key={i} text={m.content} images={m.images} />
@@ -944,6 +966,7 @@ export default function ChatView({
             // 历史回放时 segs 为空不渲染
             return i === lastUserIdx && runSegs.length > 0
               ? [
+                  ...divider,
                   node,
                   <RunZone
                     key="run-zone"
@@ -954,7 +977,7 @@ export default function ChatView({
                     onToggleGroup={toggleGroup}
                   />,
                 ]
-              : [node];
+              : [...divider, node];
           });
         })()}
         {/* 网络等待等「无过程可看」时的活动指示;思考 ticker 存在时由 ticker 表达,不重复 */}
@@ -1726,6 +1749,42 @@ const NoticeBubble = memo(function NoticeBubble() {
     </div>
   );
 });
+
+/** 压缩分隔条:标记「此处之前的历史已压成摘要」(原文仍在库里,模型只看摘要)。
+ *  解释 AI 为何可能不记得很早的细节 —— 静默压缩会显得像无故失忆 */
+const CompactionDivider = memo(function CompactionDivider() {
+  return (
+    <div className="ctx-divider" role="note" aria-label="上下文已压缩">
+      <span className="ctx-divider-line" />
+      <span className="ctx-divider-label">
+        <ArchiveIcon /> 此处之前的对话已压缩为摘要
+      </span>
+      <span className="ctx-divider-line" />
+    </div>
+  );
+});
+
+/** 压缩分隔条小图标(归档盒) */
+function ArchiveIcon() {
+  return (
+    <svg
+      className="inline-block align-[-2px]"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="2" y="3" width="20" height="5" rx="1" />
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
 
 /** 信息圆标(系统提示条) */
 function InfoIcon() {

@@ -16,6 +16,21 @@ const SESSIONS = "sessions";
 const MESSAGES = "messages";
 const IMAGES = "images";
 
+/** 会话压缩元数据:seq ≤ uptoSeq 的消息已压缩为 summary 文本。
+ *  压缩只改「发给模型的 prompt」,消息行不动 —— 库里保持全量历史 */
+export interface SessionCompaction {
+  summary: string;
+  uptoSeq: number;
+  at: number;
+}
+
+/** 实测上下文基线:上次 run 最终轮请求的 prompt tokens 与对应的历史条数。
+ *  下次 run 用它 + 估算新增部分,得到比纯估算准的压缩触发基线 */
+export interface SessionCtx {
+  promptTokens: number;
+  msgs: number;
+}
+
 /** 会话元数据行(sessions store) */
 export interface SessionRow {
   id: string;
@@ -26,6 +41,10 @@ export interface SessionRow {
   updatedAt: number;
   /** 消息条数 = 该会话下一条待写 seq */
   msgCount: number;
+  /** 上下文压缩元数据;缺省 = 本会话尚未压缩过 */
+  compaction?: SessionCompaction;
+  /** 实测 token 基线;缺省 = 压缩触发用纯估算 */
+  ctx?: SessionCtx;
 }
 
 /** 消息行(messages store):msg 为完整 InternalMsg(图片只有元数据引用) */
@@ -124,6 +143,22 @@ export async function listSessions(): Promise<SessionRow[]> {
     db.transaction(SESSIONS).objectStore(SESSIONS).getAll(),
   );
   return rows.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** 更新会话的压缩/token 基线字段(不动消息与基本元数据)。压缩发生在
+ *  run 开始、无消息追加,与 appendMessages 的事务分开;会话不存在则忽略
+ *  (不伪造行,避免列表里出现空会话) */
+export async function saveSessionInfo(
+  id: string,
+  patch: { compaction?: SessionCompaction; ctx?: SessionCtx },
+): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(SESSIONS, "readwrite");
+  const store = tx.objectStore(SESSIONS);
+  const prev = await p<SessionRow | undefined>(store.get(id));
+  if (!prev) return;
+  store.put({ ...prev, ...patch });
+  await settled(tx);
 }
 
 /** 某会话全部消息,seq 升序(同一索引键下按主键 [sessionId, seq] 排序) */

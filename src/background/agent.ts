@@ -7,11 +7,34 @@ import {
   type UserMessagePayload,
 } from "../shared/messages";
 import { getTool, toProviderToolSchemas } from "./tools";
-import { OpenAIAdapter, type InternalMsg, type MessageImage } from "./provider";
+import {
+  OpenAIAdapter,
+  type ChatProvider,
+  type ChatResult,
+  type InternalMsg,
+  type MessageImage,
+} from "./provider";
+import {
+  compactHistory,
+  isContextOverflow,
+  shouldCompact,
+  summaryToMsg,
+  usableTokens,
+  EMERGENCY_KEEP_TURNS,
+  THRESHOLDS,
+  type CompactionOutcome,
+} from "./compaction";
 import { loadConfig, inferMaxTokensField } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
 import { base64ToBytes } from "../shared/imageCodec";
-import { loadImage, loadHistory, saveHistory } from "./sessionHistory";
+import {
+  loadImage,
+  loadHistory,
+  loadSessionInfo,
+  saveCompaction,
+  saveCtx,
+  saveHistory,
+} from "./sessionHistory";
 import { setToolExecutionContext } from "./toolContext";
 
 const log = createLogger({ ctx: "bg" });
@@ -102,6 +125,33 @@ export async function runAgentLoop(
       maxTokensField:
         modelEntry?.maxTokensField ?? inferMaxTokensField(config.model),
     });
+    // 压缩用模型:摘要调用(含撞窗紧急压缩)专用,选了便宜模型就由它跑摘要
+    // 省钱。没配/引用失效(供应商或模型被删)/无 key 时回落当前模型 ——
+    // 触发判定始终按当前模型的 contextTokens 算,压缩模型只决定「谁来写摘要」
+    let summarizer: ChatProvider = provider;
+    let summarizerLabel = "当前模型";
+    if (config.compactProvider && config.compactModel) {
+      const cp = config.providers.find((p) => p.id === config.compactProvider);
+      const cm = cp?.models.find((m) => m.id === config.compactModel);
+      if (cp && cm && cp.apiKey) {
+        summarizer = new OpenAIAdapter({
+          apiKey: cp.apiKey,
+          model: cm.id,
+          baseUrl: cp.baseUrl,
+          maxTokens: cm.maxTokens,
+          maxTokensField: cm.maxTokensField ?? inferMaxTokensField(cm.id),
+        });
+        summarizerLabel = cm.id;
+      } else {
+        log.warn("agent", "压缩用模型配置失效,回落当前模型", {
+          compactProvider: config.compactProvider,
+          compactModel: config.compactModel,
+          foundProvider: !!cp,
+          foundModel: !!cm,
+          hasKey: !!(cp && cp.apiKey),
+        });
+      }
+    }
     // 联网开关:开关打开即暴露 web_* 工具——auto 模式(免 Key 抓取兜底)无需配置;
     // 选了服务商但没填 key 时视为 auto 兜底,不再隐藏工具
     const webEnabled = config.webSearch === true;
@@ -119,9 +169,9 @@ export async function runAgentLoop(
 
     const history = await loadHistory(payload.sessionId ?? "");
     // 追加写的两个锚点:persistedSeqs = 库里已有条数(新消息起始 seq);
-    // persistedInCtx = 本轮 prompt 里携带的旧历史条数(新消息在领域数组里的
-    // 起始下标)。溢出裁剪会丢弃最早几轮,让两者错开 —— 裁剪只影响本轮
-    // prompt,不写回库里,落盘保持全量历史
+    // persistedInCtx = 本轮 prompt 里携带的旧内容条数(新消息在领域数组里的
+    // 起始下标)。溢出裁剪与压缩摘要都会让 prompt 前缀变短,使两者错开 ——
+    // 裁剪、摘要都只影响本轮 prompt,不写回库里,落盘保持全量历史
     const persistedSeqs = history.length;
     // 随消息附带的图片:分配 id 后挂到本轮 user 消息上(字节只存内存,
     // 落盘时进 images store;历史里的旧图发送前按需水合)
@@ -135,21 +185,68 @@ export async function runAgentLoop(
       bytes: base64ToBytes(im.base64),
     }));
     const userContent = await buildUserContent(payload.text);
+    const systemContent = webEnabled
+      ? SYSTEM_PROMPT
+      : `${SYSTEM_PROMPT}\n9. 本会话未启用联网搜索（web_search / web_fetch 不可用）。需要外部最新信息时如实告知用户，不要尝试调用不存在的工具。`;
+
+    // ---- 上下文压缩判定:历史占用超过档位阈值时,把较早整轮换成 LLM 摘要 ----
+    // 基线优先用上次 run 的实测 prompt tokens(会话行 ctx,精确覆盖到最终轮
+    // 请求的全部消息),缺失或对不上(如落盘失败)时退回全量估算
+    const sessionInfo = await loadSessionInfo(payload.sessionId ?? "");
+    const fixedEstimate =
+      estimateTokens(systemContent) +
+      estimateTokens(userContent) +
+      runImages.length * IMAGE_TOKEN_ESTIMATE;
+    const baselineTokens =
+      (sessionInfo.ctx && sessionInfo.ctx.msgs <= history.length
+        ? sessionInfo.ctx.promptTokens +
+          estimateRange(history, sessionInfo.ctx.msgs)
+        : estimateRange(history, 0)) + fixedEstimate;
+    const usable = modelEntry?.contextTokens
+      ? usableTokens(modelEntry.contextTokens, modelEntry.maxTokens)
+      : 0;
+    log.info("agent", "context budget", {
+      baseline: baselineTokens,
+      usable: usable || undefined,
+      threshold: usable ? THRESHOLDS[config.compact] : undefined,
+      summarizer: summarizerLabel,
+    });
+    let compaction: CompactionOutcome | null = null;
+    if (usable && shouldCompact(baselineTokens, config.compact, usable)) {
+      try {
+        compaction = await compactHistory(
+          summarizer,
+          history,
+          sessionInfo.compaction?.summary ?? "",
+          { signal },
+        );
+        await saveCompaction(payload.sessionId ?? "", {
+          summary: compaction.summary,
+          uptoSeq: compaction.uptoSeq,
+          at: Date.now(),
+        });
+      } catch (err) {
+        // 摘要失败退回溢出裁剪;用户取消则继续上抛(外层静默退出)
+        if (signal?.aborted) throw err;
+        log.warn("agent", "上下文压缩失败,回退溢出裁剪", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    const summaryMsg = compaction ? summaryToMsg(compaction.summary) : null;
+    const tail = compaction ? history.slice(compaction.uptoSeq + 1) : history;
+
     const messages: InternalMsg[] = [
-      {
-        role: "system",
-        content: webEnabled
-          ? SYSTEM_PROMPT
-          : `${SYSTEM_PROMPT}\n9. 本会话未启用联网搜索（web_search / web_fetch 不可用）。需要外部最新信息时如实告知用户，不要尝试调用不存在的工具。`,
-      },
-      // 溢出防护:估算超窗时丢弃最早的整轮对话(仅 contextTokens 配置了才生效)
-      ...trimHistoryForWindow(history, {
+      { role: "system", content: systemContent },
+      // 压缩摘要:紧跟 system,历史从压缩点接续 —— 代价是压缩发生的那次
+      // 请求失去 prompt cache 前缀命中,可接受(不压缩的代价是撞窗 400)
+      ...(summaryMsg ? [summaryMsg] : []),
+      // 溢出防护兜底:摘要后仍超窗的尾部整轮丢弃(压缩失败时即原有行为)
+      ...trimHistoryForWindow(tail, {
         contextTokens: modelEntry?.contextTokens,
         maxTokens: modelEntry?.maxTokens,
         currentEstimate:
-          estimateTokens(SYSTEM_PROMPT) +
-          estimateTokens(userContent) +
-          runImages.length * IMAGE_TOKEN_ESTIMATE,
+          fixedEstimate + (summaryMsg ? estimateTokens(summaryMsg.content) : 0),
       }),
       {
         role: "user",
@@ -157,8 +254,8 @@ export async function runAgentLoop(
         ...(runImages.length ? { images: runImages } : {}),
       },
     ];
-    // 构造完再取:messages = [system, ...旧历史, 本轮 user],旧历史条数 =
-    // 总长 - 2(本轮 user 也是新增,不算旧)
+    // 构造完再取:非新增前缀条数 = 总长 − 2(system 与本轮 user),
+    // 对 [system, 摘要?, ...保留历史, user] 的形状依然成立
     const persistedInCtx = messages.length - 2;
 
     // 工具分发:注册表里的工具统一在这里执行。
@@ -184,6 +281,73 @@ export async function runAgentLoop(
 
     /** 循环是否以最终回答收束;false = 步数耗尽,循环外做收尾兜底 */
     let completed = false;
+
+    /** 最终轮请求的实测用量:run 结束存会话行,作下次压缩触发的实测基线 */
+    let lastUsage: ChatResult["usage"];
+
+    // 撞窗紧急压缩后的发送投影:摘要插在 system 后,真实消息从 afterIdx 起。
+    // 不 mutate messages —— 持久化锚点(persistedInCtx/persistedSeqs)不受影响
+    let emergency: { summaryMsg: InternalMsg; afterIdx: number } | null = null;
+
+    /** 带撞窗重试的 chat 调用:超窗错误 → 紧急压缩(保最近 2 轮)再试一次,
+     *  之后所有轮次沿用压缩投影。extraMsgs 只随本次请求发送(收尾 nudge) */
+    const callChat = async (
+      extraMsgs: InternalMsg[] = [],
+      withTools = true,
+    ): Promise<ChatResult> => {
+      const attempt = async () => {
+        const base = emergency
+          ? [
+              messages[0],
+              emergency.summaryMsg,
+              ...messages.slice(emergency.afterIdx),
+            ]
+          : messages;
+        return provider.chat({
+          messages: await projectForRequest([...base, ...extraMsgs]),
+          ...(withTools ? { tools } : {}),
+          onDelta: (delta) =>
+            port.postMessage({ type: MSG.AGENT_MESSAGE, delta }),
+          onReasoningDelta: (delta) =>
+            port.postMessage({ type: MSG.AGENT_REASONING, delta }),
+          signal,
+        });
+      };
+      try {
+        return await attempt();
+      } catch (err) {
+        if (
+          emergency !== null ||
+          !modelEntry?.contextTokens ||
+          !isContextOverflow(err)
+        )
+          throw err;
+        log.warn("agent", "请求超出上下文窗口,紧急压缩后重试", {
+          turn: turnNo,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        try {
+          // 压缩输入去掉 system(下标整体 −1),产出的 uptoSeq 也是 −1 系,
+          // 转回 messages 下标要 +2(system 偏移 + slice 端点转开区间)
+          const outcome = await compactHistory(
+            summarizer,
+            messages.slice(1),
+            "",
+            { keepTurns: EMERGENCY_KEEP_TURNS, signal },
+          );
+          emergency = {
+            summaryMsg: summaryToMsg(outcome.summary),
+            afterIdx: outcome.uptoSeq + 2,
+          };
+        } catch (cErr) {
+          log.warn("agent", "紧急压缩失败,放弃重试", {
+            error: cErr instanceof Error ? cErr.message : String(cErr),
+          });
+          throw err; // 原始撞窗错误更有诊断价值
+        }
+        return attempt();
+      }
+    };
 
     /** 本 run 内已水合的图片字节缓存(按 id):跨轮复用,避免每轮重读 IDB */
     const imageBytes = new Map<string, Uint8Array>();
@@ -263,17 +427,8 @@ export async function runAgentLoop(
       log.debug("agent", `turn ${turn + 1}/${MAX_TURNS}`);
       port.postMessage({ type: MSG.AGENT_THINKING, turn });
 
-      const result = await provider.chat({
-        messages: await projectForRequest(messages),
-        tools,
-        onDelta: (delta) =>
-          // 流式把输出推给前端
-          port.postMessage({ type: MSG.AGENT_MESSAGE, delta }),
-        onReasoningDelta: (delta) =>
-          // 思考过程流式透出(provider 支持时才会回调)
-          port.postMessage({ type: MSG.AGENT_REASONING, delta }),
-        signal,
-      });
+      const result = await callChat();
+      lastUsage = result.usage;
 
       // 模型要调用工具 → 执行并回填观察结果,进入下一轮
       if (result.toolCalls.length > 0) {
@@ -361,18 +516,12 @@ export async function runAgentLoop(
         sessionId: payload.sessionId,
       });
       port.postMessage({ type: MSG.AGENT_THINKING, turn: MAX_TURNS - 1 });
-      const wrap = await provider.chat({
-        messages: await projectForRequest([
-          ...messages,
-          { role: "user", content: WRAP_UP_NUDGE },
-        ]),
-        // 故意不传 tools:收尾轮禁止再调工具
-        onDelta: (delta) =>
-          port.postMessage({ type: MSG.AGENT_MESSAGE, delta }),
-        onReasoningDelta: (delta) =>
-          port.postMessage({ type: MSG.AGENT_REASONING, delta }),
-        signal,
-      });
+      // 收尾轮禁用工具(nudge 只随本次请求发送,不进持久化历史)
+      const wrap = await callChat(
+        [{ role: "user", content: WRAP_UP_NUDGE }],
+        false,
+      );
+      lastUsage = wrap.usage;
       messages.push({
         role: "assistant",
         content: wrap.content,
@@ -400,6 +549,20 @@ export async function runAgentLoop(
         log.warn("agent", "save history failed", {
           stack: err instanceof Error ? err.stack : String(err),
         });
+      }
+      // 实测基线:最终轮请求的 prompt tokens + 当时的消息条数。下次 run 用
+      // 它叠加新增部分算压缩触发基线,比纯估算准;失败不影响本次回答
+      if (lastUsage) {
+        try {
+          await saveCtx(payload.sessionId, {
+            promptTokens: lastUsage.promptTokens,
+            msgs: messages.length - 1,
+          });
+        } catch (err) {
+          log.warn("agent", "save ctx baseline failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
     }
 
@@ -519,6 +682,20 @@ function messageText(m: InternalMsg): string {
   return m.content; // system / user / tool 的 content 都是字符串
 }
 
+/** history[from..] 的 token 估算(图片按固定估值计入,字节本身不进文本
+ *  估算,防止 base64 撑爆估算)。压缩触发基线与 trim 共用 */
+function estimateRange(history: InternalMsg[], from: number): number {
+  let n = 0;
+  for (let i = from; i < history.length; i++) {
+    const m = history[i];
+    n += estimateTokens(messageText(m));
+    if (m.role === "user" && m.images) {
+      n += m.images.length * IMAGE_TOKEN_ESTIMATE;
+    }
+  }
+  return n;
+}
+
 function trimHistoryForWindow(
   history: InternalMsg[],
   opts: {
@@ -535,18 +712,7 @@ function trimHistoryForWindow(
     contextTokens - (maxTokens ?? 4096) - Math.floor(contextTokens * 0.2),
     Math.floor(contextTokens / 4),
   );
-  const sum = (from: number) => {
-    let n = opts.currentEstimate;
-    for (let i = from; i < history.length; i++) {
-      const m = history[i];
-      n += estimateTokens(messageText(m));
-      // 图片按固定估值计入(字节本身不进文本估算,防止 base64 撑爆估算)
-      if (m.role === "user" && m.images) {
-        n += m.images.length * IMAGE_TOKEN_ESTIMATE;
-      }
-    }
-    return n;
-  };
+  const sum = (from: number) => opts.currentEstimate + estimateRange(history, from);
   if (sum(0) <= limit) return history;
   // 每轮起始 = user 消息的下标;从最旧的一轮开始整轮丢弃,直到塞得下或只剩最后一轮
   const roundStarts: number[] = [];

@@ -38,7 +38,7 @@ export interface ModelEntry {
   alias?: string;
   /** 多模态标记:聊天区图片入口(选择/粘贴)与请求侧图片投影都以此为准 */
   vision?: boolean;
-  /** 上下文窗口 tokens:仅用作对话顶部用量条的分子/分母;0/缺省 = 不展示 */
+  /** 上下文窗口 tokens:溢出裁剪与自动压缩的分母;0/缺省 = 两者都不生效 */
   contextTokens?: number;
   /** 单次回复上限:设置后才作为请求发送(字段见 maxTokensField) */
   maxTokens?: number;
@@ -88,6 +88,14 @@ export interface AppConfig {
   search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
   historyRetention: number;
+  /** 上下文压缩触发档位:对话历史占用可用窗口超过该比例时,自动把较早的
+   *  整轮压成摘要(见 background/compaction);需当前模型配了 contextTokens
+   *  才生效;缺省 standard */
+  compact: CompactLevel;
+  /** 压缩用模型:摘要调用的供应商 id + wire 模型名,引用语义与
+   *  modelProvider/model 相同;两者任一为空 = 跟随当前模型 */
+  compactProvider: string;
+  compactModel: string;
 }
 
 export type SearchProviderId = "tavily" | "bocha" | "brave";
@@ -110,6 +118,17 @@ export const SEARCH_PROVIDER_LABELS: Record<SearchProviderSetting, string> = {
   brave: "Brave Search",
 };
 
+/** 上下文压缩触发档位:占可用窗口(contextTokens − maxTokens − 余量)的比例 */
+export type CompactLevel = "early" | "standard" | "late";
+export const COMPACT_LEVELS: CompactLevel[] = ["early", "standard", "late"];
+
+/** 各档位展示名(设置页 segmented 用),数值与 compaction.THRESHOLDS 对应 */
+export const COMPACT_LABELS: Record<CompactLevel, string> = {
+  early: "提前 60%",
+  standard: "标准 75%",
+  late: "用满 90%",
+};
+
 export async function loadConfig(): Promise<AppConfig> {
   const s = await chrome.storage.session.get("apiKey");
   const l = await chrome.storage.local.get([
@@ -125,6 +144,9 @@ export async function loadConfig(): Promise<AppConfig> {
     "webSearch",
     "search",
     "historyRetention",
+    "compact",
+    "compactProvider",
+    "compactModel",
   ]);
 
   const providers = normalizeProviders(l.providers, {
@@ -156,6 +178,12 @@ export async function loadConfig(): Promise<AppConfig> {
       typeof l.historyRetention === "number" && l.historyRetention >= 0
         ? l.historyRetention
         : 7,
+    compact: COMPACT_LEVELS.includes(l.compact as CompactLevel)
+      ? (l.compact as CompactLevel)
+      : "standard",
+    compactProvider:
+      typeof l.compactProvider === "string" ? l.compactProvider : "",
+    compactModel: typeof l.compactModel === "string" ? l.compactModel : "",
   };
 }
 
@@ -241,6 +269,9 @@ export async function savePrefs(
       | "webSearch"
       | "search"
       | "historyRetention"
+      | "compact"
+      | "compactProvider"
+      | "compactModel"
     >
   >,
 ): Promise<void> {

@@ -82,11 +82,20 @@ export interface SessionMeta {
 }
 
 /** 前端渲染用:只含 user/assistant 文本(+ 图片元信息),不含 tool 内部消息。
- *  图片字节经 GET_IMAGE/IMAGE_DATA 单独取,不随消息列表传 */
+ *  图片字节经 GET_IMAGE/IMAGE_DATA 单独取,不随消息列表传。
+ *  seq = 该记录对应消息在库里的序号(0 基稠密),压缩分隔条据此定位 */
 export interface ChatRecord {
   role: "user" | "assistant";
   content: string;
   images?: ImageMeta[];
+  seq?: number;
+}
+
+/** 会话压缩元数据(面板展示用):seq ≤ uptoSeq 的消息已压缩为摘要,
+ *  摘要文本本身留在后台(会话行),面板只需要压缩点位置来渲染分隔条 */
+export interface CompactionMark {
+  uptoSeq: number;
+  at: number;
 }
 
 // ---------- Agent 流式事件（discriminated union） ----------
@@ -114,7 +123,12 @@ export type AgentEvent =
   /** reason 缺省 = 兜底/取消路径发的 DONE(如 index.ts 的 finally);"max-turns" = 步数耗尽后收尾 */
   | { type: typeof MSG.AGENT_DONE; reason?: "complete" | "max-turns" }
   | { type: typeof MSG.AGENT_ERROR; error: string }
-  | { type: typeof MSG.HISTORY; messages: ChatRecord[] }
+  | {
+      type: typeof MSG.HISTORY;
+      messages: ChatRecord[];
+      /** 该会话存在压缩时带上:面板在压缩点渲染分隔条 */
+      compaction?: CompactionMark | null;
+    }
   | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
   /** base64 缺省 = 图片已不存在(被清理/清空),面板显示失效占位 */
   | {

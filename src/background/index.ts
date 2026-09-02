@@ -16,6 +16,7 @@ import { runAgentLoop, type AgentPort } from "./agent";
 import {
   clearAllSessions,
   deleteSession,
+  getCompactionMark,
   listSessions,
   loadImage,
   loadHistory,
@@ -138,11 +139,14 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         break;
       }
       case MSG.LOAD_HISTORY: {
-        // 从历史列表切回某会话时,把该会话消息回给前端渲染
+        // 从历史列表切回某会话时,把该会话消息回给前端渲染;
+        // 有压缩时带上压缩点,面板据此渲染分隔条(历史本身始终全量)
         const history = await loadHistory(msg.sessionId);
+        const compaction = await getCompactionMark(msg.sessionId);
         port.postMessage({
           type: MSG.HISTORY,
           messages: toChatRecords(history),
+          ...(compaction ? { compaction } : {}),
         });
         break;
       }

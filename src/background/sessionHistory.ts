@@ -66,7 +66,12 @@ export async function saveHistory(
     title: prev?.title || deriveTitle(msgs),
     createdAt: prev?.createdAt ?? now,
     updatedAt: now,
-    msgCount: msgs.length,
+    // msgCount = 下一条待写 seq:库里已有条数 + 本次新增。不能用 msgs.length
+    // —— 发生过裁剪/压缩的 run 里 msgs 比全量短,那会让列表条数倒退
+    msgCount: baseSeq + freshRaw.length,
+    // upsert 会整行覆盖:压缩/token 基线字段必须透传,否则一次保存就丢
+    ...(prev?.compaction ? { compaction: prev.compaction } : {}),
+    ...(prev?.ctx ? { ctx: prev.ctx } : {}),
   };
   await db.appendMessages(sessionId, meta, fresh, baseSeq, imageRows);
   // 顺带做一次保留期清理(内部自捕获,失败不影响本次保存)
@@ -76,6 +81,42 @@ export async function saveHistory(
 /** 取单张图片(历史气泡渲染,面板经 GET_IMAGE 消息转发到这里) */
 export function loadImage(id: string) {
   return db.getImage(id);
+}
+
+/** 会话的压缩元数据与实测 token 基线(run 开始时 agent 组装上下文用) */
+export async function loadSessionInfo(
+  sessionId: string,
+): Promise<{
+  compaction?: db.SessionCompaction;
+  ctx?: db.SessionCtx;
+}> {
+  if (!sessionId) return {};
+  const row = await db.getSession(sessionId).catch(() => undefined);
+  return { compaction: row?.compaction, ctx: row?.ctx };
+}
+
+/** 面板用的压缩点(无摘要文本,面板只渲染分隔条);无压缩返回 null */
+export async function getCompactionMark(
+  sessionId: string,
+): Promise<{ uptoSeq: number; at: number } | null> {
+  const { compaction } = await loadSessionInfo(sessionId);
+  return compaction ? { uptoSeq: compaction.uptoSeq, at: compaction.at } : null;
+}
+
+/** 写入压缩元数据(压缩发生在 run 开始,与消息追加解耦) */
+export function saveCompaction(
+  sessionId: string,
+  compaction: db.SessionCompaction,
+): Promise<void> {
+  return db.saveSessionInfo(sessionId, { compaction });
+}
+
+/** 写入实测 token 基线(run 结束,供下次 run 算压缩触发基线) */
+export function saveCtx(
+  sessionId: string,
+  ctx: db.SessionCtx,
+): Promise<void> {
+  return db.saveSessionInfo(sessionId, { ctx });
 }
 
 /** 会话列表,最近活跃在前 */
@@ -228,22 +269,25 @@ function collectImageRows(
 
 /** 完整 InternalMsg[] → 前端展示用的精简投影(user/assistant 文本 + 图片元信息)。
  *  用户消息解掉 <context>/<user-request> 包裹 —— 气泡回显的应是用户输入的
- *  原文,与实时发送时的本地回显一致;wire 内容只属于发给模型的请求 */
+ *  原文,与实时发送时的本地回显一致;wire 内容只属于发给模型的请求。
+ *  seq = 数组下标:seq 是 0 基稠密(loadMessageRows 按 seq 升序返回且无空洞),
+ *  压缩分隔条据此定位压缩点 */
 export function toChatRecords(msgs: InternalMsg[]): ChatRecord[] {
   const out: ChatRecord[] = [];
-  for (const m of msgs) {
+  msgs.forEach((m, seq) => {
     if (m.role === "user") {
       out.push({
         role: "user",
         content: userRequestText(m.content),
+        seq,
         ...(m.images?.length
           ? { images: m.images.map(({ id, mime, w, h }) => ({ id, mime, w, h })) }
           : {}),
       });
     } else if (m.role === "assistant" && m.content) {
-      out.push({ role: "assistant", content: m.content });
+      out.push({ role: "assistant", content: m.content, seq });
     }
     // tool / 空 assistant 不展示
-  }
+  });
   return out;
 }

@@ -371,3 +371,24 @@
     animation: none;
   }
 }
+
+/* ---- 上下文压缩分隔条:标记「此处之前已压成摘要」,视觉上弱于消息气泡 ---- */
+.ctx-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.ctx-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--md-sys-color-outline-variant);
+}
+.ctx-divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
