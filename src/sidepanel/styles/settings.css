@@ -48,14 +48,20 @@
 
   /* 分组卡:M3 填充卡 —— 页面 container 底上的「白卡」,色调分层表达海拔。
      卡内行与行不画分隔线:M3 里分隔线只用于分组,组内靠留白区分
-     (发丝线是 iOS 分组列表的习惯);留白节奏相应放大 */
+     (发丝线是 iOS 分组列表的习惯)。
+     子块节奏用「相邻兄弟 margin」表达,不给每个子块垫上下 padding ——
+     卡片的直接子块现在既有 block 也有 field/hint,盲垫 padding 会让
+     hint(尤其末尾的)拖出一条空白,看起来像背景断层 */
   .settings-card {
     background: var(--md-sys-color-surface-container-lowest);
     border-radius: var(--radius-lg);
-    padding: 1px 14px;
+    padding: 10px 14px;
   }
-  .settings-card > * {
-    padding: 11px 0;
+  .settings-card > * + * {
+    margin-top: 10px;
+  }
+  .settings-card > .field-hint {
+    margin-top: 4px; /* hint 离它解释的控件近一点 */
   }
 
   /* 子块三件套:纵向字段 / 单行 / 复合块。
@@ -155,6 +161,7 @@
     color: var(--md-sys-color-on-surface);
   }
   .field-input {
+    display: block; /* inline 级元素的基线空隙会让下方 hint 间距不一致 */
     width: 100%;
     padding: 8px 12px;
     border: 1px solid var(--md-sys-color-outline-variant);
@@ -165,6 +172,14 @@
     caret-color: var(--md-sys-color-primary);
     outline: none;
     transition: border-color 150ms var(--ease-emphasized);
+  }
+  /* 下拉:收起原生箭头,自绘一枚 outline 色 chevron,右侧留出呼吸位 */
+  select.field-input {
+    appearance: none;
+    padding-right: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath d='m3 6 5 5 5-5' fill='none' stroke='%23727970' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-position: right 12px center;
+    background-repeat: no-repeat;
   }
   .field-input::placeholder {
     color: var(--md-sys-color-on-surface-variant);
@@ -183,6 +198,10 @@
     font-size: 11px;
     line-height: 1.45;
     color: var(--md-sys-color-on-surface-variant);
+  }
+  /* 跟在 40px 行后面的 hint:行自带 4px 下空气,再给 6px 会显得脱节 */
+  .settings-row + .field-hint {
+    margin-top: 2px;
   }
 
   /* 浮层基座(聊天区模型选择弹层):M3 menu —— container 底、xs 圆角、2 级海拔,
@@ -439,11 +458,13 @@
   }
   .model-badge {
     flex-shrink: 0;
-    padding: 1px 8px;
+    margin-left: 6px; /* 服务商行里 badge 与名称是 inline 相邻,补一道间距 */
+    padding: 2px 8px;
     border-radius: var(--radius-full);
     background: var(--md-sys-color-secondary-container);
     color: var(--md-sys-color-on-secondary-container);
     font-size: 10.5px;
+    line-height: 1.4;
     font-weight: 500;
   }
   .model-row-chevron {
@@ -479,6 +500,11 @@
     overflow: hidden;
     padding: 0 10px;
     transition: padding 250ms var(--ease-emphasized);
+  }
+  /* 展开体里「模型」动作块与上方 API Key 字段拉开一组距离(字段间距由
+     field-label 的 margin 供给,块本身没有,会贴到上一个输入框) */
+  .model-row-body-inner > .settings-block {
+    margin-top: 12px;
   }
   .model-row-body[data-open="true"] .model-row-body-inner {
     padding: 2px 10px 10px;

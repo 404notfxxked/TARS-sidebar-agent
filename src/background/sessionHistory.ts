@@ -200,10 +200,12 @@ export async function migrateLegacySessionStorage(): Promise<void> {
 }
 
 /** 用户 wire content 里的可读文本:content 带 <context>/<user-request> 包裹,
- *  取 <user-request> 内层(旧数据/无包裹则原样)。面板回显与会话标题共用 */
+ *  取 <user-request> 内层(旧数据/无包裹则原样)。面板回显与会话标题共用。
+ *  包裹模板是 "<user-request>\n…\n</user-request>",内层带首尾换行,
+ *  回显是 pre-wrap,不 trim 气泡首尾就会多出空行 */
 function userRequestText(content: string): string {
   const inner = content.match(/<user-request>([\s\S]*?)<\/user-request>/);
-  return inner ? inner[1] : content;
+  return inner ? inner[1].trim() : content;
 }
 
 /** 首条用户消息 → 列表标题(压平空白后截断) */
