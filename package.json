@@ -9,14 +9,14 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/postbuild-offscreen.mjs",
+    "watch": "vite build --watch",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview",
     "icons:export": "node scripts/export-icons.mjs",
     "tokens:m3": "node scripts/generate-m3.mjs"
   },
   "dependencies": {
+    "highlight.js": "^11.11.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",

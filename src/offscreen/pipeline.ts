@@ -56,7 +56,7 @@ turndown.addRule("emptyLink", {
 
 // ---- 常量 ----
 /** 单个快照的正文硬上限(字符):病态大页面(信息流/超大列表)到此为止 */
-export const DOC_MAX_CHARS = 160_000;
+const DOC_MAX_CHARS = 160_000;
 /** page_read 默认窗口(字符) */
 const READ_WINDOW_DEFAULT = 6000;
 const READ_WINDOW_MAX = 20000;
@@ -68,7 +68,7 @@ const OUTLINE_RETURN_MAX = 80;
 const SEARCH_LIMIT_MAX = 10;
 const SEARCH_LIMIT_DEFAULT = 5;
 
-export interface HeadingAnchor {
+interface HeadingAnchor {
   /** 标题行("#" 字符)在 md 里的起始偏移,可直接作 page_read 的 offset */
   offset: number;
   level: number;

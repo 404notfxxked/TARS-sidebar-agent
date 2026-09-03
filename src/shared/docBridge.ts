@@ -14,7 +14,7 @@
 
 import { callContentTool } from "./contentTools";
 
-export const OFFSCREEN_URL = "offscreen.html";
+const OFFSCREEN_URL = "offscreen.html";
 
 let creating: Promise<void> | null = null;
 
@@ -122,7 +122,7 @@ export function callOffscreenParser(
 }
 
 /** 通知 offscreen 作废某 tab 的快照(offscreen 尚未创建时静默失败,无缓存可失效) */
-export function invalidateTabSnapshot(tabId: number): void {
+function invalidateTabSnapshot(tabId: number): void {
   void chrome.runtime
     .sendMessage({ type: "DOC_TOOL_INVALIDATE", tabId })
     .catch(() => undefined);
@@ -130,7 +130,7 @@ export function invalidateTabSnapshot(tabId: number): void {
 
 let wired = false;
 /** 注册 tabs 生命周期监听与 capture_doc 中继(模块导入即生效;幂等) */
-export function wireDocumentLifecycleListeners(): void {
+function wireDocumentLifecycleListeners(): void {
   if (wired) return;
   wired = true;
 

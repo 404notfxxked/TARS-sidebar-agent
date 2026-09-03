@@ -3,16 +3,6 @@
 
 import type { ToolSchema } from "../../shared/toolTypes";
 
-export interface ProviderConfig {
-  apiKey: string;
-  model: string;
-  baseUrl?: string; // OpenAI 兼容端点,约定含 /v1,如 DeepSeek 用 https://api.deepseek.com/v1;缺省用官方地址
-  maxTokens?: number; // 单次回复上限;设置才发送,缺省交给服务端默认
-  /** maxTokens 用哪个请求字段:OpenAI 推理模型(o 系列/gpt-5)只认 max_completion_tokens,
-   *  发旧的 max_tokens 会直接 400;兼容端点一律 max_tokens(缺省) */
-  maxTokensField?: "max_tokens" | "max_completion_tokens";
-}
-
 // ToolSchema 已在 shared/toolTypes.ts 定义,这里再导出供 provider 层消费
 export type { ToolSchema };
 

@@ -45,8 +45,11 @@ export class OpenAIAdapter implements ChatProvider {
     private cfg: {
       apiKey: string;
       model: string;
+      // OpenAI 兼容端点,约定含 /v1(如 DeepSeek 用 https://api.deepseek.com/v1);缺省用官方地址
       baseUrl?: string;
       maxTokens?: number;
+      /** OpenAI 推理模型(o 系列/gpt-5)只认 max_completion_tokens,发旧的
+       *  max_tokens 会直接 400;兼容端点一律 max_tokens(缺省) */
       maxTokensField?: "max_tokens" | "max_completion_tokens";
     },
   ) {}

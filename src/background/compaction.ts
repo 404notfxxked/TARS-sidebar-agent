@@ -21,7 +21,7 @@ export const THRESHOLDS: Record<CompactLevel, number> = {
 };
 
 /** 压缩时保留原文的最近轮数:太少丢近期细节,太多省不出空间 */
-export const KEEP_TURNS = 4;
+const KEEP_TURNS = 4;
 /** 撞窗紧急压缩保留的轮数(目标是挤出一次重试的空间,越少越好) */
 export const EMERGENCY_KEEP_TURNS = 2;
 
@@ -46,7 +46,7 @@ export function shouldCompact(
 /** 整轮分组:每轮 = 一条 user 起,到下一条 user 前。与 trim 同一单位,
  *  保证 assistant+toolCalls 和它的 tool 观察结果永远在同一侧,不会裁出
  *  「tool 消息悬空」的非法结构 */
-export function turnStarts(history: InternalMsg[]): number[] {
+function turnStarts(history: InternalMsg[]): number[] {
   const starts: number[] = [];
   history.forEach((m, i) => {
     if (m.role === "user") starts.push(i);
@@ -59,7 +59,7 @@ export function turnStarts(history: InternalMsg[]): number[] {
  * 返回摘要应覆盖的最后一条消息 seq(闭包端点);没什么可压缩的返回 null。
  * 历史不足 keepTurns 轮但确实超窗时,至少压缩第一轮(留最后一轮原文)。
  */
-export function pickSplit(
+function pickSplit(
   history: InternalMsg[],
   keepTurns = KEEP_TURNS,
 ): number | null {
@@ -103,7 +103,7 @@ function toTranscript(prefix: InternalMsg[]): string {
 }
 
 /** 压缩请求的 messages:有旧摘要则合并(滚动压缩),否则直接摘 */
-export function buildSummaryMessages(
+function buildSummaryMessages(
   prevSummary: string,
   prefix: InternalMsg[],
 ): InternalMsg[] {

@@ -4,12 +4,8 @@
 export { OpenAIAdapter } from "./openai";
 export { fetchModels } from "./models";
 export type {
-  ProviderConfig,
   ChatProvider,
-  ChatRequest,
   ChatResult,
   InternalMsg,
   MessageImage,
-  ToolSchema,
-  ToolCall,
 } from "./types";

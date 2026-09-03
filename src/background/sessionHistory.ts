@@ -14,7 +14,7 @@ import * as db from "./sessionDb";
 
 const log = createLogger({ ctx: "bg" });
 
-export const RETENTION_DEFAULT_DAYS = 7;
+const RETENTION_DEFAULT_DAYS = 7;
 /** 列表标题截断长度 */
 const TITLE_MAX_CHARS = 30;
 

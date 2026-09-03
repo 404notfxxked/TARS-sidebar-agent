@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      highlight.js:
+        specifier: ^11.11.2
+        version: 11.11.2
       react:
         specifier: ^19.0.0
         version: 19.2.8

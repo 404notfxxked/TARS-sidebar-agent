@@ -7,7 +7,7 @@
 // ---- 类型 ----
 
 /** 不可见的原因:给模型看的「为什么点不到」,直接映射下一步行动 */
-export type VisibilityReason =
+type VisibilityReason =
   | "display-none" // 不在布局里(自身 display:none)—— 去触发显示它的父 UI
   | "opacity-zero" // 自身 opacity:0,开发者意图隐藏(状态控制)
   | "transparent" // opacity 在 (0, 0.1],可能是动画中间帧
@@ -27,12 +27,12 @@ export type RoleName =
   | "textarea"
   | "contenteditable";
 
-export interface VisibilityInfo {
+interface VisibilityInfo {
   visible: boolean;
   hidden?: VisibilityReason;
 }
 
-export interface ElementState {
+interface ElementState {
   disabled?: boolean;
   checked?: boolean;
   selected?: boolean;
@@ -41,7 +41,7 @@ export interface ElementState {
   focused?: boolean;
 }
 
-export interface ElementSnapshot {
+interface ElementSnapshot {
   selector: string;
   tag: string;
   role: RoleName | null;
@@ -98,7 +98,7 @@ const VALUE_MAX = 80;
 // ---- 观察:语义提取 ----
 
 /** 生成绝对 CSS 路径:nth-of-type 链,遇合法 id 短路。与 CSS :nth-of-type 语义严格一致(只数同标签兄弟)。 */
-export function buildSelector(el: Element): string {
+function buildSelector(el: Element): string {
   // 合法 id:排除 React 动态 id(`:r1:`)、含空格/引号等不可用 CSS.escape 也无益的 id
   const ID_RE = /^[A-Za-z_][\w-]*$/;
   const path: string[] = [];
@@ -157,7 +157,7 @@ export function normalizeRole(raw: string): RoleName | null {
 }
 
 /** 归一化角色:显式 role 属性优先(经别名表),无则按 tag+type 推导 */
-export function getRole(el: Element): RoleName | null {
+function getRole(el: Element): RoleName | null {
   const explicit = el.getAttribute("role");
   if (explicit) return normalizeRole(explicit);
 
@@ -183,7 +183,7 @@ export function getRole(el: Element): RoleName | null {
 }
 
 /** 可访问标签:aria-label → aria-labelledby → <label for> → button 类 input 的 value/alt → 自身文本。截 120。 */
-export function getLabel(el: Element): string | null {
+function getLabel(el: Element): string | null {
   const ariaLabel = el.getAttribute("aria-label");
   if (ariaLabel) return ariaLabel.trim().slice(0, LABEL_MAX);
 
@@ -231,7 +231,7 @@ export function getLabel(el: Element): string | null {
 }
 
 /** 交互状态:disabled 恒返回(可用/不可用是关键决策信息);checked 等仅 true 或 aria 显式 false 时返回。缺省 key 不序列化,省 token。 */
-export function getState(el: Element): ElementState {
+function getState(el: Element): ElementState {
   const state: ElementState = {};
   const tag = el.tagName.toLowerCase();
 
@@ -264,7 +264,7 @@ export function getState(el: Element): ElementState {
 }
 
 /** 可见性分析:visible=false 语义 = 「不可被 click/fill 命中」,hidden 给出原因供模型决策。 */
-export function getVisibility(el: Element): VisibilityInfo {
+function getVisibility(el: Element): VisibilityInfo {
   // getClientRects().length===0 是「当前无渲染盒」的最可靠判据(覆盖自身/祖先 display:none、visibility:hidden)
   if (el.getClientRects().length === 0) {
     // 逐级查具体原因,回填精确的 hidden
@@ -303,7 +303,7 @@ export function getVisibility(el: Element): VisibilityInfo {
 }
 
 /** 单元素快照:组合上述语义。label/value 截断,state 缺省 key 不出现。 */
-export function snapshotElement(el: Element): ElementSnapshot {
+function snapshotElement(el: Element): ElementSnapshot {
   const out: ElementSnapshot = {
     selector: buildSelector(el),
     tag: el.tagName.toLowerCase(),
@@ -454,7 +454,7 @@ export function clickElement(el: Element): void {
 }
 
 /** 原生 value setter 写入:绕过 React/Vue 对 value 的拦截,受控组件才能感知。 */
-export function setNativeValue(
+function setNativeValue(
   el: HTMLInputElement | HTMLTextAreaElement,
   text: string,
 ): void {

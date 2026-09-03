@@ -7,8 +7,8 @@ import { createLogger } from "./logger";
 // 日志按宿主上下文归档,便于导出合并时分清来源
 const log = createLogger({ ctx: typeof window === "undefined" ? "bg" : "off" });
 
-export const CONTENT_TOOL_MESSAGE = "execute_tool";
-export const CONTENT_TOOL_RESULT = "tool_result";
+const CONTENT_TOOL_MESSAGE = "execute_tool";
+const CONTENT_TOOL_RESULT = "tool_result";
 
 export interface ContentToolCall {
   type: typeof CONTENT_TOOL_MESSAGE;

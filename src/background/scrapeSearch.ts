@@ -265,7 +265,7 @@ async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
 }
 
 /** 引擎在冷却期内则直接抛错(文案可转告用户),调用方跳到下一引擎 */
-export async function throwIfCoolingDown(id: string): Promise<void> {
+async function throwIfCoolingDown(id: string): Promise<void> {
   try {
     const bag = await chrome.storage.session.get(COOLDOWN_KEY);
     const hit = (bag[COOLDOWN_KEY] ?? {})[id];

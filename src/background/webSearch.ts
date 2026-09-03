@@ -189,7 +189,7 @@ const BRAVE: SearchProviderPreset = {
   },
 };
 
-export const SEARCH_PROVIDERS: Record<SearchProviderId, SearchProviderPreset> =
+const SEARCH_PROVIDERS: Record<SearchProviderId, SearchProviderPreset> =
   {
     tavily: TAVILY,
     bocha: BOCHA,
@@ -228,7 +228,7 @@ async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
 }
 
 /** 搜索服务是否在冷却期内(冷却只影响报错文案,不改变「不可用」的事实) */
-export async function searchCooldownKind(
+async function searchCooldownKind(
   id: string,
 ): Promise<CooldownKind | null> {
   const map = await loadCooldowns();

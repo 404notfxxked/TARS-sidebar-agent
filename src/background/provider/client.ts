@@ -8,7 +8,7 @@ const RETRYABLE_STATUS = new Set([429, 502, 503, 529]);
 const MAX_RETRY = 3;
 const BASE_DELAY_MS = 500;
 
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(
     public status: number,
     public body: string,

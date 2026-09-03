@@ -9,7 +9,7 @@ const mq = window.matchMedia("(prefers-color-scheme: dark)");
 /** 当前生效偏好:system 态下由媒体查询变化驱动重算 */
 let pref: ThemePref = "system";
 
-export function resolveTheme(p: ThemePref = pref): "light" | "dark" {
+function resolveTheme(p: ThemePref = pref): "light" | "dark" {
   return p === "system" ? (mq.matches ? "dark" : "light") : p;
 }
 

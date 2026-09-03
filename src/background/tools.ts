@@ -16,7 +16,7 @@ export interface Tool<P = unknown, R = unknown> extends ToolSchema {
 
 const registry: Tool[] = [];
 
-export function registerTool<P, R>(tool: Tool<P, R>): void {
+function registerTool<P, R>(tool: Tool<P, R>): void {
   registry.push(tool as unknown as Tool);
 }
 
