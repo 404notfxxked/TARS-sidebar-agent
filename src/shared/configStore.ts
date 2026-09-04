@@ -82,9 +82,9 @@ export interface AppConfig {
   /** 重点色:决定整套 M3 scheme 的源色(表面底色不随它变,只换强调/主色系) */
   accent: AccentPref;
   /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关
-   *  (搜索已改为 BYOK 服务,开启还需配好 search.apiKey 才真正可用) */
+   *  (搜索已改为 BYOK 服务,开启还需配好 search.services[...].apiKey 才真正可用) */
   webSearch: boolean;
-  /** 搜索服务配置;开关开着但 apiKey 为空时 web_search 仍不可用 */
+  /** 搜索服务配置;开关开着但当前服务 apiKey 为空时 web_search 退回免 Key 抓取 */
   search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
   historyRetention: number;
@@ -99,15 +99,21 @@ export interface AppConfig {
 }
 
 export type SearchProviderId = "tavily" | "bocha" | "brave";
+const SEARCH_PROVIDER_IDS: SearchProviderId[] = ["tavily", "bocha", "brave"];
 
 /** 设置里的搜索服务选项:auto = 不用服务商,抓取搜索引擎结果页兜底 */
 export type SearchProviderSetting = "auto" | SearchProviderId;
 
-/** 搜索服务配置:provider=auto 时 baseUrl/apiKey 无效;其余留空 baseUrl 用官方端点 */
-export interface SearchConfig {
-  provider: SearchProviderSetting;
+/** 单家搜索服务的连接信息;key/中转地址按家各存一格,切换服务商互不串 */
+export interface SearchServiceEntry {
   baseUrl: string;
   apiKey: string;
+}
+
+/** 搜索服务配置:provider=auto 时 services 无效;单家 baseUrl 留空用官方端点 */
+export interface SearchConfig {
+  provider: SearchProviderSetting;
+  services: Record<SearchProviderId, SearchServiceEntry>;
 }
 
 /** 各选项展示名(设置页下拉用) */
@@ -241,18 +247,28 @@ function normalizeProviders(
   ];
 }
 
-/** 搜索配置宽松归一:非法 provider 回落 auto(免 Key 兜底),字段类型不对的丢弃 */
-function normalizeSearch(v: unknown): SearchConfig {
-  const s = (v ?? {}) as Partial<SearchConfig>;
-  const provider = s.provider;
-  return {
-    provider:
-      provider === "tavily" || provider === "bocha" || provider === "brave"
-        ? provider
-        : "auto",
-    baseUrl: typeof s.baseUrl === "string" ? s.baseUrl : "",
-    apiKey: typeof s.apiKey === "string" ? s.apiKey : "",
+/** 搜索配置宽松归一:非法 provider 回落 auto(免 Key 兜底),字段类型不对的丢弃。
+ *  旧版单槽结构({provider,baseUrl,apiKey} 三家共用一格,切换服务商会串 key)
+ *  只保留 provider 选择;旧 key/中转地址无法判断属于哪家,不猜测归属、直接弃用
+ *  (避免把 A 家的 key 发给 B 家),一次性到设置页重填 */
+export function normalizeSearch(v: unknown): SearchConfig {
+  const s = (v ?? {}) as Partial<SearchConfig> & {
+    baseUrl?: unknown;
+    apiKey?: unknown;
   };
+  const provider: SearchProviderSetting =
+    s.provider === "tavily" || s.provider === "bocha" || s.provider === "brave"
+      ? s.provider
+      : "auto";
+  const services = {} as Record<SearchProviderId, SearchServiceEntry>;
+  for (const id of SEARCH_PROVIDER_IDS) {
+    const e = s.services?.[id];
+    services[id] = {
+      baseUrl: typeof e?.baseUrl === "string" ? e.baseUrl : "",
+      apiKey: typeof e?.apiKey === "string" ? e.apiKey : "",
+    };
+  }
+  return { provider, services };
 }
 
 /** 偏好局部保存(storage key 与字段同名,直接落盘)。

@@ -19,6 +19,7 @@ import {
   type ProviderEntry,
   type SearchConfig,
   type SearchProviderSetting,
+  type SearchServiceEntry,
   type ThemePref,
 } from "../shared/configStore";
 import { fetchModels } from "../background/provider";
@@ -552,8 +553,11 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   const [webSearch, setWebSearch] = useState(false);
   const [search, setSearch] = useState<SearchConfig>({
     provider: "auto",
-    baseUrl: "",
-    apiKey: "",
+    services: {
+      tavily: { baseUrl: "", apiKey: "" },
+      bocha: { baseUrl: "", apiKey: "" },
+      brave: { baseUrl: "", apiKey: "" },
+    },
   });
   // ── 上下文压缩:档位 + 压缩用模型引用("providerId||modelId",空 = 跟随当前) ──
   const [compact, setCompact] = useState<CompactLevel>("standard");
@@ -589,6 +593,21 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     },
     [pingSaved],
   );
+
+  // ── 搜索服务:key/中转地址按家各存一格,切换搜索方式各读各的,互不串 ──
+  const activeService =
+    search.provider === "auto" ? null : search.services[search.provider];
+  /** 改当前选中服务的配置;save=false 只改本地态(输入中),true 连带落盘(失焦) */
+  const patchService = (patch: Partial<SearchServiceEntry>, save: boolean) => {
+    const id = search.provider;
+    if (id === "auto") return;
+    const next: SearchConfig = {
+      ...search,
+      services: { ...search.services, [id]: { ...search.services[id], ...patch } },
+    };
+    setSearch(next);
+    if (save) run(savePrefs({ search: next }));
+  };
 
   useEffect(() => {
     loadConfig().then((c) => {
@@ -961,12 +980,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
                 </select>
               </div>
 
-              {search.provider === "auto" ? (
-                <p className="field-hint">
-                  免 Key 模式：直接抓取 Bing / DuckDuckGo 的搜索结果页，搜索词会发给这些搜索引擎。
-                  结果质量取决于网络出口——被风控时会自动换引擎或冷却；想要稳定质量请改选具体服务商。
-                </p>
-              ) : (
+              {activeService ? (
                 <>
                   <div className="settings-field">
                     <label className="field-label" htmlFor="search-baseurl">
@@ -975,10 +989,12 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
                     <input
                       id="search-baseurl"
                       type="text"
-                      value={search.baseUrl}
-                      onChange={(e) => setSearch({ ...search, baseUrl: e.target.value })}
-                      onBlur={() =>
-                        run(savePrefs({ search: { ...search, baseUrl: search.baseUrl.trim() } }))
+                      value={activeService.baseUrl}
+                      onChange={(e) =>
+                        patchService({ baseUrl: e.target.value }, false)
+                      }
+                      onBlur={(e) =>
+                        patchService({ baseUrl: e.target.value.trim() }, true)
                       }
                       placeholder="留空用官方端点；自建中转时填写根地址"
                       autoComplete="off"
@@ -994,23 +1010,30 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
                     <input
                       id="search-apikey"
                       type="password"
-                      value={search.apiKey}
-                      onChange={(e) => setSearch({ ...search, apiKey: e.target.value })}
-                      onBlur={() =>
-                        run(savePrefs({ search: { ...search, apiKey: search.apiKey.trim() } }))
+                      value={activeService.apiKey}
+                      onChange={(e) =>
+                        patchService({ apiKey: e.target.value }, false)
                       }
-                      placeholder="搜索服务的 API Key；留空则退回免 Key 抓取通道"
+                      onBlur={(e) =>
+                        patchService({ apiKey: e.target.value.trim() }, true)
+                      }
+                      placeholder="当前服务的 API Key；留空则退回免 Key 抓取通道"
                       autoComplete="off"
                       spellCheck={false}
                       className="field-input font-mono"
                     />
                     <p className="field-hint">
-                      {search.apiKey.trim()
-                        ? "已配置，走该服务的 API。"
-                        : "未填 Key：暂走免 Key 抓取通道。"}
+                      {activeService.apiKey.trim()
+                        ? "已配置此服务的 Key；各家服务的 Key 分开保存，切换搜索方式互不影响。"
+                        : "此服务未填 Key：暂走免 Key 抓取通道。"}
                     </p>
                   </div>
                 </>
+              ) : (
+                <p className="field-hint">
+                  免 Key 模式：直接抓取 Bing / DuckDuckGo 的搜索结果页，搜索词会发给这些搜索引擎。
+                  结果质量取决于网络出口——被风控时会自动换引擎或冷却；想要稳定质量请改选具体服务商。
+                </p>
               )}
             </>
           )}

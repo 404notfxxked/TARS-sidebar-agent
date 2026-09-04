@@ -11,7 +11,8 @@
 
 import { abortWithTimeout, getToolExecutionContext } from "./toolContext";
 import { createLogger } from "../shared/logger";
-import type { SearchProviderId, SearchProviderSetting } from "../shared/configStore";
+import { normalizeSearch } from "../shared/configStore";
+import type { SearchProviderId } from "../shared/configStore";
 import { runScrapeSearch } from "./scrapeSearch";
 
 const log = createLogger({ ctx: "bg" });
@@ -413,25 +414,21 @@ async function runApiSearch(
   }
 }
 
-/** 读搜索模式:provider=auto 或没配 key → 免 Key 抓取兜底;否则 API 路径 */
+/** 读搜索模式:provider=auto 或当前服务没配 key → 免 Key 抓取兜底;否则 API 路径。
+ *  key 按服务商各存一格,只读当前选中那家的(normalizeSearch 兼容旧单槽结构) */
 async function readSearchMode(): Promise<
   { kind: "scrape" } | { kind: "api"; provider: SearchProviderId; baseUrl: string; apiKey: string }
 > {
   const bag = await chrome.storage.local.get("search");
-  const s = (bag.search ?? {}) as Partial<{
-    provider: SearchProviderSetting;
-    baseUrl: string;
-    apiKey: string;
-  }>;
-  const apiKey = typeof s.apiKey === "string" ? s.apiKey.trim() : "";
-  if (s.provider === "auto" || !apiKey) return { kind: "scrape" };
-  const provider: SearchProviderId =
-    s.provider && s.provider in SEARCH_PROVIDERS ? s.provider : "tavily";
-  const baseUrl =
-    typeof s.baseUrl === "string" && s.baseUrl.trim()
-      ? s.baseUrl.trim().replace(/\/+$/, "")
-      : SEARCH_PROVIDERS[provider].defaultBaseUrl;
-  return { kind: "api", provider, baseUrl, apiKey };
+  const s = normalizeSearch(bag.search);
+  if (s.provider === "auto") return { kind: "scrape" };
+  const entry = s.services[s.provider];
+  const apiKey = entry.apiKey.trim();
+  if (!apiKey) return { kind: "scrape" };
+  const baseUrl = entry.baseUrl.trim()
+    ? entry.baseUrl.trim().replace(/\/+$/, "")
+    : SEARCH_PROVIDERS[s.provider].defaultBaseUrl;
+  return { kind: "api", provider: s.provider, baseUrl, apiKey };
 }
 
 function validateRecency(v: unknown): Recency {
