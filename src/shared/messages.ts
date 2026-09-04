@@ -12,6 +12,12 @@ export const MSG = {
   DELETE_SESSION: 'delete_session',
   CLEAR_ALL_HISTORY: 'clear_all_history',
   GET_IMAGE: 'get_image',
+  MEM_LIST: 'mem_list',
+  MEM_ADD: 'mem_add',
+  MEM_UPDATE: 'mem_update',
+  MEM_PIN: 'mem_pin',
+  MEM_DELETE: 'mem_delete',
+  MEM_CLEAR: 'mem_clear',
 
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
@@ -25,6 +31,7 @@ export const MSG = {
   HISTORY: 'history',
   SESSIONS: 'sessions',
   IMAGE_DATA: 'image_data',
+  MEMORIES: 'memories',
 } as const
 
 export type MsgType = (typeof MSG)[keyof typeof MSG]
@@ -69,6 +76,12 @@ export type SideToBg =
   | { type: typeof MSG.DELETE_SESSION; sessionId: string }
   | { type: typeof MSG.CLEAR_ALL_HISTORY }
   | { type: typeof MSG.GET_IMAGE; id: string }
+  | { type: typeof MSG.MEM_LIST }
+  | { type: typeof MSG.MEM_ADD; text: string }
+  | { type: typeof MSG.MEM_UPDATE; id: string; text: string }
+  | { type: typeof MSG.MEM_PIN; id: string; pinned: boolean }
+  | { type: typeof MSG.MEM_DELETE; id: string }
+  | { type: typeof MSG.MEM_CLEAR }
 
 // ---------- 面板展示用消息(前后端一致的精简形状) ----------
 
@@ -96,6 +109,16 @@ export interface ChatRecord {
 export interface CompactionMark {
   uptoSeq: number;
   at: number;
+}
+
+/** 长期记忆条目(面板展示用):与后台 MemoryRow 一致的精简形状 */
+export interface MemoryItem {
+  id: string;
+  text: string;
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+  source: "user" | "model";
 }
 
 // ---------- Agent 流式事件（discriminated union） ----------
@@ -130,6 +153,7 @@ export type AgentEvent =
       compaction?: CompactionMark | null;
     }
   | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
+  | { type: typeof MSG.MEMORIES; memories: MemoryItem[] }
   /** base64 缺省 = 图片已不存在(被清理/清空),面板显示失效占位 */
   | {
       type: typeof MSG.IMAGE_DATA;

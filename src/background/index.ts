@@ -14,6 +14,14 @@ import {
 } from "../shared/logger";
 import { runAgentLoop, type AgentPort } from "./agent";
 import {
+  addMemory,
+  clearMemories,
+  deleteMemoryById,
+  loadMemories,
+  setMemoryPinned,
+  updateMemory,
+} from "./memoryStore";
+import {
   clearAllSessions,
   deleteSession,
   getCompactionMark,
@@ -183,6 +191,53 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         } catch {
           /* 端口已断开,面板侧反正也收不到 */
         }
+        break;
+      }
+      case MSG.MEM_LIST: {
+        port.postMessage({
+          type: MSG.MEMORIES,
+          memories: await loadMemories(),
+        });
+        break;
+      }
+      case MSG.MEM_ADD: {
+        await addMemory(msg.text, "user");
+        port.postMessage({
+          type: MSG.MEMORIES,
+          memories: await loadMemories(),
+        });
+        break;
+      }
+      case MSG.MEM_UPDATE: {
+        await updateMemory(msg.id, msg.text);
+        port.postMessage({
+          type: MSG.MEMORIES,
+          memories: await loadMemories(),
+        });
+        break;
+      }
+      case MSG.MEM_PIN: {
+        await setMemoryPinned(msg.id, msg.pinned);
+        port.postMessage({
+          type: MSG.MEMORIES,
+          memories: await loadMemories(),
+        });
+        break;
+      }
+      case MSG.MEM_DELETE: {
+        await deleteMemoryById(msg.id);
+        port.postMessage({
+          type: MSG.MEMORIES,
+          memories: await loadMemories(),
+        });
+        break;
+      }
+      case MSG.MEM_CLEAR: {
+        await clearMemories();
+        port.postMessage({
+          type: MSG.MEMORIES,
+          memories: await loadMemories(),
+        });
         break;
       }
     }

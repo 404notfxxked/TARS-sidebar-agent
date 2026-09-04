@@ -3,6 +3,8 @@
 // - messages:一条 InternalMsg 一行,主键 [sessionId, seq],按会话有序读写
 // - images:消息图片字节(压缩后),主键 [sessionId, id],随会话级联删除;
 //   消息行里只存元数据引用,列表/清理永不碰大对象
+// - memories(v3):跨会话长期记忆条目(keyPath id),独立于会话生命周期,
+//   不随会话删除级联
 // 只有后台 SW 访问此模块(单写者);面板经消息协议间接读写。
 //
 // 为什么选 IndexedDB 而不是 chrome.storage.local:多会话需要按记录追加与
@@ -11,10 +13,24 @@
 // 由保留期策略化解——数据本就是短命数据,见 sessionHistory.ts 的注释。
 
 const DB_NAME = "tars";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const SESSIONS = "sessions";
 const MESSAGES = "messages";
 const IMAGES = "images";
+const MEMORIES = "memories";
+
+/** 长期记忆条目(memories store):跨会话的用户偏好/事实,一行一条 */
+export interface MemoryRow {
+  id: string;
+  /** 一条独立成文的记忆(如「用户偏好简洁的中文回答」) */
+  text: string;
+  createdAt: number;
+  updatedAt: number;
+  /** 置顶:注入预算裁剪时优先保留 */
+  pinned: boolean;
+  /** 来源:user = 设置页手填;model = 模型经 memory_save 工具写入 */
+  source: "user" | "model";
+}
 
 /** 会话压缩元数据:seq ≤ uptoSeq 的消息已压缩为 summary 文本。
  *  压缩只改「发给模型的 prompt」,消息行不动 —— 库里保持全量历史 */
@@ -90,6 +106,10 @@ function openDb(): Promise<IDBDatabase> {
           keyPath: ["sessionId", "id"],
         });
         store.createIndex("byId", "id");
+      }
+      // v3:跨会话长期记忆
+      if (!db.objectStoreNames.contains(MEMORIES)) {
+        db.createObjectStore(MEMORIES, { keyPath: "id" });
       }
     };
     req.onsuccess = () => {
@@ -242,4 +262,32 @@ export async function clearAllRows(): Promise<void> {
 
 function sessionRange(id: string): IDBKeyRange {
   return IDBKeyRange.bound([id, -Infinity], [id, Infinity]);
+}
+
+// ---- 长期记忆(memories store,独立于会话生命周期) ----
+
+export async function listMemoryRows(): Promise<MemoryRow[]> {
+  const db = await openDb();
+  return p<MemoryRow[]>(db.transaction(MEMORIES).objectStore(MEMORIES).getAll());
+}
+
+export async function putMemoryRow(row: MemoryRow): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(MEMORIES, "readwrite");
+  tx.objectStore(MEMORIES).put(row);
+  await settled(tx);
+}
+
+export async function deleteMemoryRow(id: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(MEMORIES, "readwrite");
+  tx.objectStore(MEMORIES).delete(id);
+  await settled(tx);
+}
+
+export async function clearMemoryRows(): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(MEMORIES, "readwrite");
+  tx.objectStore(MEMORIES).clear();
+  await settled(tx);
 }

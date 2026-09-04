@@ -5,6 +5,11 @@ import { callOffscreenTool, ensureOffscreenDocument } from "../shared/docBridge"
 import { getToolExecutionContext } from "./toolContext";
 import { runWebSearch, type WebSearchArgs, type WebSearchResult } from "./webSearch";
 import { runWebFetch, type WebFetchArgs, type WebFetchResult } from "./webFetch";
+import {
+  addMemory,
+  deleteMemoriesByMatch,
+  loadMemories,
+} from "./memoryStore";
 import type { ToolSchema } from "../shared/toolTypes";
 
 /** 工具定义:注册表条目 = 共享的 ToolSchema(纯 schema)+ 可执行的 execute */
@@ -380,5 +385,65 @@ registerTool<
       filled?: string;
       pressEnterAfter?: boolean;
     };
+  },
+});
+
+// ---- 长期记忆工具(memory_ 前缀;设置页总开关关闭时 agent 侧按前缀滤除) ----
+// 保存/删除都即时落库,下个 run 的 <user-memory> 注入块即生效。
+// 「少而精」的约束写在 description 里:直注的记忆越多,模型误关联面越大。
+
+registerTool<
+  { content: string },
+  { saved: true; duplicate: boolean; total: number }
+>({
+  type: "function",
+  name: "memory_save",
+  displayName: "保存记忆",
+  description:
+    "把关于用户的长期稳定信息写入记忆,跨会话生效(如称呼、语言与简洁度偏好、饮食忌讳、长期项目背景)。\n何时用:用户明说「记住…」;或用户陈述了明显可复用的个人偏好/事实。\n何时别用:一次性任务细节、临时上下文、普通聊天内容都不要存;记忆应少而精,每条独立成文(一句话),不确定该不该存就别存。若 <user-memory> 里已有同一信息,不要重复保存。",
+  parameters: {
+    type: "object",
+    properties: {
+      content: {
+        type: "string",
+        description: "要记住的内容,一句独立成文的第三人称陈述,如「用户偏好简洁的中文回答」",
+      },
+    },
+    required: ["content"],
+  },
+  execute: async (args) => {
+    const { row, duplicate } = await addMemory(
+      typeof args?.content === "string" ? args.content : "",
+      "model",
+    );
+    const total = (await loadMemories()).length;
+    return { saved: true, duplicate, total, text: row.text };
+  },
+});
+
+registerTool<{ match: string }, { deleted: number; texts: string[] }>({
+  type: "function",
+  name: "memory_delete",
+  displayName: "删除记忆",
+  description:
+    "按关键词删除已保存的记忆(匹配记忆文本的子串,大小写不敏感,命中多条会一起删)。用户要求「忘掉/删除某条记忆」时使用;match 要足够精确,避免误删。删除结果会列出实际删掉的条目。",
+  parameters: {
+    type: "object",
+    properties: {
+      match: {
+        type: "string",
+        description: "匹配关键词(子串),如「香菜」会删掉所有含「香菜」的记忆",
+      },
+    },
+    required: ["match"],
+  },
+  execute: async (args) => {
+    const { count, deleted } = await deleteMemoriesByMatch(
+      typeof args?.match === "string" ? args.match : "",
+    );
+    if (count === 0) {
+      throw new Error("没有找到匹配的记忆;可换更精确的关键词重试,或告知用户在设置页的「记忆」小节手动查看/删除");
+    }
+    return { deleted: count, texts: deleted };
   },
 });

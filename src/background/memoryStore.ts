@@ -1,0 +1,172 @@
+// 长期记忆领域层:跨会话记住用户偏好/事实,一行一条存 IndexedDB(db "tars"
+// 的 memories store,经 sessionDb 的底层函数访问)。
+//
+// 设计要点(与 compaction 同构的「虚拟注入」原则):
+// - 记忆只在组装 prompt 时投影成一条 user 伪消息(<user-memory> 包裹),
+//   不写入任何会话的消息历史 —— 持久化锚点 persistedInCtx 从尾部计数,不受影响
+// - 注入预算封顶(MEMORY_BUDGET_TOKENS):超预算按 置顶优先 → 最近更新优先
+//   裁剪;头部自带三条使用纪律,压「模型把无关记忆硬关联进回答」的直注通病
+// - 保存入口两条:模型经 memory_save 工具(少而精,description 里约束)、
+//   用户在设置页手动添加 —— 都走 addMemory 做 校验/去重
+
+import { createLogger } from "../shared/logger";
+import type { InternalMsg } from "./provider/types";
+import type { MemoryRow } from "./sessionDb";
+import {
+  clearMemoryRows,
+  deleteMemoryRow,
+  listMemoryRows,
+  putMemoryRow,
+} from "./sessionDb";
+
+const log = createLogger({ ctx: "bg" });
+
+/** 单条记忆长度上限(字符):一条应是一句独立成文的事实,不是一段笔记 */
+const MEMORY_MAX_CHARS = 200;
+/** 注入预算(粗估 token):记忆块整体超过就按优先级裁剪 */
+const MEMORY_BUDGET_TOKENS = 600;
+
+/** 注入块头部:三条使用纪律,专门压「硬关联」——让带记忆 ≠ 用记忆 */
+const MEMORY_PREAMBLE = [
+  "以下是长期记住的用户信息,仅供背景参考:",
+  "- 仅当与当前问题相关时才参考;用户没问就不要引用",
+  "- 不要主动提起这些内容,也不要把无关话题往这里关联",
+  "- 与当前问题无关时,完全忽略,当作不存在",
+].join("\n");
+
+/** 粗估 token:CJK≈1.1 token/字,西文≈4 字符/token(与 agent.estimateTokens
+ *  同公式;单独放一份避免 agent ⇄ memoryStore 循环依赖) */
+function estimateTokens(text: string): number {
+  let cjk = 0;
+  for (const ch of text) if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(ch)) cjk++;
+  return Math.ceil(cjk * 1.1 + (text.length - cjk) / 4);
+}
+
+/** 全部记忆,注入顺序排序:置顶在前,其余按最近更新优先 */
+export async function loadMemories(): Promise<MemoryRow[]> {
+  const rows = await listMemoryRows();
+  return rows.sort(
+    (a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt,
+  );
+}
+
+export interface AddMemoryOutcome {
+  row: MemoryRow;
+  /** 已有完全相同文本:未新增,只把原条目提到最近更新 */
+  duplicate: boolean;
+}
+
+/** 新增一条(两个入口共用):文本收敛空白、限长、精确去重 */
+export async function addMemory(
+  text: string,
+  source: MemoryRow["source"],
+): Promise<AddMemoryOutcome> {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) throw new Error("记忆内容不能为空");
+  if (clean.length > MEMORY_MAX_CHARS) {
+    throw new Error(`记忆需在 ${MEMORY_MAX_CHARS} 字以内(当前 ${clean.length} 字),请浓缩成一句独立成文的事实`);
+  }
+  const now = Date.now();
+  const existing = (await listMemoryRows()).find((r) => r.text === clean);
+  if (existing) {
+    const row = { ...existing, updatedAt: now };
+    await putMemoryRow(row);
+    log.info("memory", "记忆重复,已刷新原条目", { duplicate: true });
+    return { row, duplicate: true };
+  }
+  const row: MemoryRow = {
+    id: crypto.randomUUID(),
+    text: clean,
+    createdAt: now,
+    updatedAt: now,
+    pinned: false,
+    source,
+  };
+  await putMemoryRow(row);
+  log.info("memory", "记忆已保存", { chars: clean.length, source });
+  return { row, duplicate: false };
+}
+
+export async function updateMemory(
+  id: string,
+  text: string,
+): Promise<MemoryRow> {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) throw new Error("记忆内容不能为空");
+  if (clean.length > MEMORY_MAX_CHARS) {
+    throw new Error(`记忆需在 ${MEMORY_MAX_CHARS} 字以内(当前 ${clean.length} 字)`);
+  }
+  const all = await loadMemories();
+  const prev = all.find((r) => r.id === id);
+  if (!prev) throw new Error("记忆不存在或已删除");
+  const row = { ...prev, text: clean, updatedAt: Date.now() };
+  await putMemoryRow(row);
+  log.info("memory", "记忆已更新", { chars: clean.length });
+  return row;
+}
+
+export async function setMemoryPinned(
+  id: string,
+  pinned: boolean,
+): Promise<void> {
+  const all = await loadMemories();
+  const prev = all.find((r) => r.id === id);
+  if (!prev) throw new Error("记忆不存在或已删除");
+  await putMemoryRow({ ...prev, pinned, updatedAt: prev.updatedAt });
+  log.info("memory", pinned ? "记忆已置顶" : "记忆已取消置顶", {});
+}
+
+/** 按 id 删除(设置页入口) */
+export async function deleteMemoryById(id: string): Promise<void> {
+  await deleteMemoryRow(id);
+  log.info("memory", "记忆已删除", {});
+}
+
+/** 按子串删除(模型工具入口):删掉所有 text 含 match 的条目,回报删了什么 */
+export async function deleteMemoriesByMatch(
+  match: string,
+): Promise<{ count: number; deleted: string[] }> {
+  const needle = match.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!needle) throw new Error("请给出要删除的记忆关键词");
+  const all = await loadMemories();
+  const hits = all.filter((r) => r.text.toLowerCase().includes(needle));
+  for (const r of hits) await deleteMemoryRow(r.id);
+  log.info("memory", "记忆按匹配删除", { count: hits.length });
+  return { count: hits.length, deleted: hits.map((r) => r.text) };
+}
+
+export async function clearMemories(): Promise<void> {
+  await clearMemoryRows();
+  log.info("memory", "记忆已全部清空", {});
+}
+
+/** 渲染注入块文本:头部纪律 + 预算内的条目(前缀「・」),无记忆返回 null */
+export function renderMemoryBlock(memories: MemoryRow[]): string | null {
+  if (memories.length === 0) return null;
+  const lines: string[] = [];
+  let budget = MEMORY_BUDGET_TOKENS - estimateTokens(MEMORY_PREAMBLE);
+  let dropped = 0;
+  for (const r of memories) {
+    const cost = estimateTokens(`・${r.text}`);
+    if (budget - cost < 0) {
+      dropped++;
+      continue;
+    }
+    budget -= cost;
+    lines.push(`・${r.text}`);
+  }
+  if (lines.length === 0) return null;
+  if (dropped > 0) {
+    log.info("memory", "记忆超出注入预算,已裁剪", { kept: lines.length, dropped });
+  }
+  return `${MEMORY_PREAMBLE}\n${lines.join("\n")}`;
+}
+
+/** 记忆块 → user 角色伪消息:插在 system 之后、压缩摘要之前(记忆比摘要
+ *  稳定,缓存前缀更稳);角色用 user,兼容严格端点 —— 同 summaryToMsg */
+export function memoryToMsg(block: string): Extract<InternalMsg, { role: "user" }> {
+  return {
+    role: "user",
+    content: `<user-memory>\n${block}\n</user-memory>`,
+  };
+}

@@ -234,6 +234,8 @@ export default function ChatView({
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   // 当前会话的压缩点(存在 = 更早的历史已压成摘要,列表里渲染分隔条)
   const [compaction, setCompaction] = useState<CompactionMark | null>(null);
+  /** 本轮已写入的记忆条数(memory_save 成功且非重复时累计);回复尾轻提示用 */
+  const [memorySaved, setMemorySaved] = useState(0);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [currentSession, setCurrentSession] = useState("");
@@ -507,6 +509,7 @@ export default function ChatView({
         case MSG.AGENT_STARTED:
           sessionRef.current = evt.sessionId;
           setStatus("thinking");
+          setMemorySaved(0); // 新一轮,轻提示重新累计
           // 新一轮开始:文本段归档兜底(正常在 submit 已做),过程段丢弃
           flushRunTexts();
           clearRun();
@@ -532,6 +535,11 @@ export default function ChatView({
           break;
         case MSG.AGENT_TOOL_RESULT:
           applyToolResult(evt);
+          // 记忆落库轻提示:成功的非重复保存累计,回复尾渲染「已写入 N 条」
+          if (evt.name === "memory_save" && evt.ok) {
+            const r = evt.result as { duplicate?: boolean } | null;
+            if (!r?.duplicate) setMemorySaved((n) => n + 1);
+          }
           break;
         case MSG.AGENT_DONE:
           settleRun();
@@ -617,6 +625,7 @@ export default function ChatView({
     log.info("chat", "open session", { sessionId });
     setMessages([]);
     setCompaction(null);
+    setMemorySaved(0);
     setInput("");
     clearRun();
     setCurrentSession(sessionId);
@@ -752,6 +761,7 @@ export default function ChatView({
     log.debug("chat", "new conversation", { old: sessionRef.current });
     setMessages([]);
     setCompaction(null);
+    setMemorySaved(0);
     setInput("");
     clearRun(); // 对话清空,本轮执行流也不保留
     setCurrentSession("");
@@ -991,6 +1001,17 @@ export default function ChatView({
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
             </div>
           )}
+        {/* 记忆落库轻提示:仅当本轮发生过保存时出现,点击进设置页管理 */}
+        {memorySaved > 0 && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="memory-hint"
+            aria-label={`本轮已写入 ${memorySaved} 条记忆,查看或编辑`}
+          >
+            <ArchiveIcon /> 已写入 {memorySaved} 条记忆 · 查看/编辑
+          </button>
+        )}
       </div>
 
       <form

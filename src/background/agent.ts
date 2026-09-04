@@ -27,6 +27,7 @@ import {
 import { loadConfig, inferMaxTokensField } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
 import { base64ToBytes } from "../shared/imageCodec";
+import { loadMemories, memoryToMsg, renderMemoryBlock } from "./memoryStore";
 import {
   loadImage,
   loadHistory,
@@ -155,16 +156,19 @@ export async function runAgentLoop(
     // 联网开关:开关打开即暴露 web_* 工具——auto 模式(免 Key 抓取兜底)无需配置;
     // 选了服务商但没填 key 时视为 auto 兜底,不再隐藏工具
     const webEnabled = config.webSearch === true;
-    const tools = webEnabled
-      ? toProviderToolSchemas()
-      : toProviderToolSchemas().filter((t) => !t.name.startsWith("web_"));
-    // 执行上下文档案:模型与联网开关(index.ts 的 run started 已记用户原文,
+    // 长期记忆开关:开 = 注册 memory_* 工具 + 每轮注入 <user-memory>;关 = 彻底无痕
+    const memoryEnabled = config.memory !== false;
+    const tools = toProviderToolSchemas()
+      .filter((t) => webEnabled || !t.name.startsWith("web_"))
+      .filter((t) => memoryEnabled || !t.name.startsWith("memory_"));
+    // 执行上下文档案:模型与开关状态(index.ts 的 run started 已记用户原文,
     // 这里补齐判断搜索质量时需要的模型身份)
     log.info("agent", "run config", {
       session: payload.sessionId ?? "",
       provider: cur.name,
       model: config.model,
       web: webEnabled,
+      memory: memoryEnabled,
     });
 
     const history = await loadHistory(payload.sessionId ?? "");
@@ -193,9 +197,16 @@ export async function runAgentLoop(
     // 基线优先用上次 run 的实测 prompt tokens(会话行 ctx,精确覆盖到最终轮
     // 请求的全部消息),缺失或对不上(如落盘失败)时退回全量估算
     const sessionInfo = await loadSessionInfo(payload.sessionId ?? "");
+    // 长期记忆投影:发送时拼装,不写历史(与压缩同构);放在压缩判定前算进
+    // 固定开销,记忆块本身也占窗口
+    const memoryBlock = memoryEnabled
+      ? renderMemoryBlock(await loadMemories())
+      : null;
+    const memoryMsg = memoryBlock ? memoryToMsg(memoryBlock) : null;
     const fixedEstimate =
       estimateTokens(systemContent) +
       estimateTokens(userContent) +
+      (memoryMsg ? estimateTokens(memoryMsg.content) : 0) +
       runImages.length * IMAGE_TOKEN_ESTIMATE;
     const baselineTokens =
       (sessionInfo.ctx && sessionInfo.ctx.msgs <= history.length
@@ -238,6 +249,9 @@ export async function runAgentLoop(
 
     const messages: InternalMsg[] = [
       { role: "system", content: systemContent },
+      // 长期记忆:紧跟 system、先于压缩摘要 —— 记忆比摘要稳定,缓存前缀
+      // [system, memory] 跨 run 命中率更高
+      ...(memoryMsg ? [memoryMsg] : []),
       // 压缩摘要:紧跟 system,历史从压缩点接续 —— 代价是压缩发生的那次
       // 请求失去 prompt cache 前缀命中,可接受(不压缩的代价是撞窗 400)
       ...(summaryMsg ? [summaryMsg] : []),
@@ -245,6 +259,7 @@ export async function runAgentLoop(
       ...trimHistoryForWindow(tail, {
         contextTokens: modelEntry?.contextTokens,
         maxTokens: modelEntry?.maxTokens,
+        // fixedEstimate 是压缩前口径(含记忆块),摘要 token 在此处补上
         currentEstimate:
           fixedEstimate + (summaryMsg ? estimateTokens(summaryMsg.content) : 0),
       }),
@@ -255,7 +270,7 @@ export async function runAgentLoop(
       },
     ];
     // 构造完再取:非新增前缀条数 = 总长 − 2(system 与本轮 user),
-    // 对 [system, 摘要?, ...保留历史, user] 的形状依然成立
+    // 对 [system, 记忆?, 摘要?, ...保留历史, user] 的形状依然成立
     const persistedInCtx = messages.length - 2;
 
     // 工具分发:注册表里的工具统一在这里执行。

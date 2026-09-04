@@ -84,6 +84,9 @@ export interface AppConfig {
   /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关
    *  (搜索已改为 BYOK 服务,开启还需配好 search.services[...].apiKey 才真正可用) */
   webSearch: boolean;
+  /** 长期记忆总开关:开 = 注册 memory_* 工具 + 每轮注入 <user-memory>;
+   *  缺省 = 开。关 = 不注册工具不注入,彻底无痕 */
+  memory: boolean;
   /** 搜索服务配置;开关开着但当前服务 apiKey 为空时 web_search 退回免 Key 抓取 */
   search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
@@ -148,6 +151,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "theme",
     "accent",
     "webSearch",
+    "memory",
     "search",
     "historyRetention",
     "compact",
@@ -178,6 +182,8 @@ export async function loadConfig(): Promise<AppConfig> {
       : "green",
     // 联网搜索 BYOK 化后缺省关闭:开关显式打开 + 配好 key 才对模型可用
     webSearch: l.webSearch === true,
+    // 长期记忆缺省开启(记忆为空时除工具 schema 外无成本;关 = 彻底无痕)
+    memory: l.memory !== false,
     search: normalizeSearch(l.search),
     // 历史保留天数:与 sessionHistory.retentionDays 的缺省保持一致(7 天)
     historyRetention:
@@ -283,6 +289,7 @@ export async function savePrefs(
       | "theme"
       | "accent"
       | "webSearch"
+      | "memory"
       | "search"
       | "historyRetention"
       | "compact"

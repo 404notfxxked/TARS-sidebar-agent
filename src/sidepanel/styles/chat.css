@@ -392,3 +392,29 @@
   font-size: 11.5px;
   white-space: nowrap;
 }
+
+/* 记忆落库轻提示:与压缩分隔条同一设计语言(细线 + 小字),但可点击进设置 */
+.memory-hint {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 11.5px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+.memory-hint:hover {
+  color: var(--md-sys-color-on-surface);
+}
+.memory-hint::before,
+.memory-hint::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--md-sys-color-outline-variant);
+}
