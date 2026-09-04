@@ -37,7 +37,10 @@ export default function App() {
         onActiveSessionChange={setActiveSessionId}
       />
       {overlay !== null && (
-        <div className="absolute inset-0 z-10 bg-surface-container">
+        // 必须自身是 flex 列:内页(设置/历史)根节点靠 flex-1 撑满,
+        // 若这里是普通块,内页高度随内容生长 → 文档级滚动,顶栏吸顶失效、
+        // 内容溢出悬浮层底色露出 body 的 surface(看起来像背景断层)
+        <div className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-surface-container">
           {overlay === "settings" ? (
             <SettingsView onBack={() => setOverlay(null)} />
           ) : (

@@ -21,13 +21,15 @@
   }
 
   /* ---- 历史会话页 ---- */
-  /* 日期组头:滚动时吸顶,底色与页面一致(否则行从字下穿过) */
+  /* 日期组头:滚动时吸顶。吸顶元素的间距必须进自身 padding(底色盖得住),
+     用 margin 会留一条缝,行会从字上穿过;滚动容器顶部也不留 padding,
+     否则吸顶后内容同样从那条缝里露出来 */
   .sessions-group-head {
     position: sticky;
     top: 0;
     z-index: 10;
-    margin: 4px 0 2px;
-    padding: 4px 8px;
+    margin: 0;
+    padding: 8px 8px 4px;
     font-size: 12px;
     font-weight: 500;
     color: var(--md-sys-color-on-surface-variant);

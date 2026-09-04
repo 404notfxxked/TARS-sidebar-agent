@@ -888,22 +888,14 @@ export default function ChatView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex justify-end gap-1 px-4 pb-1 pt-3">
+      {/* 会话操作(历史/新建)居左、全局设置居右:高频对象操作占视线起点,
+          低频全局项放视觉终点,两侧分组也避免三个图标挤在一起的误触 */}
+      <header className="flex items-center justify-between px-4 pb-1 pt-3">
         {(() => {
           // 运行中置灰「新对话 / 历史会话」:二者在运行中都不可用(切换能力后续再做)
           const busy = status !== "idle";
           return (
-            <>
-              <button
-                type="button"
-                onClick={resetConversation}
-                disabled={busy}
-                aria-label="开始新对话"
-                title={busy ? "回复结束后可开始新对话" : undefined}
-                className={busy ? "icon-btn opacity-30" : "icon-btn"}
-              >
-                <PlusIcon />
-              </button>
+            <div className="flex gap-1">
               <button
                 type="button"
                 onClick={onOpenSessions}
@@ -914,7 +906,17 @@ export default function ChatView({
               >
                 <HistoryIcon />
               </button>
-            </>
+              <button
+                type="button"
+                onClick={resetConversation}
+                disabled={busy}
+                aria-label="开始新对话"
+                title={busy ? "回复结束后可开始新对话" : undefined}
+                className={busy ? "icon-btn opacity-30" : "icon-btn"}
+              >
+                <PlusIcon />
+              </button>
+            </div>
           );
         })()}
         <button

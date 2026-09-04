@@ -208,7 +208,8 @@ export default function SessionsView({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1 pb-3">
+      {/* 顶部不留 padding:组头吸顶后若上方有缝,行会从缝里露出来(间距在组头自身 padding 里) */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {sessions === null ? (
           <SkeletonRows />
         ) : sessions.length === 0 ? (
