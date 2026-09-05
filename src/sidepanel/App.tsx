@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 import ChatView from "./ChatView";
 import SettingsView from "./SettingsView";
 import SessionsView from "./SessionsView";
+import MemoryView from "./MemoryView";
 
-type Overlay = null | "settings" | "sessions";
+type Overlay = null | "settings" | "sessions" | "memory";
 
 export default function App() {
   const [overlay, setOverlay] = useState<Overlay>(null);
@@ -16,6 +17,8 @@ export default function App() {
   const [resumeSessionId, setResumeSessionId] = useState<string | null>(null);
   /** ChatView 回传的当前会话,历史列表里高亮「当前」 */
   const [activeSessionId, setActiveSessionId] = useState("");
+  /** 记忆页的来路:返回时回到原处(设置页进来回设置页,聊天轻提示进来回对话) */
+  const [memoryFrom, setMemoryFrom] = useState<"chat" | "settings">("chat");
 
   // 悬浮层打开期间 Esc 直接返回
   useEffect(() => {
@@ -32,6 +35,10 @@ export default function App() {
       <ChatView
         onOpenSettings={() => setOverlay("settings")}
         onOpenSessions={() => setOverlay("sessions")}
+        onOpenMemory={() => {
+          setMemoryFrom("chat");
+          setOverlay("memory");
+        }}
         resumeSessionId={resumeSessionId}
         onResumeDone={() => setResumeSessionId(null)}
         onActiveSessionChange={setActiveSessionId}
@@ -42,8 +49,14 @@ export default function App() {
         // 内容溢出悬浮层底色露出 body 的 surface(看起来像背景断层)
         <div className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-surface-container">
           {overlay === "settings" ? (
-            <SettingsView onBack={() => setOverlay(null)} />
-          ) : (
+            <SettingsView
+              onBack={() => setOverlay(null)}
+              onOpenMemory={() => {
+                setMemoryFrom("settings");
+                setOverlay("memory");
+              }}
+            />
+          ) : overlay === "sessions" ? (
             <SessionsView
               onBack={() => setOverlay(null)}
               onPick={(id) => {
@@ -55,6 +68,10 @@ export default function App() {
                 setOverlay(null);
               }}
               activeId={activeSessionId}
+            />
+          ) : (
+            <MemoryView
+              onBack={() => setOverlay(memoryFrom === "settings" ? "settings" : null)}
             />
           )}
         </div>

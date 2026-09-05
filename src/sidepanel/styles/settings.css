@@ -40,6 +40,39 @@
     animation: msg-in 250ms var(--ease-emphasized) backwards;
   }
 
+  /* ---- 记忆管理页 ---- */
+  /* 行入场:同历史页的交错淡入 */
+  .memory-row-in {
+    animation: msg-in 250ms var(--ease-emphasized) backwards;
+  }
+  /* 添加条:胶囊形态同搜索条,左侧无图标;右内缘嵌一枚圆形添加钮 */
+  .memory-add {
+    width: 100%;
+    padding: 8px 44px 8px 14px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-surface-container-highest);
+    font-size: 12.5px;
+    color: var(--md-sys-color-on-surface);
+    caret-color: var(--md-sys-color-primary);
+    outline: none;
+  }
+  .memory-add::placeholder {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.65;
+  }
+  /* 「AI 写入」微标:行内跟在文本后,弱化为背景色小圆标 */
+  .memory-src {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 10px;
+    line-height: 1.6;
+    vertical-align: 1px;
+  }
+
   /* ---- 分组小标题(卡片上方的节标题)----
      中文不吃 uppercase/宽字距,就是普通 title:13/500 次级色 */
   .settings-eyebrow {
@@ -225,6 +258,12 @@
     width: max-content;
     min-width: 150px;
     max-width: min(280px, calc(100vw - 40px));
+  }
+  /* 从锚点下方弹出、右缘对齐(记忆页溢出菜单) */
+  .combo-pop--down {
+    top: calc(100% + 6px);
+    right: 0;
+    width: max-content;
   }
   .combo-option {
     display: block;
@@ -536,10 +575,16 @@
   .model-row-action:hover {
     background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
   }
+  /* 危险动作(文字钮):恒 error 色 —— 危险语义不随确认态才出现,
+     两段确认靠 字重 + 文案 升级;hover 红底是常态反馈不是语义切换 */
   .model-row-action-danger {
     color: var(--md-sys-color-error);
   }
   .model-row-action-danger:hover {
     background: color-mix(in srgb, var(--md-sys-color-error) 8%, transparent);
+  }
+  /* 两段确认态:在危险色之上再加字重,视觉「加重」与文案一起构成确认信号 */
+  .model-row-action-danger.confirming {
+    font-weight: 600;
   }
 }

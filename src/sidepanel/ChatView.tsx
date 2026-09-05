@@ -219,12 +219,15 @@ function resolveImageData(evt: { id: string; mime?: string; base64?: string }): 
 export default function ChatView({
   onOpenSettings,
   onOpenSessions,
+  onOpenMemory,
   resumeSessionId,
   onResumeDone,
   onActiveSessionChange,
 }: {
   onOpenSettings: () => void;
   onOpenSessions: () => void;
+  /** 轻提示直通记忆管理页(不经设置页中转,同 ChatGPT「Memory updated」) */
+  onOpenMemory: () => void;
   /** 历史列表选中的会话:非空时打开它,完事后回调置空 */
   resumeSessionId: string | null;
   onResumeDone: () => void;
@@ -1001,11 +1004,11 @@ export default function ChatView({
               <span className="h-1 w-1 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
             </div>
           )}
-        {/* 记忆落库轻提示:仅当本轮发生过保存时出现,点击进设置页管理 */}
+        {/* 记忆落库轻提示:仅当本轮发生过保存时出现,点击直通记忆管理页 */}
         {memorySaved > 0 && (
           <button
             type="button"
-            onClick={onOpenSettings}
+            onClick={onOpenMemory}
             className="memory-hint"
             aria-label={`本轮已写入 ${memorySaved} 条记忆,查看或编辑`}
           >

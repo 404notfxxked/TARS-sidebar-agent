@@ -26,37 +26,11 @@ import { fetchModels } from "../background/provider";
 import { clearAllLogs, readAllLogEntries, toJsonl } from "../shared/logger";
 import { applyThemePreference, applyAccent } from "./theme";
 import { MSG, PORT_NAME, type MemoryItem } from "../shared/messages";
+import { memoryUsedTokens } from "../shared/memory";
+import { memReq } from "./memoryClient";
 
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-
-/** 一次性端口发一条 MEM_* 请求,等后台回 MEMORIES 全量列表(设置页记忆小节用) */
-function memReq(msg: Record<string, unknown>): Promise<MemoryItem[]> {
-  return new Promise((resolve, reject) => {
-    const port = chrome.runtime.connect({ name: PORT_NAME });
-    port.onMessage.addListener(
-      (evt: { type?: string; memories?: MemoryItem[] }) => {
-        if (evt.type === MSG.MEMORIES) {
-          resolve(evt.memories ?? []);
-          port.disconnect();
-        }
-      },
-    );
-    port.onDisconnect.addListener(() => reject(new Error("port closed")));
-    port.postMessage(msg);
-  });
-}
-
-/** 粗估 token(与后台同公式):记忆小节展示「每轮约 X token」用 */
-function estimateMemoryTokens(items: MemoryItem[]): number {
-  let total = 0;
-  for (const m of items) {
-    let cjk = 0;
-    for (const ch of m.text) if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(ch)) cjk++;
-    total += Math.ceil(cjk * 1.1 + (m.text.length - cjk) / 4);
-  }
-  return total;
-}
 
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: "system", label: "跟随系统" },
@@ -276,8 +250,8 @@ function ModelRow({
             )}
             <button
               type="button"
-              className={`model-row-action${
-                confirming ? " model-row-action-danger" : ""
+              className={`model-row-action model-row-action-danger${
+                confirming ? " confirming" : ""
               }`}
               onClick={onRemove}
             >
@@ -557,7 +531,9 @@ function ProviderCard({
           <div className="mb-1 mt-2">
             <button
               type="button"
-              className={`model-row-action${confirming ? " model-row-action-danger" : ""}`}
+              className={`model-row-action model-row-action-danger${
+                confirming ? " confirming" : ""
+              }`}
               onClick={onRemove}
             >
               {confirming ? "再点一次确认删除此服务" : "删除此服务"}
@@ -569,7 +545,14 @@ function ProviderCard({
   );
 }
 
-export default function SettingsView({ onBack }: { onBack: () => void }) {
+export default function SettingsView({
+  onBack,
+  onOpenMemory,
+}: {
+  onBack: () => void;
+  /** 记忆摘要入口行 → 记忆管理整页(列表不长在这里:平铺时一节超一屏) */
+  onOpenMemory: () => void;
+}) {
   // ── 模型服务供应商 ──
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [modelProvider, setModelProvider] = useState("");
@@ -587,14 +570,9 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
       brave: { baseUrl: "", apiKey: "" },
     },
   });
-  // ── 长期记忆:总开关 + 跨会话记忆条目 ──
+  // ── 长期记忆:总开关(条目管理在独立的记忆整页,这里只留摘要入口行) ──
   const [memoryOn, setMemoryOn] = useState(true);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
-  const [newMemory, setNewMemory] = useState("");
-  const [editingMemId, setEditingMemId] = useState<string | null>(null);
-  const [editingMemText, setEditingMemText] = useState("");
-  const [confirmDelMemId, setConfirmDelMemId] = useState<string | null>(null);
-  const [confirmClearMem, setConfirmClearMem] = useState(false);
   // ── 上下文压缩:档位 + 压缩用模型引用("providerId||modelId",空 = 跟随当前) ──
   const [compact, setCompact] = useState<CompactLevel>("standard");
   const [compactRef, setCompactRef] = useState("");
@@ -645,65 +623,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     if (save) run(savePrefs({ search: next }));
   };
 
-  // ── 长期记忆:条目增删改(全部经 MEM_* 消息,以后台回的全量列表刷新本地态) ──
-  const addMemoryItem = async () => {
-    const text = newMemory.trim();
-    if (!text) return;
-    try {
-      setMemories(await memReq({ type: MSG.MEM_ADD, text }));
-      setNewMemory("");
-      pingSaved();
-    } catch {
-      setSaveError(true);
-    }
-  };
-  /** 行内编辑提交:失焦/回车触发;清空文本视为取消 */
-  const commitEditMemory = async (id: string, text: string) => {
-    setEditingMemId(null);
-    if (!text.trim()) return;
-    try {
-      setMemories(await memReq({ type: MSG.MEM_UPDATE, id, text: text.trim() }));
-      pingSaved();
-    } catch {
-      setSaveError(true);
-    }
-  };
-  const togglePinMemory = async (m: MemoryItem) => {
-    try {
-      setMemories(
-        await memReq({ type: MSG.MEM_PIN, id: m.id, pinned: !m.pinned }),
-      );
-      pingSaved();
-    } catch {
-      setSaveError(true);
-    }
-  };
-  /** 两段确认删除(同供应商卡片的交互):首点进入待确认,3 秒未跟进自动复位 */
-  const deleteMemoryItem = (id: string) => {
-    if (confirmDelMemId !== id) {
-      setConfirmDelMemId(id);
-      window.setTimeout(
-        () => setConfirmDelMemId((cur) => (cur === id ? null : cur)),
-        3000,
-      );
-      return;
-    }
-    setConfirmDelMemId(null);
-    memReq({ type: MSG.MEM_DELETE, id })
-      .then(setMemories)
-      .catch(() => setSaveError(true));
-  };
-  const clearAllMemories = () => {
-    if (!confirmClearMem) {
-      setConfirmClearMem(true);
-      window.setTimeout(() => setConfirmClearMem(false), 3000);
-      return;
-    }
-    setConfirmClearMem(false);
-    memReq({ type: MSG.MEM_CLEAR })
-      .then(setMemories)
-      .catch(() => setSaveError(true));
-  };
+  // ── 长期记忆条目的增删改/置顶/清空都在记忆整页(MemoryView),这里只读列表做摘要 ──
 
   useEffect(() => {
     loadConfig().then((c) => {
@@ -886,7 +806,19 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
     URL.revokeObjectURL(url);
   };
 
+  // 诊断日志清空:与记忆/历史的两段确认同款(危险动作不单击直发)
+  const [confirmClearLogs, setConfirmClearLogs] = useState(false);
+  useEffect(() => {
+    if (!confirmClearLogs) return;
+    const t = window.setTimeout(() => setConfirmClearLogs(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmClearLogs]);
   const clearLogs = async () => {
+    if (!confirmClearLogs) {
+      setConfirmClearLogs(true);
+      return;
+    }
+    setConfirmClearLogs(false);
     await clearAllLogs();
     setLogCount(0);
   };
@@ -1139,7 +1071,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
           )}
         </div>
 
-        {/* ── 记忆 ── */}
+        {/* ── 记忆:开关 + 摘要入口行;条目管理在记忆整页(MemoryView)── */}
         <h3 className="settings-eyebrow mb-1.5 mt-4">记忆</h3>
         <div className="settings-card">
           <div className="settings-block">
@@ -1165,144 +1097,39 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
             <p className="field-hint">
               开启后，对话中你明说「记住…」或提到稳定的个人偏好时，AI
               会写入记忆（聊天流里会提示），跨会话生效并随每轮请求携带。
+              关闭只是停止保存与注入，已存记忆不会删除，重开即恢复。
             </p>
           </div>
 
           {memoryOn && (
-            <>
-              <div className="settings-field">
-                <label className="field-label" htmlFor="memory-new-input">
-                  添加记忆
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    id="memory-new-input"
-                    type="text"
-                    value={newMemory}
-                    maxLength={200}
-                    onChange={(e) => setNewMemory(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void addMemoryItem();
-                      }
-                    }}
-                    placeholder="如：用户偏好简洁的中文回答"
-                    autoComplete="off"
-                    className="field-input flex-1"
-                  />
-                  <button
-                    type="button"
-                    className="settings-btn shrink-0"
-                    onClick={() => void addMemoryItem()}
-                    disabled={!newMemory.trim()}
-                  >
-                    添加
-                  </button>
-                </div>
-              </div>
-
-              {memories.length === 0 ? (
-                <p className="field-hint">
-                  还没有记忆。在对话里说「记住…」，或用上面的输入框手动添加。
-                </p>
-              ) : (
-                <div className="settings-field">
-                  <div className="field-label">
-                    已保存（{memories.length} 条 · 每轮约{" "}
-                    {estimateMemoryTokens(memories)} token）
-                  </div>
-                  <ul className="m-0 list-none p-0">
-                    {memories.map((m) => (
-                      <li
-                        key={m.id}
-                        className="flex items-start justify-between gap-2 py-1.5"
-                      >
-                        {editingMemId === m.id ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            value={editingMemText}
-                            maxLength={200}
-                            onChange={(e) => setEditingMemText(e.target.value)}
-                            onBlur={(e) =>
-                              void commitEditMemory(m.id, e.target.value)
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.currentTarget.blur();
-                            }}
-                            className="field-input flex-1"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            className="flex-1 text-left text-[13px] leading-5"
-                            title="点击编辑"
-                            onClick={() => {
-                              setEditingMemId(m.id);
-                              setEditingMemText(m.text);
-                            }}
-                          >
-                            {m.pinned ? "★ " : ""}
-                            {m.text}
-                          </button>
-                        )}
-                        <span className="flex shrink-0 items-center gap-0.5">
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            aria-label={m.pinned ? "取消置顶" : "置顶"}
-                            title={m.pinned ? "取消置顶" : "置顶"}
-                            onClick={() => void togglePinMemory(m)}
-                          >
-                            {m.pinned ? "☆" : "★"}
-                          </button>
-                          {confirmDelMemId === m.id ? (
-                            <button
-                              type="button"
-                              className="btn-text danger"
-                              aria-label="确认删除"
-                              onClick={() => deleteMemoryItem(m.id)}
-                            >
-                              确认删除
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              aria-label="删除记忆"
-                              title="删除"
-                              onClick={() => deleteMemoryItem(m.id)}
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="mt-1">
-                    {confirmClearMem ? (
-                      <button
-                        type="button"
-                        className="btn-text danger"
-                        onClick={clearAllMemories}
-                      >
-                        再点一次确认清空全部记忆
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn-text danger"
-                        onClick={clearAllMemories}
-                      >
-                        清空全部记忆
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </>
+            <button
+              type="button"
+              onClick={onOpenMemory}
+              aria-label="管理记忆"
+              className="-mx-1 flex w-full items-center justify-between rounded-md px-1 py-1.5 text-left transition-colors duration-150 hover:bg-on-surface/8"
+            >
+              <span className="min-w-0 truncate pr-2 text-[13px] text-on-surface">
+                {memories.length > 0
+                  ? `已保存 ${memories.length} 条 · 每轮注入约 ${memoryUsedTokens(memories)} token`
+                  : "还没有记忆，去对话里说「记住…」或到记忆页手动添加"}
+              </span>
+              <span className="flex shrink-0 items-center gap-0.5 text-[12.5px] font-medium text-primary">
+                管理
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 3.5 4.5 4.5L6 12.5" />
+                </svg>
+              </span>
+            </button>
           )}
         </div>
 
@@ -1380,7 +1207,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
             <button
               type="button"
               onClick={clearAllHistory}
-              className={`btn-text ${confirmClear ? "danger" : "muted"}`}
+              className="btn-text danger"
             >
               {confirmClear ? "再点一次确认清空" : "清空全部历史"}
             </button>
@@ -1415,7 +1242,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
               onClick={clearLogs}
               className="btn-text danger"
             >
-              清空
+              {confirmClearLogs ? "再点一次确认清空" : "清空"}
             </button>
           </div>
         </div>

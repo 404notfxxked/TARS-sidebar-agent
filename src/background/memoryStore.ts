@@ -4,12 +4,17 @@
 // 设计要点(与 compaction 同构的「虚拟注入」原则):
 // - 记忆只在组装 prompt 时投影成一条 user 伪消息(<user-memory> 包裹),
 //   不写入任何会话的消息历史 —— 持久化锚点 persistedInCtx 从尾部计数,不受影响
-// - 注入预算封顶(MEMORY_BUDGET_TOKENS):超预算按 置顶优先 → 最近更新优先
-//   裁剪;头部自带三条使用纪律,压「模型把无关记忆硬关联进回答」的直注通病
+// - 注入预算封顶:超预算按 置顶优先 → 最近更新优先 裁剪(预算/粗估/规划在
+//   shared/memory.ts,与面板共用同一套估算)
 // - 保存入口两条:模型经 memory_save 工具(少而精,description 里约束)、
-//   用户在设置页手动添加 —— 都走 addMemory 做 校验/去重
+//   用户在记忆页手动添加 —— 都走 addMemory 做 校验/去重
 
 import { createLogger } from "../shared/logger";
+import {
+  MEMORY_MAX_CHARS,
+  MEMORY_PREAMBLE,
+  planMemoryInjection,
+} from "../shared/memory";
 import type { InternalMsg } from "./provider/types";
 import type { MemoryRow } from "./sessionDb";
 import {
@@ -20,27 +25,6 @@ import {
 } from "./sessionDb";
 
 const log = createLogger({ ctx: "bg" });
-
-/** 单条记忆长度上限(字符):一条应是一句独立成文的事实,不是一段笔记 */
-const MEMORY_MAX_CHARS = 200;
-/** 注入预算(粗估 token):记忆块整体超过就按优先级裁剪 */
-const MEMORY_BUDGET_TOKENS = 600;
-
-/** 注入块头部:三条使用纪律,专门压「硬关联」——让带记忆 ≠ 用记忆 */
-const MEMORY_PREAMBLE = [
-  "以下是长期记住的用户信息,仅供背景参考:",
-  "- 仅当与当前问题相关时才参考;用户没问就不要引用",
-  "- 不要主动提起这些内容,也不要把无关话题往这里关联",
-  "- 与当前问题无关时,完全忽略,当作不存在",
-].join("\n");
-
-/** 粗估 token:CJK≈1.1 token/字,西文≈4 字符/token(与 agent.estimateTokens
- *  同公式;单独放一份避免 agent ⇄ memoryStore 循环依赖) */
-function estimateTokens(text: string): number {
-  let cjk = 0;
-  for (const ch of text) if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(ch)) cjk++;
-  return Math.ceil(cjk * 1.1 + (text.length - cjk) / 4);
-}
 
 /** 全部记忆,注入顺序排序:置顶在前,其余按最近更新优先 */
 export async function loadMemories(): Promise<MemoryRow[]> {
@@ -140,26 +124,18 @@ export async function clearMemories(): Promise<void> {
   log.info("memory", "记忆已全部清空", {});
 }
 
-/** 渲染注入块文本:头部纪律 + 预算内的条目(前缀「・」),无记忆返回 null */
+/** 渲染注入块文本:头部纪律 + 预算内的条目(前缀「・」),无记忆返回 null。
+ *  装填/裁剪策略在 shared/memory.ts 的 planMemoryInjection,与面板估算同源 */
 export function renderMemoryBlock(memories: MemoryRow[]): string | null {
-  if (memories.length === 0) return null;
-  const lines: string[] = [];
-  let budget = MEMORY_BUDGET_TOKENS - estimateTokens(MEMORY_PREAMBLE);
-  let dropped = 0;
-  for (const r of memories) {
-    const cost = estimateTokens(`・${r.text}`);
-    if (budget - cost < 0) {
-      dropped++;
-      continue;
-    }
-    budget -= cost;
-    lines.push(`・${r.text}`);
+  const { kept, dropped } = planMemoryInjection(memories);
+  if (kept.length === 0) return null;
+  if (dropped.length > 0) {
+    log.info("memory", "记忆超出注入预算,已裁剪", {
+      kept: kept.length,
+      dropped: dropped.length,
+    });
   }
-  if (lines.length === 0) return null;
-  if (dropped > 0) {
-    log.info("memory", "记忆超出注入预算,已裁剪", { kept: lines.length, dropped });
-  }
-  return `${MEMORY_PREAMBLE}\n${lines.join("\n")}`;
+  return `${MEMORY_PREAMBLE}\n${kept.map((r) => `・${r.text}`).join("\n")}`;
 }
 
 /** 记忆块 → user 角色伪消息:插在 system 之后、压缩摘要之前(记忆比摘要
