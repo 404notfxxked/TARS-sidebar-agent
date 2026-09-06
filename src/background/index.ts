@@ -14,6 +14,10 @@ import {
 } from "../shared/logger";
 import { runAgentLoop, type AgentPort } from "./agent";
 import {
+  listServerTools,
+  testServer,
+} from "./mcpManager";
+import {
   addMemory,
   clearMemories,
   deleteMemoryById,
@@ -238,6 +242,31 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           type: MSG.MEMORIES,
           memories: await loadMemories(),
         });
+        break;
+      }
+      case MSG.MCP_TEST: {
+        // 测试连接:连 tools/list 一起拉(同一条缓存,成功即预热下次 run)
+        try {
+          port.postMessage({ type: MSG.MCP_TEST_RESULT, ...(await testServer(msg.server)) });
+        } catch (err) {
+          port.postMessage({
+            type: MSG.MCP_TEST_RESULT,
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+      case MSG.MCP_TOOLS: {
+        try {
+          port.postMessage({ type: MSG.MCP_TOOLS_RESULT, tools: await listServerTools(msg.server) });
+        } catch (err) {
+          port.postMessage({
+            type: MSG.MCP_TOOLS_RESULT,
+            tools: [],
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         break;
       }
     }

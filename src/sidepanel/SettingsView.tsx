@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { McpConfig, McpServerEntry } from "../shared/mcp";
 import {
   loadConfig,
   savePrefs,
@@ -22,12 +23,18 @@ import {
   type SearchServiceEntry,
   type ThemePref,
 } from "../shared/configStore";
+import { estimateTokens, memoryUsedTokens } from "../shared/memory";
 import { fetchModels } from "../background/provider";
 import { clearAllLogs, readAllLogEntries, toJsonl } from "../shared/logger";
 import { applyThemePreference, applyAccent } from "./theme";
-import { MSG, PORT_NAME, type MemoryItem } from "../shared/messages";
-import { memoryUsedTokens } from "../shared/memory";
+import {
+  MSG,
+  PORT_NAME,
+  type McpToolInfo,
+  type MemoryItem,
+} from "../shared/messages";
 import { memReq } from "./memoryClient";
+import { mcpListTools, mcpTest } from "./mcpClient";
 
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -272,6 +279,287 @@ const hostOf = (url: string): string => {
     return "";
   }
 };
+
+/** 请求头对象 ↔ 文本(每行「名称: 值」;无冒号的行丢弃) */
+const headersToText = (h: Record<string, string>): string =>
+  Object.entries(h)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+const textToHeaders = (t: string): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const line of t.split("\n")) {
+    const i = line.indexOf(":");
+    if (i <= 0) continue;
+    const k = line.slice(0, i).trim();
+    const v = line.slice(i + 1).trim();
+    if (k) out[k] = v;
+  }
+  return out;
+};
+
+/** MCP 服务器卡片:收起态 = 名称/主机 + 工具数;展开 = 端点/请求头/测试连接/
+ *  工具清单。字段编辑沿用「失焦落盘」模式 */
+function McpServerCard({
+  entry,
+  open,
+  confirming,
+  onToggle,
+  onPatch,
+  onCommit,
+  onRemove,
+}: {
+  entry: McpServerEntry;
+  open: boolean;
+  confirming: boolean;
+  onToggle: () => void;
+  onPatch: (patch: Partial<McpServerEntry>, save?: boolean) => void;
+  onCommit: () => void;
+  onRemove: () => void;
+}) {
+  const [testState, setTestState] = useState<"idle" | "loading" | "done">("idle");
+  const [testMsg, setTestMsg] = useState("");
+  const [testOk, setTestOk] = useState(false);
+  const [tools, setTools] = useState<McpToolInfo[] | null>(null);
+  const [toolsLoading, setToolsLoading] = useState(false);
+  const [toolsError, setToolsError] = useState("");
+  const [headersText, setHeadersText] = useState(headersToText(entry.headers));
+
+  const displayName = entry.name || hostOf(entry.url) || "未命名服务器";
+  /** headers 逐行编辑、失焦整包提交,序列化后作依赖:提交才触发重拉 */
+  const headersKey = JSON.stringify(entry.headers);
+
+  // 端点或鉴权头变了,上一次的连接测试结果就不再成立,静默复位
+  useEffect(() => {
+    setTestState("idle");
+    setTestMsg("");
+  }, [entry.url, headersKey]);
+
+  // 展开时拉工具清单(与「测试连接」同一条后台缓存,成功即预热下次 run);
+  // url 或请求头变了就重拉。失败只标注在工具清单区,不挡其他字段的编辑
+  useEffect(() => {
+    if (!open || !entry.url.trim()) {
+      setToolsLoading(false);
+      setToolsError("");
+      return;
+    }
+    let alive = true;
+    setToolsLoading(true);
+    setToolsError("");
+    mcpListTools(entry)
+      .then((t) => {
+        if (alive) {
+          setTools(t);
+          setToolsLoading(false);
+        }
+      })
+      .catch((e) => {
+        if (alive) {
+          setTools(null);
+          setToolsError(e instanceof Error ? e.message : String(e));
+          setToolsLoading(false);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, entry.url, headersKey]);
+
+  const runTest = async () => {
+    if (testState === "loading") return;
+    setTestState("loading");
+    const r = await mcpTest(entry).catch(
+      (e): { ok: boolean; toolCount?: number; era?: string; error?: string } => ({
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      }),
+    );
+    setTestState("done");
+    setTestOk(r.ok);
+    setTestMsg(
+      r.ok
+        ? `已连接 · ${r.toolCount} 个工具 · ${r.era ?? ""}`
+        : r.error ?? "连接失败",
+    );
+  };
+
+  const toolsTokens =
+    tools?.reduce(
+      (n, t) => n + estimateTokens(`${t.name}${t.description}`),
+      0,
+    ) ?? 0;
+
+  return (
+    <div className="model-row">
+      <button
+        type="button"
+        className="model-row-head"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span className="min-w-0 truncate">
+          <span className="model-row-name">{displayName}</span>
+          {!entry.enabled && <span className="model-badge">停用</span>}
+        </span>
+        <span className="ml-auto shrink-0 pr-1 text-[11px] text-on-surface-variant">
+          {tools?.length != null ? `${tools.length} 个工具` : hostOf(entry.url)}
+        </span>
+        <svg
+          className="model-row-chevron"
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 3 5 5-5 5" />
+        </svg>
+      </button>
+      <div className="model-row-body" data-open={open}>
+        <div className="model-row-body-inner">
+          <div className="flex items-center justify-between">
+            <span className="settings-row-label">启用</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={entry.enabled}
+              aria-label={`${displayName} 启用`}
+              onClick={() => onPatch({ enabled: !entry.enabled }, true)}
+              className="switch"
+            >
+              <span className="switch-knob" />
+            </button>
+          </div>
+          <div className="settings-field">
+            <label className="field-label" htmlFor={`mcp-name-${entry.id}`}>
+              名称<span className="font-normal text-on-surface-variant">（选填）</span>
+            </label>
+            <input
+              id={`mcp-name-${entry.id}`}
+              type="text"
+              value={entry.name}
+              onChange={(e) => onPatch({ name: e.target.value })}
+              onBlur={onCommit}
+              placeholder="如 GitHub"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input"
+            />
+          </div>
+          <div className="settings-field">
+            <label className="field-label" htmlFor={`mcp-url-${entry.id}`}>
+              MCP 端点 URL
+            </label>
+            <input
+              id={`mcp-url-${entry.id}`}
+              type="text"
+              value={entry.url}
+              onChange={(e) => onPatch({ url: e.target.value }, false)}
+              onBlur={(e) => onPatch({ url: e.target.value.trim() }, true)}
+              placeholder="https://api.example.com/mcp"
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input font-mono"
+            />
+            <p className="field-hint">
+              Streamable HTTP 端点；远程托管（GitHub / Linear / Notion
+              等）或本机桌面应用（如 Figma 的 http://127.0.0.1:3845/mcp）均可。
+            </p>
+          </div>
+          <div className="settings-field">
+            <label className="field-label" htmlFor={`mcp-headers-${entry.id}`}>
+              请求头<span className="font-normal text-on-surface-variant">（选填）</span>
+            </label>
+            <textarea
+              id={`mcp-headers-${entry.id}`}
+              value={headersText}
+              onChange={(e) => setHeadersText(e.target.value)}
+              onBlur={() => {
+                onPatch({ headers: textToHeaders(headersText) }, true);
+              }}
+              placeholder={"Authorization: Bearer ghp_…\nx-api-key: …"}
+              rows={2}
+              autoComplete="off"
+              spellCheck={false}
+              className="field-input font-mono"
+            />
+            <p className="field-hint">
+              每行一条「名称: 值」，随每次请求发送；令牌只保存在本机。
+            </p>
+          </div>
+
+          <div className="mb-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={runTest}
+              disabled={testState === "loading" || !entry.url.trim()}
+              className="btn-text"
+            >
+              {testState === "loading" ? "连接中…" : "测试连接"}
+            </button>
+            {testState === "done" && (
+              <span
+                className={`text-[11.5px] ${testOk ? "text-on-surface-variant" : "text-error"}`}
+              >
+                {testMsg}
+              </span>
+            )}
+          </div>
+
+          {/* 工具清单:启用前审阅描述 —— MCP 工具描述是外部文本,这是注入防线的一环 */}
+          {toolsLoading && (
+            <p className="field-hint">正在获取工具清单…</p>
+          )}
+          {!toolsLoading && (tools || toolsError) && (
+            <div className="settings-block">
+              <div className="flex items-center justify-between">
+                <span className="settings-row-label">
+                  工具{tools ? `（${tools.length} 个 · 定义约 ${toolsTokens} token）` : ""}
+                </span>
+              </div>
+              {toolsError ? (
+                <p className="field-hint text-error">工具清单获取失败：{toolsError}</p>
+              ) : (
+                <div className="model-list">
+                  {tools?.map((t) => (
+                    <div key={t.name} className="py-1">
+                      <p className="m-0 font-mono text-[12px] text-on-surface" title={t.name}>
+                        {t.name}
+                      </p>
+                      <p
+                        className="m-0 text-[11.5px] leading-snug text-on-surface-variant"
+                        title={t.description}
+                      >
+                        {t.description.slice(0, 120)}
+                        {t.description.length > 120 ? "…" : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mb-1 mt-2">
+            <button
+              type="button"
+              className={`model-row-action model-row-action-danger${
+                confirming ? " confirming" : ""
+              }`}
+              onClick={onRemove}
+            >
+              {confirming ? "再点一次确认删除此服务器" : "删除此服务器"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** 供应商卡片:收起态 = 名称/主机/模型数概要 + 当前标记;点击展开该供应商
  *  及其模型配置的细节(端点、Key、拉取列表、逐模型配置)。编辑即时落盘:
@@ -576,6 +864,10 @@ export default function SettingsView({
   // ── 上下文压缩:档位 + 压缩用模型引用("providerId||modelId",空 = 跟随当前) ──
   const [compact, setCompact] = useState<CompactLevel>("standard");
   const [compactRef, setCompactRef] = useState("");
+  // ── MCP:总开关 + 服务器列表(展开态/两段确认删除与供应商卡同款) ──
+  const [mcp, setMcp] = useState<McpConfig>({ enabled: false, servers: [] });
+  const [expandedSid, setExpandedSid] = useState<string | null>(null);
+  const [confirmDelSid, setConfirmDelSid] = useState<string | null>(null);
   // ── 保存反馈 ──
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState(false);
@@ -641,6 +933,7 @@ export default function SettingsView({
           ? `${c.compactProvider}||${c.compactModel}`
           : "",
       );
+      setMcp(c.mcp);
       setRetention(
         c.historyRetention === 0 || c.historyRetention === 30
           ? String(c.historyRetention) as "0" | "30"
@@ -671,6 +964,11 @@ export default function SettingsView({
     const t = window.setTimeout(() => setConfirmClear(false), 3000);
     return () => clearTimeout(t);
   }, [confirmClear]);
+  useEffect(() => {
+    if (!confirmDelSid) return;
+    const t = window.setTimeout(() => setConfirmDelSid(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDelSid]);
 
   /** 历史库占用(IDB 属整个扩展 origin,此值含日志等其他 local 数据,看个量级) */
   const refreshUsage = () => {
@@ -777,6 +1075,45 @@ export default function SettingsView({
     setModelProvider(pid);
     setModel(mid);
     run(savePrefs({ modelProvider: pid, model: mid }));
+  };
+
+  // ── MCP 服务器增删改(整包落盘,同 providers 的保存模式) ──
+  const patchServer = (
+    id: string,
+    patch: Partial<McpServerEntry>,
+    save = false,
+  ) => {
+    const servers = mcp.servers.map((s) =>
+      s.id === id ? { ...s, ...patch } : s,
+    );
+    const next = { ...mcp, servers };
+    setMcp(next);
+    if (save) run(savePrefs({ mcp: next }));
+  };
+  const commitServers = () => run(savePrefs({ mcp }));
+  const addServer = () => {
+    const entry: McpServerEntry = {
+      id: crypto.randomUUID(),
+      name: "",
+      url: "",
+      headers: {},
+      enabled: true,
+    };
+    const next = { ...mcp, servers: [...mcp.servers, entry] };
+    setMcp(next);
+    setExpandedSid(entry.id);
+    run(savePrefs({ mcp: next }));
+  };
+  const removeServer = (id: string) => {
+    if (confirmDelSid !== id) {
+      setConfirmDelSid(id);
+      return;
+    }
+    setConfirmDelSid(null);
+    const next = { ...mcp, servers: mcp.servers.filter((s) => s.id !== id) };
+    setMcp(next);
+    if (expandedSid === id) setExpandedSid(null);
+    run(savePrefs({ mcp: next }));
   };
 
   const copyLogs = async () => {
@@ -1065,6 +1402,76 @@ export default function SettingsView({
                 <p className="field-hint">
                   免 Key 模式：直接抓取 Bing / DuckDuckGo 的搜索结果页，搜索词会发给这些搜索引擎。
                   结果质量取决于网络出口——被风控时会自动换引擎或冷却；想要稳定质量请改选具体服务商。
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── MCP:总开关 + 服务器卡片(工具清单与测试在卡片展开态) ── */}
+        <h3 className="settings-eyebrow mb-1.5 mt-4">MCP 工具</h3>
+        <div className="settings-card">
+          <div className="settings-block">
+            <div className="settings-row">
+              <label htmlFor="settings-mcp" className="settings-row-label">
+                启用 MCP 工具
+              </label>
+              <button
+                id="settings-mcp"
+                type="button"
+                role="switch"
+                aria-checked={mcp.enabled}
+                onClick={() => {
+                  const next = { ...mcp, enabled: !mcp.enabled };
+                  setMcp(next);
+                  run(savePrefs({ mcp: next }));
+                }}
+                className="switch"
+              >
+                <span className="switch-knob" />
+              </button>
+            </div>
+            <p className="field-hint">
+              接入 MCP 服务器后，它的工具会与本页其他工具一起提供给 AI。
+              调用这些工具时，相关请求内容会发送到对应服务器及其运营方——只接入你信任的服务。
+              支持 HTTP(S) 端点（远程托管或本机桌面应用），不支持需要本地进程的 stdio 服务器。
+            </p>
+          </div>
+
+          {mcp.enabled && (
+            <>
+              {mcp.servers.length > 0 ? (
+                <div className="model-list">
+                  {mcp.servers.map((s) => (
+                    <McpServerCard
+                      key={s.id}
+                      entry={s}
+                      open={expandedSid === s.id}
+                      confirming={confirmDelSid === s.id}
+                      onToggle={() =>
+                        setExpandedSid(expandedSid === s.id ? null : s.id)
+                      }
+                      onPatch={(patch, save) => patchServer(s.id, patch, save)}
+                      onCommit={commitServers}
+                      onRemove={() => removeServer(s.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="field-hint">
+                  还没有服务器：点「添加服务器」填入 MCP 端点 URL，需要认证的
+                  服务再补一条 Authorization 请求头。
+                </p>
+              )}
+              <div className="mt-2">
+                <button type="button" onClick={addServer} className="settings-btn">
+                  添加服务器
+                </button>
+              </div>
+              {mcp.servers.length > 0 && (
+                <p className="field-hint">
+                  点卡片展开端点与请求头配置；「测试连接」会顺带拉取工具清单。
+                  每个服务器的「启用」开关可单独停用。
                 </p>
               )}
             </>

@@ -3,6 +3,8 @@
 
 export const PORT_NAME = 'agent-port' as const
 
+import type { McpServerEntry } from "./mcp"
+
 export const MSG = {
   // Side panel → Background
   USER_MESSAGE: 'user_message',
@@ -18,6 +20,8 @@ export const MSG = {
   MEM_PIN: 'mem_pin',
   MEM_DELETE: 'mem_delete',
   MEM_CLEAR: 'mem_clear',
+  MCP_TEST: 'mcp_test',
+  MCP_TOOLS: 'mcp_tools',
 
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
@@ -32,6 +36,8 @@ export const MSG = {
   SESSIONS: 'sessions',
   IMAGE_DATA: 'image_data',
   MEMORIES: 'memories',
+  MCP_TEST_RESULT: 'mcp_test_result',
+  MCP_TOOLS_RESULT: 'mcp_tools_result',
 } as const
 
 export type MsgType = (typeof MSG)[keyof typeof MSG]
@@ -82,6 +88,8 @@ export type SideToBg =
   | { type: typeof MSG.MEM_PIN; id: string; pinned: boolean }
   | { type: typeof MSG.MEM_DELETE; id: string }
   | { type: typeof MSG.MEM_CLEAR }
+  | { type: typeof MSG.MCP_TEST; server: McpServerEntry }
+  | { type: typeof MSG.MCP_TOOLS; server: McpServerEntry }
 
 // ---------- 面板展示用消息(前后端一致的精简形状) ----------
 
@@ -121,8 +129,13 @@ export interface MemoryItem {
   source: "user" | "model";
 }
 
-// ---------- Agent 流式事件（discriminated union） ----------
+/** MCP 工具清单项(设置页展示用;description 已是服务器原文,面板自行截断) */
+export interface McpToolInfo {
+  name: string;
+  description: string;
+}
 
+// ---------- Agent 流式事件（discriminated union） ----------
 export type AgentEvent =
   | { type: typeof MSG.AGENT_STARTED; sessionId: string }
   | { type: typeof MSG.AGENT_THINKING; turn: number }
@@ -154,6 +167,14 @@ export type AgentEvent =
     }
   | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
   | { type: typeof MSG.MEMORIES; memories: MemoryItem[] }
+  | {
+      type: typeof MSG.MCP_TEST_RESULT;
+      ok: boolean;
+      toolCount?: number;
+      era?: string;
+      error?: string;
+    }
+  | { type: typeof MSG.MCP_TOOLS_RESULT; tools: McpToolInfo[]; error?: string }
   /** base64 缺省 = 图片已不存在(被清理/清空),面板显示失效占位 */
   | {
       type: typeof MSG.IMAGE_DATA;

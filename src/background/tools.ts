@@ -11,6 +11,7 @@ import {
   loadMemories,
 } from "./memoryStore";
 import type { ToolSchema } from "../shared/toolTypes";
+import { getMcpTool } from "./mcpManager";
 
 /** 工具定义:注册表条目 = 共享的 ToolSchema(纯 schema)+ 可执行的 execute */
 export interface Tool<P = unknown, R = unknown> extends ToolSchema {
@@ -26,7 +27,10 @@ function registerTool<P, R>(tool: Tool<P, R>): void {
 }
 
 export function getTool(name: string): Tool | undefined {
-  return registry.find((t) => t.name === name);
+  const builtin = registry.find((t) => t.name === name);
+  if (builtin) return builtin;
+  // MCP 动态工具:注册表是 per-run 刷新的内存 registry,查不到 = 幻觉工具名
+  return getMcpTool(name);
 }
 
 // 导出为 provider 需要的 function calling schema

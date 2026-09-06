@@ -7,6 +7,8 @@
 //   providers 键一旦写入,旧键整体废弃
 // - 搜索服务(search)/联网开关/主题等照旧
 
+import { normalizeMcp, type McpConfig } from "./mcp";
+
 export type ThemePref = "system" | "light" | "dark";
 
 /** 重点色(配色方案):generate-m3.mjs 里 ACCENTS 的 id,green = 默认源色 */
@@ -99,6 +101,9 @@ export interface AppConfig {
    *  modelProvider/model 相同;两者任一为空 = 跟随当前模型 */
   compactProvider: string;
   compactModel: string;
+  /** MCP 服务器接入(见 shared/mcp.ts):总开关缺省关 —— 调用 MCP 工具会把
+   *  请求内容发给第三方服务器,与 BYOK「数据不出本机」承诺相抵,须显式启用 */
+  mcp: McpConfig;
 }
 
 export type SearchProviderId = "tavily" | "bocha" | "brave";
@@ -157,6 +162,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "compact",
     "compactProvider",
     "compactModel",
+    "mcp",
   ]);
 
   const providers = normalizeProviders(l.providers, {
@@ -196,6 +202,7 @@ export async function loadConfig(): Promise<AppConfig> {
     compactProvider:
       typeof l.compactProvider === "string" ? l.compactProvider : "",
     compactModel: typeof l.compactModel === "string" ? l.compactModel : "",
+    mcp: normalizeMcp(l.mcp),
   };
 }
 
@@ -295,6 +302,7 @@ export async function savePrefs(
       | "compact"
       | "compactProvider"
       | "compactModel"
+      | "mcp"
     >
   >,
 ): Promise<void> {
