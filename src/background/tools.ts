@@ -60,7 +60,7 @@ registerTool<
   name: "get_tabs",
   displayName: "列出标签页",
   description:
-    "列出当前窗口所有 tab(tabId、标题、URL),并标记每个 tab 是否为页面工具省略 tabId 时的默认作用页(default,即提交时的页面)与当前激活页(active)。<context> 里的 tab 清单是提交时的快照,运行中可能已变化(新开/关闭/切换);当工具报「tab 不存在」或「无法注入内容脚本」时,先调用本工具获取最新清单,再选正确的 tabId 重试。",
+    "List all tabs in the current window (tabId, title, URL), marking each tab as the default target for page tools when tabId is omitted (default: the page at submit time) or the currently active tab (active). The tab list in <context> is a submit-time snapshot and goes stale as tabs open / close / switch during the run; when a tool reports \"tab not found\" or \"failed to inject content script\", call this tool first for a fresh list, then retry with the right tabId.",
   parameters: { type: "object", properties: {} },
   execute: async () => {
     const tabs = await chrome.tabs.query({ currentWindow: true });
@@ -113,21 +113,21 @@ registerTool<
   name: "page_read",
   displayName: "窗口读取",
   description:
-    "按字符偏移读取页面内容的一个窗口(保持标题/列表/代码块的 markdown 结构)。用法:offset 来自 page_outline 大纲项或 page_find 命中项,省略则从头读;返回里 next_offset 非 null 说明后面还有内容,把它再传进 offset 即可顺序往下翻页,done=true 表示已到结尾。headings 是当前窗口所属的上层标题链。offset/pos 是工具内部定位用的字符偏移,回复用户时用标题或原文指代,不要输出数字。\n何时用:长文档读完整体结构后精确阅读某节上下文;page_find 命中后立即带 pos 读前后文;短小页面直接从头读一次即可。\n何时别用:只是想知道有没有某主题 → 先 page_find;只想看章节列表 → page_outline。",
+    "Read a window of page content by character offset (preserves the markdown structure of headings / lists / code blocks). Usage: offset comes from a page_outline outline item or a page_find match's pos; omit it to read from the top. A non-null next_offset in the result means more content follows — feed it back as offset to keep paging; done=true means you reached the end. headings is the chain of ancestor headings for this window. offset / pos are internal character offsets for tool positioning; when citing content to the user, refer to headings or original text, never numeric values.\nWhen to use: reading a specific section in context after surveying a long document; right after a page_find hit, read around pos; short pages can be read from the top in one call.\nWhen NOT to use: just checking whether a topic exists → page_find first; want the section list → page_outline.",
   parameters: {
     type: "object",
     properties: {
       offset: {
         type: "number",
         description:
-          "起始字符偏移;来自 page_outline 的 offset / page_find 的 pos / 上次本工具返回的 next_offset;省略则从文档开头读",
+          "Start character offset; from page_outline's offset / page_find's pos / this tool's previous next_offset; omit to read from the document start",
       },
-      chars: { type: "number", description: "本窗口大小(字符),默认 6000,最大 20000" },
+      chars: { type: "number", description: "Window size in characters; default 6000, max 20000" },
       refresh: {
         type: "boolean",
-        description: "强制重新提取页面快照;仅当怀疑页面已更新(SPA 切换路由、点击后刷新)时使用",
+        description: "Force re-extract the page snapshot; use only when you suspect the page changed (SPA route switch, post-click refresh)",
       },
-      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
+      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
     },
   },
   execute: (args) =>
@@ -162,17 +162,17 @@ registerTool<
   name: "page_find",
   displayName: "定位内容",
   description:
-    "在页面全文中定位关键词相关的内容区域,按相关度返回 Top-N 结果,每项含:pos(在页面内容中的字符偏移)、snippet(命中片段)、headings(所在位置的上层标题链)。中文查询会自动做二字组模糊匹配,换一种说法的表述也能找到,不必是页面原文逐字串。拿到结果后立刻用 page_read(offset=pos) 读该处完整上下文;多个分散命中可以分别各读一小窗对比。\n何时用:长文档里问「关于 xx」「哪里讲了 xx」;需要确认某个主题在不在页面里。\n何时别用:页面很小直接 page_read 从头读;要章节列表用 page_outline。pos 是内部定位偏移,不要向用户复述。",
+    "Locate content regions relevant to the query across the full page, returning top-N results by relevance. Each item has pos (character offset in the page content), snippet (hit fragment) and headings (chain of ancestor headings). Queries get automatic bigram fuzzy matching for CJK, so paraphrases match even without an exact substring from the page. As soon as you get results, call page_read(offset=pos) for the full context; compare multiple dispersed hits by reading a small window at each.\nWhen to use: long-document questions like \"what about xx\" / \"where does it mention xx\"; confirming whether a topic exists on the page.\nWhen NOT to use: tiny pages → page_read from the top; want the section list → page_outline. pos is an internal offset; do not repeat it to the user.",
   parameters: {
     type: "object",
     properties: {
-      query: { type: "string", description: "检索词:关键词、短语或问题里的核心名词组合" },
-      limit: { type: "number", description: "最多返回命中区域数,默认 5,上限 10" },
+      query: { type: "string", description: "Search terms: core nouns / keywords or a short phrase from the question" },
+      limit: { type: "number", description: "Max regions returned; default 5, cap 10" },
       refresh: {
         type: "boolean",
-        description: "强制重新提取页面快照;仅在怀疑页面已变化时使用",
+        description: "Force re-extract the page snapshot; use only when you suspect the page changed",
       },
-      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
+      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
     },
     required: ["query"],
   },
@@ -207,15 +207,15 @@ registerTool<
   name: "page_outline",
   displayName: "页面大纲",
   description:
-    "读取页面的标题大纲,每项含 offset(可直接作为 page_read 的 offset 跳到该节开头)、层级和标题;超长文档自动折叠深层小节,保留项带 descendant_headings 计数。同时给出 total_chars 帮你判断文档体量。先看它再决定怎么读,能显著减少来回试探。\n何时用:回答「这文档有哪些章节/讲什么结构」,或开始精读前的第一步地图。\n何时别用:无标题结构的页面 items 会为空(hint 有提示),改用 page_find 定位;很短的页面不必看大纲,直接 page_read 全读。",
+    "Read the page's heading outline. Each item has offset (usable directly as page_read's offset to jump to that section), level and title; very long documents auto-collapse deep subsections, and kept items carry a descendant_headings count. Also returns total_chars so you can gauge document size. Reading this first markedly cuts trial-and-error.\nWhen to use: answering \"what sections does this document have / how is it structured\", or as the opening map before close reading.\nWhen NOT to use: pages without heading structure return empty items (the hint says so) → use page_find; very short pages do not need an outline — page_read in full.",
   parameters: {
     type: "object",
     properties: {
       refresh: {
         type: "boolean",
-        description: "强制重新提取页面快照;仅在怀疑页面已变化时使用",
+        description: "Force re-extract the page snapshot; use only when you suspect the page changed",
       },
-      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
+      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
     },
   },
   execute: (args) =>
@@ -240,34 +240,34 @@ registerTool<WebSearchArgs, WebSearchResult>({
   name: "web_search",
   displayName: "网络搜索",
   description:
-    "联网搜索公开网页,返回按相关度排序的结果列表(标题、URL、摘要)。\n何时用:需要最新信息(新闻、版本发布、价格、天气)、当前打开的页面内容不足以回答、或用户明确要求搜索。\n何时别用:当前页面或自身知识足以回答时;在某个页面内定位内容用 page_find。\n注意:query 用精炼的核心关键词组合(可中英文各试一次),不要整句照抄用户提问;摘要不足以支撑回答时,优先用 web_fetch 读取对应链接的正文,其次才换关键词重搜(连同首次至多三次);若累计三次的结果都与搜索主题明显无关(标题/站点和关键词毫无关联,常见于搜索通道被降级),立即停止搜索,如实告知用户联网搜索暂时不可用,改用自身知识作答并说明未经联网验证,不要引用无关结果硬凑答案;回答时注明来源 URL。",
+    "Search the public web, returning results ranked by relevance (title, URL, snippet).\nWhen to use: fresh information is needed (news, releases, prices, weather), the open page is not enough, or the user explicitly asks to search.\nWhen NOT to use: the current page or your own knowledge suffices; locating content inside an open page → page_find.\nNote: keep query to tight core keywords (trying both Chinese and English can help), never the user's sentence verbatim; when snippets are not enough, prefer web_fetch on the corresponding URL before re-searching (at most three searches including the first); if three cumulative searches all return results clearly unrelated to the topic (titles / sites share nothing with the keywords — usually a degraded search channel), stop immediately, honestly tell the user web search is temporarily unavailable, answer from your own knowledge and note it was not web-verified; do not force unrelated results into an answer; cite source URLs.",
   parameters: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "搜索关键词组合:用空格分隔核心词,避免整句长问句",
+        description: "Keyword combination: space-separated core terms, not a long verbatim question",
       },
-      max_results: { type: "number", description: "返回条数上限,默认 6,最大 10" },
+      max_results: { type: "number", description: "Max results; default 6, max 10" },
       market: {
         type: "string",
         description:
-          "结果的语言市场,格式「语言-地区」:zh-CN / zh-TW / ja-JP / en-US / ko-KR 等。按 query 所用语言填对应市场(中文查询 zh-CN、查日文内容 ja-JP),比自身所在地区更相关;仅配置了搜索服务时生效(Brave 映射为地区参数,其余服务忽略),免 Key 抓取通道不支持",
+          "Result language market, as \"language-REGION\": zh-CN / zh-TW / ja-JP / en-US / ko-KR etc. Match the query's language (Chinese query → zh-CN, Japanese content → ja-JP); only effective with a configured search provider (Brave maps it to a locale param, others ignore it); the key-free scraping channel does not support it",
       },
       recency: {
         type: "string",
         enum: ["day", "week", "month", "year"],
-        description: "时间范围过滤:只要最近一天/一周/一月/一年的结果;查时效性内容(新闻/版本发布)时使用,普通查询省略。仅配置了搜索服务时生效,免 Key 抓取通道(引擎 bing/ddg)会忽略",
+        description: "Time filter: restrict to the last day / week / month / year; use for time-sensitive queries (news, releases), omit otherwise. Only effective with a configured search provider; the key-free scraping channel (bing / ddg engines) ignores it",
       },
       allowed_domains: {
         type: "array",
         items: { type: "string" },
-        description: "域名白名单(含子域),如 [\"react.dev\"];只在这些站点里找结果。与 blocked_domains 互斥,同时给时白名单优先",
+        description: "Domain allowlist (subdomains included), e.g. [\"react.dev\"]; search only within these sites. Mutually exclusive with blocked_domains; the allowlist wins if both are given",
       },
       blocked_domains: {
         type: "array",
         items: { type: "string" },
-        description: "域名黑名单(含子域):从结果中剔除这些站点",
+        description: "Domain blocklist (subdomains included): drop results from these sites",
       },
     },
     required: ["query"],
@@ -283,19 +283,19 @@ registerTool<WebFetchArgs, WebFetchResult>({
   name: "web_fetch",
   displayName: "网页读取",
   description:
-    "读取一个 URL 的网页正文(自动去除导航/脚本等噪音,保留标题/列表/代码块的 markdown 结构),按字符偏移分页返回,协议与 page_read 相同:offset 省略则从头读,next_offset 非 null 就把它传进 offset 继续翻页,done=true 表示读完。\n何时用:web_search 的摘要不足以回答、用户给了具体链接、需要阅读某网页全文。内网 http 页面同样可读。\n何时别用:读取当前浏览器里已打开的页面用 page_read(可带 tabId),不要对已打开页面重复 web_fetch。\n注意:只支持 http/https 文本页(PDF/图片会报错);先读第一窗,确有需要再翻页,不要为了「读全」机械翻到底。",
+    "Read the main content of a URL (navigation / scripts and other noise removed; markdown structure of headings / lists / code blocks preserved), paginated by character offset with the same protocol as page_read: omit offset to read from the top, feed next_offset back as offset to continue, done=true means finished.\nWhen to use: web_search snippets are insufficient, the user gave a specific link, a full page needs reading. Intranet http pages work too.\nWhen NOT to use: for pages already open in the browser use page_read (with tabId); do not web_fetch a page that is already open.\nNote: http/https text pages only (PDF / images error out); read the first window and paginate only if needed — do not mechanically page to the end.",
   parameters: {
     type: "object",
     properties: {
-      url: { type: "string", description: "要读取的网页链接(http/https),来自 web_search 结果或用户提供的 URL" },
+      url: { type: "string", description: "The link to read (http/https), from web_search results or provided by the user" },
       offset: {
         type: "number",
-        description: "起始字符偏移;来自上次本工具返回的 next_offset;省略则从开头读",
+        description: "Start character offset; from this tool's previous next_offset; omit to read from the top",
       },
-      chars: { type: "number", description: "本窗口大小(字符),默认 6000,最大 20000" },
+      chars: { type: "number", description: "Window size in characters; default 6000, max 20000" },
       refresh: {
         type: "boolean",
-        description: "强制重新抓取;仅当怀疑页面已更新时使用",
+        description: "Force re-fetch; use only when you suspect the page changed",
       },
     },
     required: ["url"],
@@ -317,18 +317,18 @@ registerTool<
   name: "find_elements",
   displayName: "查找元素",
   description:
-    "在当前页面查找可交互元素(按钮/链接/输入框/下拉框/复选框/单选/开关/可编辑区),返回每个元素的 selector(CSS 绝对路径)、tag、role、label、state 和可见性,以及 count/returned/truncated 计数。\n何时用:需要在页面上点击、填写、勾选某个控件之前,先调用它定位目标元素;返回的 selector 直接传给 click_element / fill_input。尽量带 text(按文字模糊匹配)或 role(按类型)缩小范围,不要空手调用——truncated=true 说明还有 count-returned 个未列出,可用 text/role 进一步收窄再查。\n何时别用:不要用它读文档正文(用 page_read / page_find);不要一次拉全页控件。返回的 selector 只是当前页面快照,页面异步加载或重渲染后可能失效;若后续 click/fill 报「元素未找到」,重新调用本工具取最新 selector。",
+    "Find interactive elements on the page (buttons / links / inputs / selects / checkboxes / radios / switches / contenteditable), returning each element's selector (absolute CSS path), tag, role, label, state and visibility, plus count / returned / truncated counters.\nWhen to use: before clicking, filling or toggling any control — call this first to locate the target, then pass its selector to click_element / fill_input. Narrow with text (fuzzy match on visible text) or role (by type) rather than calling bare — truncated=true means count-returned more exist; refine with text / role and query again.\nWhen NOT to use: never for reading document content (page_read / page_find); do not pull every control on the page at once. Selectors are a snapshot of the current page and go stale after async loads or re-renders; if a later click / fill reports \"element not found\", run find_elements again for a fresh selector.",
   parameters: {
     type: "object",
     properties: {
-      text: { type: "string", description: "按文字/标签/当前值做模糊匹配(子串,忽略大小写),用于缩小范围" },
+      text: { type: "string", description: "Fuzzy match on text / label / current value (substring, case-insensitive) to narrow results" },
       role: {
         type: "string",
         enum: ["button", "link", "input", "checkbox", "radio", "switch", "select", "textarea", "contenteditable"],
-        description: "按元素类型过滤",
+        description: "Filter by element type",
       },
-      limit: { type: "number", description: "最多返回条数,默认 20,上限 50" },
-      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
+      limit: { type: "number", description: "Max elements returned; default 20, cap 50" },
+      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
     },
   },
   execute: async (args) => {
@@ -348,12 +348,12 @@ registerTool<{ selector: string; tabId?: number }, { clicked?: string }>({
   name: "click_element",
   displayName: "点击元素",
   description:
-    "点击页面上的一个元素,触发完整指针/鼠标事件序列(pointerover→pointerdown→mousedown→pointerup→mouseup→click),等价真实鼠标点击,React 等框架能正确感知。\n何时用:打开链接、展开折叠、切换 tab/开关、提交/取消按钮等需要模拟用户点击的操作。selector 必须来自最近一次 find_elements 的返回。\n何时别用:不要用它读内容;不要凭猜测拼 selector(页面重渲染后旧 selector 会失效)。若报「元素未找到」或「被遮挡」,重新 find_elements 定位,不要原样重试。",
+    "Click a page element, firing the full pointer / mouse event sequence (pointerover→pointerdown→mousedown→pointerup→mouseup→click) — equivalent to a real click, correctly perceived by React and similar frameworks.\nWhen to use: opening links, expanding collapsibles, switching tabs / switches, submit / cancel buttons — anything that needs a simulated user click. The selector must come from the most recent find_elements result.\nWhen NOT to use: not for reading content; never guess or hand-craft selectors (they go stale after re-renders). If it reports \"element not found\" or \"obscured\", re-run find_elements instead of retrying blind.",
   parameters: {
     type: "object",
     properties: {
-      selector: { type: "string", description: "目标元素的 CSS 绝对路径,来自 find_elements 的返回" },
-      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
+      selector: { type: "string", description: "Target element's absolute CSS path, from find_elements output" },
+      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
     },
     required: ["selector"],
   },
@@ -372,14 +372,14 @@ registerTool<
   name: "fill_input",
   displayName: "填写输入",
   description:
-    "向输入控件写入文本并触发 input/change 事件(React 受控组件能正确感知)。支持 input、textarea、select(选中某选项)、contenteditable(富文本);pressEnterAfter=true 时写入后追加一次 Enter 按键(keyCode=13),省去单独回车。\n何时用:填写搜索框、表单、评论框,或选择下拉选项。selector 来自 find_elements 的返回。\n何时别用:只用于可输入控件,不要对普通 div/button 调用;不要猜 selector。若报错,重新 find_elements 定位。",
+    "Write text into an input control and fire input / change events (React controlled components perceive it correctly). Supports input, textarea, select (picks an option) and contenteditable (rich text); pressEnterAfter=true appends an Enter keypress (keyCode=13) after writing, saving a separate submit step.\nWhen to use: filling search boxes, forms, comment fields, or selecting dropdown options. Selectors come from find_elements.\nWhen NOT to use: only for input controls — never on plain div / button; do not guess selectors. On error, re-run find_elements.",
   parameters: {
     type: "object",
     properties: {
-      selector: { type: "string", description: "输入控件的 CSS 绝对路径,来自 find_elements 的返回" },
-      text: { type: "string", description: "要写入的文本;对 select 表示要选中的 option 的 value 或可见文字" },
-      pressEnterAfter: { type: "boolean", description: "写入后追加一次 Enter(keyCode=13),搜索框提交用;省略默认 false" },
-      tabId: { type: "number", description: "目标 tab 的 id;省略则用当前激活 tab" },
+      selector: { type: "string", description: "Input control's absolute CSS path, from find_elements output" },
+      text: { type: "string", description: "Text to write; for select, the option value or visible text to select" },
+      pressEnterAfter: { type: "boolean", description: "Append an Enter keypress (keyCode=13) after writing, handy for submitting search boxes; default false" },
+      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
     },
     required: ["selector", "text"],
   },
@@ -404,13 +404,13 @@ registerTool<
   name: "memory_save",
   displayName: "保存记忆",
   description:
-    "把关于用户的长期稳定信息写入记忆,跨会话生效(如称呼、语言与简洁度偏好、饮食忌讳、长期项目背景)。\n何时用:用户明说「记住…」;或用户陈述了明显可复用的个人偏好/事实。\n何时别用:一次性任务细节、临时上下文、普通聊天内容都不要存;记忆应少而精,每条独立成文(一句话),不确定该不该存就别存。若 <user-memory> 里已有同一信息,不要重复保存。",
+    "Save long-term, stable information about the user to memory; it persists across sessions (preferred name, language and conciseness preferences, dietary restrictions, long-running project context, etc.).\nWhen to use: the user says \"remember…\"; or states a clearly reusable personal preference / fact.\nWhen NOT to use: one-off task details, temporary context and ordinary chit-chat are never saved. Memory should be sparse and high-signal — one self-contained sentence per item; when in doubt, do not save. If <user-memory> already contains the same information, do not save again.",
   parameters: {
     type: "object",
     properties: {
       content: {
         type: "string",
-        description: "要记住的内容,一句独立成文的第三人称陈述,如「用户偏好简洁的中文回答」",
+        description: "The fact to remember, as one self-contained third-person sentence, e.g. \"The user prefers concise answers\"",
       },
     },
     required: ["content"],
@@ -430,13 +430,13 @@ registerTool<{ match: string }, { deleted: number; texts: string[] }>({
   name: "memory_delete",
   displayName: "删除记忆",
   description:
-    "按关键词删除已保存的记忆(匹配记忆文本的子串,大小写不敏感,命中多条会一起删)。用户要求「忘掉/删除某条记忆」时使用;match 要足够精确,避免误删。删除结果会列出实际删掉的条目。",
+    "Delete saved memories by keyword (substring match against memory text, case-insensitive; all matches are deleted together). Use when the user asks to \"forget / delete a memory\"; keep match precise to avoid deleting the wrong entries. The result lists what was actually deleted.",
   parameters: {
     type: "object",
     properties: {
       match: {
         type: "string",
-        description: "匹配关键词(子串),如「香菜」会删掉所有含「香菜」的记忆",
+        description: "Match keyword (substring), e.g. \"cilantro\" deletes every memory containing it",
       },
     },
     required: ["match"],
@@ -446,7 +446,9 @@ registerTool<{ match: string }, { deleted: number; texts: string[] }>({
       typeof args?.match === "string" ? args.match : "",
     );
     if (count === 0) {
-      throw new Error("没有找到匹配的记忆;可换更精确的关键词重试,或告知用户在设置页的「记忆」小节手动查看/删除");
+      throw new Error(
+        "No memory matched the keyword; retry with a more precise one, or tell the user to review / delete memories in Settings → Memory",
+      );
     }
     return { deleted: count, texts: deleted };
   },

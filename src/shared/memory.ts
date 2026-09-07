@@ -10,10 +10,10 @@ export const MEMORY_BUDGET_TOKENS = 600;
 
 /** 注入块头部:三条使用纪律,专门压「硬关联」——让带记忆 ≠ 用记忆 */
 export const MEMORY_PREAMBLE = [
-  "以下是长期记住的用户信息,仅供背景参考:",
-  "- 仅当与当前问题相关时才参考;用户没问就不要引用",
-  "- 不要主动提起这些内容,也不要把无关话题往这里关联",
-  "- 与当前问题无关时,完全忽略,当作不存在",
+  "Long-term information about the user, kept for background reference:",
+  "- Consider it only when relevant to the current question; do not bring it up unasked",
+  "- Never mention these notes proactively or force-associate them with unrelated topics",
+  "- If irrelevant to the current question, ignore them completely",
 ].join("\n");
 
 /** 粗估 token:CJK≈1.1 token/字,西文≈4 字符/token(与 agent.estimateTokens

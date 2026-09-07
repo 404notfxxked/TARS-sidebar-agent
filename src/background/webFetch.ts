@@ -82,7 +82,7 @@ export async function runWebFetch(args: WebFetchArgs): Promise<WebFetchResult> {
   } catch (e) {
     // 刚 build 完就读不到缓存属于异常状态(正常不会发生),给模型可读的提示
     if (e instanceof Error && e.message.startsWith(NOT_CACHED_PREFIX)) {
-      throw new Error(`网页缓存异常,请重试一次:${url}`);
+      throw new Error(`Page cache error, retry once: ${url}`);
     }
     throw e;
   }
@@ -96,15 +96,15 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
     try {
       res = await fetch(url, { signal });
     } catch (e) {
-      if (cancelSignal?.aborted) throw new Error("用户已取消本次网页读取");
+      if (cancelSignal?.aborted) throw new Error("Page read cancelled by the user");
       const msg = e instanceof Error ? e.message : String(e);
       if (/timeout/i.test(msg)) {
-        throw new Error(`网页抓取超时(${FETCH_TIMEOUT_MS / 1000}s):${url}`);
+        throw new Error(`Page fetch timed out after ${FETCH_TIMEOUT_MS / 1000}s: ${url}`);
       }
-      throw new Error(`网页抓取失败:${msg}(${url})`);
+      throw new Error(`Page fetch failed: ${msg} (${url})`);
     }
     if (!res.ok) {
-      throw new Error(`网页返回 HTTP ${res.status}(链接可能失效或需要登录)`);
+      throw new Error(`Page returned HTTP ${res.status} (the link may be dead or require login)`);
     }
     const contentType = res.headers.get("content-type") ?? "";
     if (!/text\/html|text\/plain|application\/xhtml\+xml/i.test(contentType)) {
@@ -115,7 +115,7 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
     }
     const buf = await res.arrayBuffer();
     if (buf.byteLength > MAX_HTML_BYTES) {
-      throw new Error(`网页过大(约 ${Math.round(buf.byteLength / 1024)} KB,上限 2 MB)`);
+      throw new Error(`Page too large (~${Math.round(buf.byteLength / 1024)} KB, limit 2 MB)`);
     }
     return { html: decodeBody(buf, contentType), finalUrl: res.url || url };
   } finally {

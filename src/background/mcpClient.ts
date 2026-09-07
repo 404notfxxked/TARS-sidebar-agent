@@ -287,10 +287,10 @@ async function parseJsonResponse(res: Response, id: number): Promise<unknown> {
     | { id?: unknown; result?: unknown; error?: { code: number; message: string } }
     | null;
   if (!msg || typeof msg !== "object") {
-    throw new Error("MCP 服务器返回了无法解析的响应");
+    throw new Error("MCP server returned an unparseable response");
   }
   if (msg.error) throw new McpRpcError(msg.error.code, msg.error.message);
-  if (msg.id !== id) throw new Error("MCP 响应 id 不匹配");
+  if (msg.id !== id) throw new Error("MCP response id mismatch");
   return msg.result;
 }
 
@@ -305,7 +305,7 @@ async function readSseResponse(
   id: number,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  if (!res.body) throw new Error("MCP 响应缺少 body");
+  if (!res.body) throw new Error("MCP response has no body");
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -352,7 +352,7 @@ async function readSseResponse(
       /* 流已断 */
     }
   }
-  throw new Error("MCP 流在收到响应前结束");
+  throw new Error("MCP stream ended before a response arrived");
 }
 
 /**

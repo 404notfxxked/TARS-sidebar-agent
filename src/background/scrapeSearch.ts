@@ -118,7 +118,7 @@ export async function runScrapeSearch(
   let lastGoodEngine = "";
 
   for (const engine of ENGINES) {
-    if (cancelSignal?.aborted) throw new Error("用户已取消本次搜索");
+    if (cancelSignal?.aborted) throw new Error("Search cancelled by the user");
     try {
       await throwIfCoolingDown(engine.id);
     } catch (e) {
@@ -137,7 +137,7 @@ export async function runScrapeSearch(
         base: finalUrl,
         limit,
       })) as { title: string; url: string; snippet: string }[];
-      if (!Array.isArray(results)) throw new Error("解析结果异常");
+      if (!Array.isArray(results)) throw new Error("Malformed parse result");
 
       const beforeFilter = results.length;
       const filtered = results.filter((r) =>
@@ -158,13 +158,13 @@ export async function runScrapeSearch(
           query,
           engine: engine.id,
           results: [],
-          note: `有 ${beforeFilter} 条结果但全被域名过滤排除。请放宽 allowed_domains / blocked_domains 后重试,或去掉过滤参数。`,
+          note: `${beforeFilter} results found but all excluded by domain filters. Relax allowed_domains / blocked_domains and retry, or drop the filter parameters.`,
         };
       }
       if (filtered.length === 0) {
         if (engine.blockMarkers?.test(html)) {
           await coolDownEngine(engine.id, "blocked");
-          throw new Error("返回风控/验证页");
+          throw new Error("Engine returned a bot-check / captcha page");
         }
         lastGoodEngine = engine.id;
         log.info("search", "引擎无结果,切换下一个", {
@@ -189,7 +189,7 @@ export async function runScrapeSearch(
       return { query, engine: engine.id, results: filtered.slice(0, limit) };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (cancelSignal?.aborted) throw new Error("用户已取消本次搜索");
+      if (cancelSignal?.aborted) throw new Error("Search cancelled by the user");
       if (/timeout/i.test(msg)) await coolDownEngine(engine.id, "unreachable");
       if (/HTTP (403|429)/.test(msg))
         await coolDownEngine(engine.id, "blocked");
@@ -203,14 +203,14 @@ export async function runScrapeSearch(
 
   if (!lastGoodEngine) {
     throw new Error(
-      `所有搜索引擎都失败了(${failures.join("; ")})。免费抓取通道对当前网络环境可能已被风控,可在设置 → 联网 里配置搜索服务(Tavily/博查/Brave)获得稳定结果`,
+      `All search engines failed (${failures.join("; ")}). The key-free scraping channel may be blocked for this network; configure a search provider (Tavily / Bocha / Brave) in Settings → Web search for stable results`,
     );
   }
   return {
     query,
     engine: lastGoodEngine,
     results: [],
-    note: "没有搜索到相关结果。可换更具体的核心词、或换一种语言的关键词重试;若已知答案请直接回答。",
+    note: "No relevant results found. Try more specific core keywords, or keywords in another language; if you already know the answer, answer directly.",
   };
 }
 
@@ -231,7 +231,7 @@ async function fetchHtml(
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
-    if (!html.trim()) throw new Error("空响应");
+    if (!html.trim()) throw new Error("Empty response");
     return { html, finalUrl: res.url || req.url };
   } finally {
     cleanup();
@@ -266,16 +266,16 @@ async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
 
 /** 引擎在冷却期内则直接抛错(文案可转告用户),调用方跳到下一引擎 */
 async function throwIfCoolingDown(id: string): Promise<void> {
+  let bag: Record<string, unknown>;
   try {
-    const bag = await chrome.storage.session.get(COOLDOWN_KEY);
-    const hit = (bag[COOLDOWN_KEY] ?? {})[id];
-    if (hit?.until > Date.now()) {
-      const min = Math.max(1, Math.round((hit.until - Date.now()) / 60_000));
-      throw new Error(`搜索引擎 ${id} 刚被风控/限流,冷却中(剩约 ${min} 分钟)`);
-    }
-  } catch (e) {
-    if (e instanceof Error && e.message.includes("冷却")) throw e;
-    /* 存储读失败视为无冷却 */
+    bag = await chrome.storage.session.get(COOLDOWN_KEY);
+  } catch {
+    return; /* 存储读失败视为无冷却 */
+  }
+  const hit = ((bag[COOLDOWN_KEY] ?? {}) as Record<string, { until?: number }>)[id];
+  if (hit?.until != null && hit.until > Date.now()) {
+    const min = Math.max(1, Math.round((hit.until - Date.now()) / 60_000));
+    throw new Error(`Search engine ${id} was just rate-limited and is cooling down (~${min} min left)`);
   }
 }
 

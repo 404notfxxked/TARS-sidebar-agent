@@ -46,9 +46,9 @@ export async function addMemory(
   source: MemoryRow["source"],
 ): Promise<AddMemoryOutcome> {
   const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) throw new Error("记忆内容不能为空");
+  if (!clean) throw new Error("Memory content is empty");
   if (clean.length > MEMORY_MAX_CHARS) {
-    throw new Error(`记忆需在 ${MEMORY_MAX_CHARS} 字以内(当前 ${clean.length} 字),请浓缩成一句独立成文的事实`);
+    throw new Error(`Memory must be at most ${MEMORY_MAX_CHARS} characters (got ${clean.length}); condense it into one self-contained sentence`);
   }
   const now = Date.now();
   const existing = (await listMemoryRows()).find((r) => r.text === clean);
@@ -76,13 +76,13 @@ export async function updateMemory(
   text: string,
 ): Promise<MemoryRow> {
   const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) throw new Error("记忆内容不能为空");
+  if (!clean) throw new Error("Memory content is empty");
   if (clean.length > MEMORY_MAX_CHARS) {
-    throw new Error(`记忆需在 ${MEMORY_MAX_CHARS} 字以内(当前 ${clean.length} 字)`);
+    throw new Error(`Memory must be at most ${MEMORY_MAX_CHARS} characters (got ${clean.length})`);
   }
   const all = await loadMemories();
   const prev = all.find((r) => r.id === id);
-  if (!prev) throw new Error("记忆不存在或已删除");
+  if (!prev) throw new Error("Memory not found or already deleted");
   const row = { ...prev, text: clean, updatedAt: Date.now() };
   await putMemoryRow(row);
   log.info("memory", "记忆已更新", { chars: clean.length });
@@ -95,7 +95,7 @@ export async function setMemoryPinned(
 ): Promise<void> {
   const all = await loadMemories();
   const prev = all.find((r) => r.id === id);
-  if (!prev) throw new Error("记忆不存在或已删除");
+  if (!prev) throw new Error("Memory not found or already deleted");
   await putMemoryRow({ ...prev, pinned, updatedAt: prev.updatedAt });
   log.info("memory", pinned ? "记忆已置顶" : "记忆已取消置顶", {});
 }
@@ -111,7 +111,7 @@ export async function deleteMemoriesByMatch(
   match: string,
 ): Promise<{ count: number; deleted: string[] }> {
   const needle = match.replace(/\s+/g, " ").trim().toLowerCase();
-  if (!needle) throw new Error("请给出要删除的记忆关键词");
+  if (!needle) throw new Error("Provide a keyword to match memories for deletion");
   const all = await loadMemories();
   const hits = all.filter((r) => r.text.toLowerCase().includes(needle));
   for (const r of hits) await deleteMemoryRow(r.id);

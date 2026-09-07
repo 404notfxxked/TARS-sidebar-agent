@@ -95,7 +95,7 @@ const TAVILY: SearchProviderPreset = {
   }),
   parse: (body) => {
     const results = (body as { results?: unknown })?.results;
-    if (!Array.isArray(results)) throw new Error("响应缺少 results 数组");
+    if (!Array.isArray(results)) throw new Error("Response has no results array");
     return results.map((r) => {
       const o = r as Record<string, unknown>;
       return { title: str(o.title), url: str(o.url), snippet: str(o.content) };
@@ -129,7 +129,7 @@ const BOCHA: SearchProviderPreset = {
     const pages = (body as { data?: { webPages?: { value?: unknown } } })?.data
       ?.webPages?.value;
     if (!Array.isArray(pages))
-      throw new Error("响应缺少 data.webPages.value 数组");
+      throw new Error("Response has no data.webPages.value array");
     return pages.map((p) => {
       const o = p as Record<string, unknown>;
       return {
@@ -178,7 +178,7 @@ const BRAVE: SearchProviderPreset = {
   },
   parse: (body) => {
     const results = (body as { web?: { results?: unknown } })?.web?.results;
-    if (!Array.isArray(results)) throw new Error("响应缺少 web.results 数组");
+    if (!Array.isArray(results)) throw new Error("Response has no web.results array");
     return results.map((r) => {
       const o = r as Record<string, unknown>;
       return {
@@ -255,7 +255,7 @@ export async function runWebSearch(
 ): Promise<WebSearchResult> {
   const query = typeof args?.query === "string" ? args.query.trim() : "";
   if (!query) {
-    throw new Error("web_search: query 不能为空,请给出要搜索的关键词");
+    throw new Error("web_search: query is empty; provide the keywords to search");
   }
   const limit =
     typeof args?.max_results === "number" && Number.isFinite(args.max_results)
@@ -400,7 +400,7 @@ async function runApiSearch(
   } catch (e) {
     const kind = classifyFailure(e, cancelSignal?.aborted ?? false);
     if (kind === "cancelled") {
-      throw new Error("用户已取消本次搜索");
+      throw new Error("Search cancelled by the user");
     }
     if (kind === "timeout" || kind === "blocked") {
       await coolDownEngine(

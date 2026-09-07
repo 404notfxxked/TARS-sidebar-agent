@@ -73,11 +73,11 @@ function pickSplit(
 
 // ---- 摘要生成 ----
 
-const SUMMARY_SYSTEM = `你在压缩一段 AI 助手对话的历史记录,产出供后续对话继续使用的上下文摘要。只输出摘要本身,不要任何开场白或解释。要求:
-- 用中文,不超过 1200 字
-- 必须保留:用户的任务与目标、已完成的操作与结论、关键来源(URL 和要点)、未完成的事项与下一步、用户表达的偏好与约束
-- 可以丢弃:寒暄、重复内容、与任务无关的细节
-- 用小标题分节,条目化,信息密度优先`;
+const SUMMARY_SYSTEM = `You compress the history of an AI assistant conversation into a context summary that later turns will rely on. Output only the summary — no preamble, no explanation. Requirements:
+- Write in the conversation's language, at most 900 words
+- Must keep: the user's task and goal, actions taken and conclusions so far, key sources (URLs and key points), open items and next steps, preferences and constraints the user expressed
+- May drop: pleasantries, repetition, details unrelated to the task
+- Use section headings and bullet items; favor information density`;
 
 /** wire 转写:user 消息解掉 <context>/<user-request> 包裹(tab 快照是噪音,
  *  用户输入的原文才是要记的),工具调用带上参数摘要 */
@@ -86,16 +86,16 @@ function toTranscript(prefix: InternalMsg[]): string {
     .map((m) => {
       if (m.role === "user") {
         const inner = m.content.match(/<user-request>([\s\S]*?)<\/user-request>/);
-        return `[用户] ${inner ? inner[1] : m.content}`;
+        return `[user] ${inner ? inner[1] : m.content}`;
       }
       if (m.role === "assistant") {
         const calls =
           m.toolCalls
-            ?.map((tc) => `[调用 ${tc.name} ${JSON.stringify(tc.args)}]`)
+            ?.map((tc) => `[call ${tc.name} ${JSON.stringify(tc.args)}]`)
             .join(" ") ?? "";
-        return `[助手] ${m.content ?? ""} ${calls}`.trim();
+        return `[assistant] ${m.content ?? ""} ${calls}`.trim();
       }
-      if (m.role === "tool") return `[工具结果] ${m.content}`;
+      if (m.role === "tool") return `[tool result] ${m.content}`;
       return ""; // system 不会出现在前缀里
     })
     .filter(Boolean)
@@ -113,8 +113,8 @@ function buildSummaryMessages(
     {
       role: "user",
       content: prevSummary
-        ? `<previous_summary>\n${prevSummary}\n</previous_summary>\n\n<new_messages>\n${transcript}\n</new_messages>\n\n请把旧摘要与新消息合并为一份新摘要:旧摘要里仍相关的内容保留,已完成或已失效的内容更新,新消息的关键信息并入。只输出新摘要。`
-        : `<conversation>\n${transcript}\n</conversation>\n\n请按系统要求输出这段对话的摘要。`,
+        ? `<previous_summary>\n${prevSummary}\n</previous_summary>\n\n<new_messages>\n${transcript}\n</new_messages>\n\nMerge the previous summary and the new messages into one updated summary: keep still-relevant content from the previous summary, update or drop completed / outdated items, fold in key information from the new messages. Output only the new summary.`
+        : `<conversation>\n${transcript}\n</conversation>\n\nSummarize this conversation per the system instructions.`,
     },
   ];
 }
@@ -126,7 +126,7 @@ export function summaryToMsg(
 ): Extract<InternalMsg, { role: "user" }> {
   return {
     role: "user",
-    content: `<context-summary>\n以下是本会话较早内容的压缩摘要(细节可能省略,需要时可用工具重新获取):\n${summary}\n</context-summary>`,
+    content: `<context-summary>\nCompressed summary of earlier parts of this conversation (details may be omitted; re-fetch with tools when needed):\n${summary}\n</context-summary>`,
   };
 }
 

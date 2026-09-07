@@ -244,7 +244,7 @@ function buildRecord(
 
 async function callTool(rec: McpToolRecord, args: unknown): Promise<string> {
   const client = cache.get(rec.serverId)?.client;
-  if (!client) throw new Error("MCP 服务器连接已失效,请重试(设置页可测试连接)");
+  if (!client) throw new Error("MCP server connection went stale; retry (or use Test connection in Settings)");
   const a = (args ?? {}) as Record<string, unknown>;
   const extraHeaders: Record<string, string> = {};
   for (const { path, header } of rec.headerParams) {
