@@ -11,9 +11,8 @@ import type { McpConfig, McpServerEntry } from "../shared/mcp";
 import {
   loadConfig,
   savePrefs,
-  COMPACT_LABELS,
   COMPACT_LEVELS,
-  SEARCH_PROVIDER_LABELS,
+  SEARCH_PROVIDER_IDS,
   type AccentPref,
   type CompactLevel,
   type ModelEntry,
@@ -34,44 +33,62 @@ import {
   type MemoryItem,
 } from "../shared/messages";
 import { memReq } from "./memoryClient";
+import { t } from "../shared/i18n";
 import { mcpListTools, mcpTest } from "./mcpClient";
 
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
+/** 键一律写字面量(禁止动态拼键):动态拼键会绕过 check-i18n 的静态扫描 */
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
-  { value: "system", label: "跟随系统" },
-  { value: "light", label: "浅色" },
-  { value: "dark", label: "深色" },
+  { value: "system", label: t("settings.themeSystem") },
+  { value: "light", label: t("settings.themeLight") },
+  { value: "dark", label: t("settings.themeDark") },
 ];
 
 /** 历史保留期分段选项:值为天数,0 = 不自动清理 */
 const RETENTION_OPTIONS: { value: "7" | "30" | "0"; label: string }[] = [
-  { value: "7", label: "7 天" },
-  { value: "30", label: "30 天" },
-  { value: "0", label: "全部" },
+  { value: "7", label: t("settings.retention7") },
+  { value: "30", label: t("settings.retention30") },
+  { value: "0", label: t("settings.retentionAll") },
 ];
 
-/** 重点色候选:与 scripts/generate-m3.mjs 的 ACCENTS 一一对应,
- *  color 用各源色本身(色板小圆点展示的是"你选的那个颜色") */
-const ACCENT_OPTIONS: { value: AccentPref; label: string; color: string }[] = [
-  { value: "green", label: "青绿", color: "#16a34a" },
-  { value: "ocean", label: "湖蓝", color: "#0b57d0" },
-  { value: "teal", label: "青碧", color: "#0d9488" },
-  { value: "indigo", label: "靛蓝", color: "#4f46e5" },
-  { value: "lilac", label: "丁香", color: "#6750a4" },
-  { value: "coral", label: "珊瑚", color: "#ea580c" },
-  { value: "rose", label: "玫红", color: "#e11d48" },
-  { value: "graphite", label: "石墨", color: "#5f6368" },
-];
+type FetchState = "idle" | "loading" | "error";
+
+/** 重点色候选:与 scripts/generate-m3.mjs 的 ACCENTS 一一对应;键映射
+ *  写字面量,不做动态拼键(动态拼键会绕过 check-i18n 静态扫描) */
+const ACCENT_LABEL_KEYS: Record<AccentPref, string> = {
+  green: "settings.accentGreen",
+  ocean: "settings.accentOcean",
+  teal: "settings.accentTeal",
+  indigo: "settings.accentIndigo",
+  lilac: "settings.accentLilac",
+  coral: "settings.accentCoral",
+  rose: "settings.accentRose",
+  graphite: "settings.accentGraphite",
+};
+const ACCENT_OPTIONS: { value: AccentPref; label: string; color: string }[] = (
+  [
+    ["green", "#16a34a"],
+    ["ocean", "#0b57d0"],
+    ["teal", "#0d9488"],
+    ["indigo", "#4f46e5"],
+    ["lilac", "#6750a4"],
+    ["coral", "#ea580c"],
+    ["rose", "#e11d48"],
+    ["graphite", "#5f6368"],
+  ] as const
+).map(([value, color]) => ({
+  value: value as AccentPref,
+  label: t(ACCENT_LABEL_KEYS[value]),
+  color,
+}));
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
-
-type FetchState = "idle" | "loading" | "error";
 
 /** M3 分段按钮(connected button group):选中段填 secondaryContainer,勾号由 CSS 提供 */
 function Segmented<T extends string>({
@@ -155,7 +172,7 @@ function ModelRow({
         <div className="model-row-body-inner">
           {entry.alias && <p className="model-row-id">{entry.id}</p>}
           <label className="field-label" htmlFor={`model-alias-${entry.id}`}>
-            别名<span className="font-normal text-on-surface-variant">（选填）</span>
+            {t("settings.alias")}<span className="font-normal text-on-surface-variant">{t("common.optional")}</span>
           </label>
           <input
             id={`model-alias-${entry.id}`}
@@ -163,18 +180,18 @@ function ModelRow({
             value={entry.alias ?? ""}
             onChange={(e) => onPatch({ alias: e.target.value })}
             onBlur={onCommit}
-            placeholder="聊天区选择器显示用"
+            placeholder={t("settings.aliasPlaceholder")}
             autoComplete="off"
             spellCheck={false}
             className="field-input"
           />
           <div className="mt-2.5 flex items-center justify-between">
-            <span className="text-[12.5px] font-medium text-on-surface">多模态</span>
+            <span className="text-[12.5px] font-medium text-on-surface">{t("settings.vision")}</span>
             <button
               type="button"
               role="switch"
               aria-checked={!!entry.vision}
-              aria-label={`${entry.alias || entry.id} 多模态`}
+              aria-label={`${entry.alias || entry.id} ${t("settings.vision")}`}
               onClick={() => onPatch({ vision: !entry.vision }, true)}
               className="switch"
             >
@@ -184,7 +201,7 @@ function ModelRow({
           <div className="mt-1 grid grid-cols-2 gap-2">
             <div>
               <label className="field-label" htmlFor={`model-ctx-${entry.id}`}>
-                上下文窗口
+                {t("settings.contextTokens")}
               </label>
               <input
                 id={`model-ctx-${entry.id}`}
@@ -194,14 +211,14 @@ function ModelRow({
                   onPatch({ contextTokens: Number(e.target.value) || 0 })
                 }
                 onBlur={onCommit}
-                placeholder="如 128000"
+                placeholder={t("settings.ctxPlaceholder")}
                 autoComplete="off"
                 className="field-input font-mono"
               />
             </div>
             <div>
               <label className="field-label" htmlFor={`model-max-${entry.id}`}>
-                最大输出
+                {t("settings.maxTokens")}
               </label>
               <input
                 id={`model-max-${entry.id}`}
@@ -211,7 +228,7 @@ function ModelRow({
                   onPatch({ maxTokens: Number(e.target.value) || 0 })
                 }
                 onBlur={onCommit}
-                placeholder="如 8192"
+                placeholder={t("settings.maxPlaceholder")}
                 autoComplete="off"
                 className="field-input font-mono"
               />
@@ -222,7 +239,7 @@ function ModelRow({
               className="field-label"
               htmlFor={`model-mtf-${entry.id}`}
             >
-              输出上限字段
+              {t("settings.maxTokensField")}
             </label>
             <select
               id={`model-mtf-${entry.id}`}
@@ -238,10 +255,10 @@ function ModelRow({
               }
               className="field-input"
             >
-              <option value="">自动（按模型名推断）</option>
-              <option value="max_tokens">max_tokens（兼容端点）</option>
+              <option value="">{t("settings.maxTokensAuto")}</option>
+              <option value="max_tokens">{t("settings.maxTokensCompat")}</option>
               <option value="max_completion_tokens">
-                max_completion_tokens（OpenAI 推理模型）
+                {t("settings.maxTokensReasoning")}
               </option>
             </select>
           </div>
@@ -252,7 +269,7 @@ function ModelRow({
                 className="model-row-action"
                 onClick={onSetDefault}
               >
-                设为默认
+                {t("settings.setDefault")}
               </button>
             )}
             <button
@@ -262,7 +279,7 @@ function ModelRow({
               }`}
               onClick={onRemove}
             >
-              {confirming ? "确认删除" : "删除"}
+              {confirming ? t("common.confirmDelete") : t("common.delete")}
             </button>
           </div>
         </div>
@@ -324,7 +341,7 @@ function McpServerCard({
   const [toolsError, setToolsError] = useState("");
   const [headersText, setHeadersText] = useState(headersToText(entry.headers));
 
-  const displayName = entry.name || hostOf(entry.url) || "未命名服务器";
+  const displayName = entry.name || hostOf(entry.url) || t("settings.serverUnnamed");
   /** headers 逐行编辑、失焦整包提交,序列化后作依赖:提交才触发重拉 */
   const headersKey = JSON.stringify(entry.headers);
 
@@ -378,8 +395,8 @@ function McpServerCard({
     setTestOk(r.ok);
     setTestMsg(
       r.ok
-        ? `已连接 · ${r.toolCount} 个工具 · ${r.era ?? ""}`
-        : r.error ?? "连接失败",
+        ? t("settings.testOk", { n: r.toolCount ?? 0, era: r.era ?? "" })
+        : r.error ?? t("settings.testFailed"),
     );
   };
 
@@ -399,10 +416,10 @@ function McpServerCard({
       >
         <span className="min-w-0 truncate">
           <span className="model-row-name">{displayName}</span>
-          {!entry.enabled && <span className="model-badge">停用</span>}
+          {!entry.enabled && <span className="model-badge">{t("common.disabled")}</span>}
         </span>
         <span className="ml-auto shrink-0 pr-1 text-[11px] text-on-surface-variant">
-          {tools?.length != null ? `${tools.length} 个工具` : hostOf(entry.url)}
+          {tools?.length != null ? t("settings.toolCount", { n: tools.length }) : hostOf(entry.url)}
         </span>
         <svg
           className="model-row-chevron"
@@ -422,12 +439,12 @@ function McpServerCard({
       <div className="model-row-body" data-open={open}>
         <div className="model-row-body-inner">
           <div className="flex items-center justify-between">
-            <span className="settings-row-label">启用</span>
+            <span className="settings-row-label">{t("common.enabled")}</span>
             <button
               type="button"
               role="switch"
               aria-checked={entry.enabled}
-              aria-label={`${displayName} 启用`}
+              aria-label={`${displayName} ${t("common.enabled")}`}
               onClick={() => onPatch({ enabled: !entry.enabled }, true)}
               className="switch"
             >
@@ -436,7 +453,7 @@ function McpServerCard({
           </div>
           <div className="settings-field">
             <label className="field-label" htmlFor={`mcp-name-${entry.id}`}>
-              名称<span className="font-normal text-on-surface-variant">（选填）</span>
+              {t("settings.serverName")}<span className="font-normal text-on-surface-variant">{t("common.optional")}</span>
             </label>
             <input
               id={`mcp-name-${entry.id}`}
@@ -444,7 +461,7 @@ function McpServerCard({
               value={entry.name}
               onChange={(e) => onPatch({ name: e.target.value })}
               onBlur={onCommit}
-              placeholder="如 GitHub"
+              placeholder={t("settings.serverNamePlaceholder")}
               autoComplete="off"
               spellCheck={false}
               className="field-input"
@@ -452,7 +469,7 @@ function McpServerCard({
           </div>
           <div className="settings-field">
             <label className="field-label" htmlFor={`mcp-url-${entry.id}`}>
-              MCP 端点 URL
+              {t("settings.serverUrl")}
             </label>
             <input
               id={`mcp-url-${entry.id}`}
@@ -460,19 +477,18 @@ function McpServerCard({
               value={entry.url}
               onChange={(e) => onPatch({ url: e.target.value }, false)}
               onBlur={(e) => onPatch({ url: e.target.value.trim() }, true)}
-              placeholder="https://api.example.com/mcp"
+              placeholder={t("settings.serverUrlPlaceholder")}
               autoComplete="off"
               spellCheck={false}
               className="field-input font-mono"
             />
             <p className="field-hint">
-              Streamable HTTP 端点；远程托管（GitHub / Linear / Notion
-              等）或本机桌面应用（如 Figma 的 http://127.0.0.1:3845/mcp）均可。
+              {t("settings.serverUrlHint")}
             </p>
           </div>
           <div className="settings-field">
             <label className="field-label" htmlFor={`mcp-headers-${entry.id}`}>
-              请求头<span className="font-normal text-on-surface-variant">（选填）</span>
+              {t("settings.headers")}<span className="font-normal text-on-surface-variant">{t("common.optional")}</span>
             </label>
             <textarea
               id={`mcp-headers-${entry.id}`}
@@ -488,7 +504,7 @@ function McpServerCard({
               className="field-input font-mono"
             />
             <p className="field-hint">
-              每行一条「名称: 值」，随每次请求发送；令牌只保存在本机。
+              {t("settings.headersHint")}
             </p>
           </div>
 
@@ -499,7 +515,7 @@ function McpServerCard({
               disabled={testState === "loading" || !entry.url.trim()}
               className="btn-text"
             >
-              {testState === "loading" ? "连接中…" : "测试连接"}
+              {testState === "loading" ? t("settings.testing") : t("settings.testConnection")}
             </button>
             {testState === "done" && (
               <span
@@ -512,17 +528,17 @@ function McpServerCard({
 
           {/* 工具清单:启用前审阅描述 —— MCP 工具描述是外部文本,这是注入防线的一环 */}
           {toolsLoading && (
-            <p className="field-hint">正在获取工具清单…</p>
+            <p className="field-hint">{t("settings.toolsLoading")}</p>
           )}
           {!toolsLoading && (tools || toolsError) && (
             <div className="settings-block">
               <div className="flex items-center justify-between">
                 <span className="settings-row-label">
-                  工具{tools ? `（${tools.length} 个 · 定义约 ${toolsTokens} token）` : ""}
+                  {t("settings.tools")}{tools ? t("settings.toolsMeta", { n: tools.length, tokens: toolsTokens }) : ""}
                 </span>
               </div>
               {toolsError ? (
-                <p className="field-hint text-error">工具清单获取失败：{toolsError}</p>
+                <p className="field-hint text-error">{t("settings.toolsLoadFailed", { error: toolsError })}</p>
               ) : (
                 <div className="model-list">
                   {tools?.map((t) => (
@@ -552,7 +568,7 @@ function McpServerCard({
               }`}
               onClick={onRemove}
             >
-              {confirming ? "再点一次确认删除此服务器" : "删除此服务器"}
+              {confirming ? t("settings.confirmDeleteServer") : t("settings.deleteServer")}
             </button>
           </div>
         </div>
@@ -600,7 +616,7 @@ function ProviderCard({
     return () => window.clearTimeout(t);
   }, [confirmModelId]);
 
-  const displayName = entry.name || hostOf(entry.baseUrl) || "未命名服务";
+  const displayName = entry.name || hostOf(entry.baseUrl) || t("settings.providerUnnamed");
 
   /** 供应商内某个模型条目的局部更新;save=true 即时落盘 */
   const patchModel = (mid: string, patch: Partial<ModelEntry>, save = false) =>
@@ -638,7 +654,7 @@ function ProviderCard({
     if (fetchState === "loading") return;
     if (!entry.apiKey.trim()) {
       setFetchState("error");
-      setFetchError("请先填写此服务的 API Key");
+      setFetchError(t("settings.fetchNeedKey"));
       return;
     }
     abortRef.current?.abort();
@@ -677,7 +693,7 @@ function ProviderCard({
           {isCurrent && <span className="model-badge">当前</span>}
         </span>
         <span className="ml-auto shrink-0 pr-1 text-[11px] text-on-surface-variant">
-          {entry.models.length > 0 ? `${entry.models.length} 个模型` : "无模型"}
+          {entry.models.length > 0 ? t("settings.modelCount", { n: entry.models.length }) : t("settings.modelEmpty")}
         </span>
         <svg
           className="model-row-chevron"
@@ -698,7 +714,7 @@ function ProviderCard({
         <div className="model-row-body-inner">
           <div className="settings-field">
             <label className="field-label" htmlFor={`p-name-${entry.id}`}>
-              名称<span className="font-normal text-on-surface-variant">（选填）</span>
+              {t("settings.providerName")}<span className="font-normal text-on-surface-variant">{t("common.optional")}</span>
             </label>
             <input
               id={`p-name-${entry.id}`}
@@ -706,7 +722,7 @@ function ProviderCard({
               value={entry.name}
               onChange={(e) => onPatch({ name: e.target.value })}
               onBlur={onCommit}
-              placeholder="如 DeepSeek"
+              placeholder={t("settings.namePlaceholder")}
               autoComplete="off"
               spellCheck={false}
               className="field-input"
@@ -714,7 +730,7 @@ function ProviderCard({
           </div>
           <div className="settings-field">
             <label className="field-label" htmlFor={`p-baseurl-${entry.id}`}>
-              Base URL
+              {t("settings.providerUrl")}
             </label>
             <input
               id={`p-baseurl-${entry.id}`}
@@ -722,18 +738,18 @@ function ProviderCard({
               value={entry.baseUrl}
               onChange={(e) => onPatch({ baseUrl: e.target.value })}
               onBlur={onCommit}
-              placeholder="https://api.deepseek.com/v1"
+              placeholder={t("settings.providerUrlPlaceholder")}
               autoComplete="off"
               spellCheck={false}
               className="field-input font-mono"
             />
             <p className="field-hint">
-              OpenAI 兼容端点，需含 /v1；留空使用官方 api.openai.com/v1。
+              {t("settings.providerUrlHint")}
             </p>
           </div>
           <div className="settings-field">
             <label className="field-label" htmlFor={`p-apikey-${entry.id}`}>
-              API Key
+              {t("settings.apiKey")}
             </label>
             <input
               id={`p-apikey-${entry.id}`}
@@ -750,18 +766,18 @@ function ProviderCard({
 
           <div className="settings-block">
             <div className="flex items-center justify-between">
-              <span className="settings-row-label">模型</span>
+              <span className="settings-row-label">{t("settings.models")}</span>
               <button
                 type="button"
                 onClick={fetchList}
                 disabled={fetchState === "loading"}
                 className="btn-text"
               >
-                {fetchState === "loading" ? "拉取中…" : "获取列表"}
+                {fetchState === "loading" ? t("settings.fetching") : t("settings.fetchModels")}
               </button>
             </div>
             {fetchState === "error" && (
-              <p className="field-hint text-error">获取失败：{fetchError}</p>
+              <p className="field-hint text-error">{t("settings.fetchFailed", { error: fetchError })}</p>
             )}
             {entry.models.length > 0 ? (
               <div className="model-list">
@@ -784,8 +800,7 @@ function ProviderCard({
               </div>
             ) : (
               <p className="field-hint">
-                还没有模型：点「获取列表」按此服务的地址与 Key
-                拉取，或在下方手动添加。
+                {t("settings.modelEmptyHint")}
               </p>
             )}
 
@@ -800,7 +815,7 @@ function ProviderCard({
                     addModel();
                   }
                 }}
-                placeholder="手动添加模型 ID，如 deepseek-chat"
+                placeholder={t("settings.modelIdPlaceholder")}
                 autoComplete="off"
                 spellCheck={false}
                 className="field-input font-mono"
@@ -811,7 +826,7 @@ function ProviderCard({
             </div>
             {entry.models.length > 0 && (
               <p className="field-hint">
-                点模型行展开配置；「默认」标记 = 对话正在使用的供应商与模型。
+                {t("settings.modelRowHint")}
               </p>
             )}
           </div>
@@ -824,7 +839,7 @@ function ProviderCard({
               }`}
               onClick={onRemove}
             >
-              {confirming ? "再点一次确认删除此服务" : "删除此服务"}
+              {confirming ? t("settings.confirmDeleteProvider") : t("settings.deleteProvider")}
             </button>
           </div>
         </div>
@@ -832,6 +847,19 @@ function ProviderCard({
     </div>
   );
 }
+
+/** 同上:分段/下拉的键映射全部字面量化 */
+const COMPACT_LABEL_KEYS: Record<CompactLevel, string> = {
+  early: "settings.compactEarly",
+  standard: "settings.compactStandard",
+  late: "settings.compactLate",
+};
+const SEARCH_PROVIDER_LABEL_KEYS: Record<SearchProviderSetting, string> = {
+  auto: "settings.searchProviderAuto",
+  tavily: "settings.searchProviderTavily",
+  bocha: "settings.searchProviderBocha",
+  brave: "settings.searchProviderBrave",
+};
 
 export default function SettingsView({
   onBack,
@@ -975,7 +1003,7 @@ export default function SettingsView({
     navigator.storage
       .estimate()
       .then((est) =>
-        setUsage(est.usage != null ? formatBytes(est.usage) : "未知"),
+        setUsage(est.usage != null ? formatBytes(est.usage) : t("common.unknown")),
       )
       .catch(() => setUsage(null));
   };
@@ -1166,7 +1194,7 @@ export default function SettingsView({
         <button
           type="button"
           onClick={onBack}
-          aria-label="返回对话"
+          aria-label={t("common.backToChat")}
           className="icon-btn"
         >
           <svg
@@ -1183,26 +1211,26 @@ export default function SettingsView({
             <path d="M10 3 5 8l5 5" />
           </svg>
         </button>
-        <h2 className="m-0 text-[16px] font-medium text-on-surface">设置</h2>
+        <h2 className="m-0 text-[16px] font-medium text-on-surface">{t("settings.title")}</h2>
         <span
           aria-live="polite"
           className={`ml-auto pr-1 text-[11px] text-primary transition-opacity duration-300 ${
             savedFlash ? "opacity-100" : "opacity-0"
           }`}
         >
-          已保存
+          {t("settings.saved")}
         </span>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {saveError && (
           <p className="mb-1 mt-2 text-[12px] text-error">
-            保存失败，请修改后重试。
+            {t("settings.saveFailed")}
           </p>
         )}
 
         {/* ── 模型服务 ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-3">模型服务</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-3">{t("settings.sectionModel")}</h3>
         <div className="settings-card">
           {providers.length > 0 ? (
             <div className="model-list">
@@ -1224,8 +1252,7 @@ export default function SettingsView({
             </div>
           ) : (
             <p className="field-hint">
-              还没有模型服务：点「添加服务商」填入 OpenAI 兼容端点（Base URL +
-              API Key），可添加多个随时切换。
+              还没有服务商。点「添加服务商」填入地址和 Key 就能用，可以加多个随时切换。
             </p>
           )}
           <div className="mt-2">
@@ -1234,18 +1261,18 @@ export default function SettingsView({
             </button>
           </div>
           <p className="field-hint">
-            点卡片展开该服务的端点与模型配置；带「当前」标记的是对话正在使用的供应商与模型。
+            点卡片展开详细配置。带「当前」标记的，就是对话正在用的服务商。
           </p>
         </div>
 
 
         {/* ── 外观 ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">外观</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-4">{t("settings.sectionAppearance")}</h3>
         <div className="settings-card">
           <div className="settings-field">
-            <span className="field-label">主题</span>
+            <span className="field-label">{t("settings.theme")}</span>
             <Segmented
-              ariaLabel="主题"
+              ariaLabel={t("settings.theme")}
               value={theme}
               options={THEME_OPTIONS}
               onChange={(t) => {
@@ -1258,10 +1285,10 @@ export default function SettingsView({
 
           {/* 重点色:色板 = 各源色,选中套整个 scheme(m3.css 的 data-accent) */}
           <div className="settings-field">
-            <span className="field-label">重点色</span>
+            <span className="field-label">{t("settings.accent")}</span>
             <div
               role="radiogroup"
-              aria-label="重点色"
+              aria-label={t("settings.accent")}
               className="flex items-center gap-2.5"
             >
               {ACCENT_OPTIONS.map((a) => (
@@ -1270,7 +1297,7 @@ export default function SettingsView({
                   type="button"
                   role="radio"
                   aria-checked={accent === a.value}
-                  aria-label={`重点色：${a.label}`}
+                  aria-label={t("settings.accentAria", { name: a.label })}
                   title={a.label}
                   onClick={() => {
                     setAccent(a.value);
@@ -1289,7 +1316,7 @@ export default function SettingsView({
         </div>
 
         {/* ── 联网 ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">联网</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-4">{t("settings.sectionWeb")}</h3>
         <div className="settings-card">
           <div className="settings-block">
             <div className="settings-row">
@@ -1297,7 +1324,7 @@ export default function SettingsView({
                 htmlFor="settings-web-search"
                 className="settings-row-label"
               >
-                联网搜索
+                {t("settings.webSearch")}
               </label>
               <button
                 id="settings-web-search"
@@ -1315,8 +1342,7 @@ export default function SettingsView({
               </button>
             </div>
             <p className="field-hint">
-              默认关闭。开启后即可联网搜索：默认走免 Key 的抓取通道（质量随网络环境浮动），
-              也可以配置搜索服务（Tavily / 博查 / Brave，自带 API Key）获得更稳的结果。
+              {t("settings.webSearchHint")}
             </p>
           </div>
 
@@ -1324,7 +1350,7 @@ export default function SettingsView({
             <>
               <div className="settings-field">
                 <label className="field-label" htmlFor="search-provider">
-                  搜索方式
+                  {t("settings.searchProvider")}
                 </label>
                 <select
                   id="search-provider"
@@ -1339,13 +1365,13 @@ export default function SettingsView({
                   }}
                   className="field-input"
                 >
-                  {(
-                    Object.keys(SEARCH_PROVIDER_LABELS) as SearchProviderSetting[]
-                  ).map((id) => (
-                    <option key={id} value={id}>
-                      {SEARCH_PROVIDER_LABELS[id]}
-                    </option>
-                  ))}
+                  {(SEARCH_PROVIDER_IDS as readonly SearchProviderSetting[]).map(
+                    (id) => (
+                      <option key={id} value={id}>
+                        {t(SEARCH_PROVIDER_LABEL_KEYS[id])}
+                      </option>
+                    ),
+                  )}
                 </select>
               </div>
 
@@ -1353,7 +1379,7 @@ export default function SettingsView({
                 <>
                   <div className="settings-field">
                     <label className="field-label" htmlFor="search-baseurl">
-                      服务地址
+                      {t("settings.searchBaseUrl")}
                     </label>
                     <input
                       id="search-baseurl"
@@ -1365,7 +1391,7 @@ export default function SettingsView({
                       onBlur={(e) =>
                         patchService({ baseUrl: e.target.value.trim() }, true)
                       }
-                      placeholder="留空用官方端点；自建中转时填写根地址"
+                      placeholder={t("settings.searchBaseUrlPlaceholder")}
                       autoComplete="off"
                       spellCheck={false}
                       className="field-input font-mono"
@@ -1374,7 +1400,7 @@ export default function SettingsView({
 
                   <div className="settings-field">
                     <label className="field-label" htmlFor="search-apikey">
-                      API Key
+                      {t("settings.apiKey")}
                     </label>
                     <input
                       id="search-apikey"
@@ -1386,22 +1412,21 @@ export default function SettingsView({
                       onBlur={(e) =>
                         patchService({ apiKey: e.target.value.trim() }, true)
                       }
-                      placeholder="当前服务的 API Key；留空则退回免 Key 抓取通道"
+                      placeholder={t("settings.searchApiKeyPlaceholder")}
                       autoComplete="off"
                       spellCheck={false}
                       className="field-input font-mono"
                     />
                     <p className="field-hint">
                       {activeService.apiKey.trim()
-                        ? "已配置此服务的 Key；各家服务的 Key 分开保存，切换搜索方式互不影响。"
-                        : "此服务未填 Key：暂走免 Key 抓取通道。"}
+                        ? t("settings.searchKeyConfigured")
+                        : t("settings.searchKeyMissing")}
                     </p>
                   </div>
                 </>
               ) : (
                 <p className="field-hint">
-                  免 Key 模式：直接抓取 Bing / DuckDuckGo 的搜索结果页，搜索词会发给这些搜索引擎。
-                  结果质量取决于网络出口——被风控时会自动换引擎或冷却；想要稳定质量请改选具体服务商。
+                  {t("settings.searchFreeMode")}
                 </p>
               )}
             </>
@@ -1409,12 +1434,12 @@ export default function SettingsView({
         </div>
 
         {/* ── MCP:总开关 + 服务器卡片(工具清单与测试在卡片展开态) ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">MCP 工具</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-4">{t("settings.sectionMcp")}</h3>
         <div className="settings-card">
           <div className="settings-block">
             <div className="settings-row">
               <label htmlFor="settings-mcp" className="settings-row-label">
-                启用 MCP 工具
+                {t("settings.mcpEnable")}
               </label>
               <button
                 id="settings-mcp"
@@ -1432,9 +1457,7 @@ export default function SettingsView({
               </button>
             </div>
             <p className="field-hint">
-              接入 MCP 服务器后，它的工具会与本页其他工具一起提供给 AI。
-              调用这些工具时，相关请求内容会发送到对应服务器及其运营方——只接入你信任的服务。
-              支持 HTTP(S) 端点（远程托管或本机桌面应用），不支持需要本地进程的 stdio 服务器。
+              {t("settings.mcpHint")}
             </p>
           </div>
 
@@ -1459,19 +1482,17 @@ export default function SettingsView({
                 </div>
               ) : (
                 <p className="field-hint">
-                  还没有服务器：点「添加服务器」填入 MCP 端点 URL，需要认证的
-                  服务再补一条 Authorization 请求头。
+                  {t("settings.serverEmpty")}
                 </p>
               )}
               <div className="mt-2">
                 <button type="button" onClick={addServer} className="settings-btn">
-                  添加服务器
+                  {t("settings.addServer")}
                 </button>
               </div>
               {mcp.servers.length > 0 && (
                 <p className="field-hint">
-                  点卡片展开端点与请求头配置；「测试连接」会顺带拉取工具清单。
-                  每个服务器的「启用」开关可单独停用。
+                  {t("settings.serverHint")}
                 </p>
               )}
             </>
@@ -1479,12 +1500,12 @@ export default function SettingsView({
         </div>
 
         {/* ── 记忆:开关 + 摘要入口行;条目管理在记忆整页(MemoryView)── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">记忆</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-4">{t("settings.sectionMemory")}</h3>
         <div className="settings-card">
           <div className="settings-block">
             <div className="settings-row">
               <label htmlFor="settings-memory" className="settings-row-label">
-                长期记忆
+                {t("settings.sectionMemory")}
               </label>
               <button
                 id="settings-memory"
@@ -1502,9 +1523,9 @@ export default function SettingsView({
               </button>
             </div>
             <p className="field-hint">
-              开启后，对话中你明说「记住…」或提到稳定的个人偏好时，AI
-              会写入记忆（聊天流里会提示），跨会话生效并随每轮请求携带。
-              关闭只是停止保存与注入，已存记忆不会删除，重开即恢复。
+              开了之后，你在对话里说「记住…」或聊到稳定的偏好时，AI
+              会记下来（聊天流里会提示），之后每次对话都带上。
+              关闭只是不再保存和使用，已存的记忆还在，重开即恢复。
             </p>
           </div>
 
@@ -1512,16 +1533,16 @@ export default function SettingsView({
             <button
               type="button"
               onClick={onOpenMemory}
-              aria-label="管理记忆"
+              aria-label={t("memory.settingsManage")}
               className="-mx-1 flex w-full items-center justify-between rounded-md px-1 py-1.5 text-left transition-colors duration-150 hover:bg-on-surface/8"
             >
               <span className="min-w-0 truncate pr-2 text-[13px] text-on-surface">
                 {memories.length > 0
-                  ? `已保存 ${memories.length} 条 · 每轮注入约 ${memoryUsedTokens(memories)} token`
-                  : "还没有记忆，去对话里说「记住…」或到记忆页手动添加"}
+                  ? t("memory.settingsSaved", { n: memories.length, used: memoryUsedTokens(memories) })
+                  : t("memory.settingsEmpty")}
               </span>
               <span className="flex shrink-0 items-center gap-0.5 text-[12.5px] font-medium text-primary">
-                管理
+                {t("memory.settingsManage")}
                 <svg
                   width="12"
                   height="12"
@@ -1541,31 +1562,29 @@ export default function SettingsView({
         </div>
 
         {/* ── 上下文压缩 ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">上下文压缩</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-4">{t("settings.sectionCompaction")}</h3>
         <div className="settings-card">
           <div className="settings-field">
-            <span className="field-label">压缩时机</span>
+            <span className="field-label">{t("settings.compactTiming")}</span>
             <Segmented
               value={compact}
               options={COMPACT_LEVELS.map((l) => ({
                 value: l,
-                label: COMPACT_LABELS[l],
+                label: t(COMPACT_LABEL_KEYS[l]),
               }))}
               onChange={(v) => {
                 setCompact(v);
                 run(savePrefs({ compact: v }));
               }}
-              ariaLabel="上下文压缩触发时机"
+              ariaLabel={t("settings.compactTiming")}
             />
             <p className="field-hint">
-              对话历史占用超过可用窗口该比例时，较早的轮次会自动压缩为一条摘要，
-              腾出空间给新对话（聊天记录本身不受影响，仍完整保留）。需要在模型配置里
-              填写「上下文窗口」后才生效。
+              {t("settings.compactHint")}
             </p>
           </div>
           <div className="settings-field">
             <label className="field-label" htmlFor="compact-model">
-              压缩用模型
+              {t("settings.compactModel")}
             </label>
             <select
               id="compact-model"
@@ -1573,7 +1592,7 @@ export default function SettingsView({
               onChange={(e) => changeCompactModel(e.target.value)}
               className="field-input"
             >
-              <option value="">跟随当前模型</option>
+              <option value="">{t("settings.compactFollow")}</option>
               {providers
                 .filter((p) => p.apiKey && p.models.length > 0)
                 .map((p) => (
@@ -1587,25 +1606,25 @@ export default function SettingsView({
                 ))}
             </select>
             <p className="field-hint">
-              压缩摘要是机械任务，选一个便宜快速的模型可以省钱；留空则用当前对话模型。
+              {t("settings.compactModelHint")}
             </p>
           </div>
         </div>
 
         {/* ── 数据 ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">历史数据</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-4">{t("settings.sectionData")}</h3>
         <div className="settings-card">
           <div className="settings-field">
-            <span className="field-label">保留时长</span>
+            <span className="field-label">{t("settings.retention")}</span>
             <Segmented
               value={retention}
               options={RETENTION_OPTIONS}
               onChange={changeRetention}
-              ariaLabel="历史会话保留时长"
+              ariaLabel={t("settings.retentionAria")}
             />
           </div>
           <div className="settings-row">
-            <span className="settings-row-label">本地占用</span>
+            <span className="settings-row-label">{t("settings.localUsage")}</span>
             <span className="font-mono text-[12px] text-on-surface-variant">
               {usage ?? "—"}
             </span>
@@ -1616,46 +1635,45 @@ export default function SettingsView({
               onClick={clearAllHistory}
               className="btn-text danger"
             >
-              {confirmClear ? "再点一次确认清空" : "清空全部历史"}
+              {confirmClear ? t("common.confirmClear") : t("settings.clearHistory")}
             </button>
           </div>
         </div>
         <p className="settings-group-footer mt-2">
-          超过保留时长的会话按最后活跃时间自动清理;删除的会话不可恢复,所有数据只存在本机。
+          {t("settings.dataFooter")}
         </p>
 
         {/* ── 诊断 ── */}
-        <h3 className="settings-eyebrow mb-1.5 mt-4">诊断</h3>
+        <h3 className="settings-eyebrow mb-1.5 mt-4">{t("settings.sectionDiag")}</h3>
         <div className="settings-card">
           <div className="settings-row">
-            <span className="settings-row-label">运行日志</span>
+            <span className="settings-row-label">{t("settings.logs")}</span>
             <span className="font-mono text-[12px] text-on-surface-variant">
               {logCount === null
-                ? "读取中…"
+                ? t("common.loading")
                 : logCount < 0
-                  ? "读取失败"
-                  : `${logCount} 条`}
+                  ? t("common.loadFailed")
+                  : t("settings.logsUnit", { n: logCount })}
             </span>
           </div>
           <div className="settings-block flex items-center gap-2">
             <button type="button" onClick={copyLogs} className="btn-text">
-              {copied ? "已复制 ✓" : "复制 JSONL"}
+              {copied ? t("common.copied") : t("settings.copyJsonl")}
             </button>
             <button type="button" onClick={downloadLogs} className="btn-text">
-              下载日志
+              {t("settings.downloadLogs")}
             </button>
             <button
               type="button"
               onClick={clearLogs}
               className="btn-text danger"
             >
-              {confirmClearLogs ? "再点一次确认清空" : "清空"}
+              {confirmClearLogs ? t("common.confirmClear") : t("settings.clearLogs")}
             </button>
           </div>
         </div>
         <p className="settings-group-footer mt-2">
-          记录各上下文最近 400 条执行与报错。排查问题时：点「下载日志」，把文件放进项目
-          .logs/ 目录，然后让 TARS 读它分析。
+          {t("settings.diagFooter")}
         </p>
 
       </div>

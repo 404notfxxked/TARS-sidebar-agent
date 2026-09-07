@@ -39,6 +39,7 @@ import {
   type ImageMeta,
 } from "../shared/messages";
 import { base64ToBytes } from "../shared/imageCodec";
+import { t } from "../shared/i18n";
 import { getActiveTabId } from "../shared/contentTools";
 import {
   loadConfig,
@@ -798,21 +799,21 @@ export default function ChatView({
     const images = files.filter((f) => f.type.startsWith("image/"));
     if (images.length === 0) return;
     if (!visionOk) {
-      flashHint("当前模型未开启「多模态」，需在设置里勾选后才能发图");
+      flashHint(t("chat.visionOffToast"));
       return;
     }
     const room = MAX_ATTACHMENTS - pendingImages.length;
     if (room <= 0) {
-      flashHint(`一条消息最多带 ${MAX_ATTACHMENTS} 张图`);
+      flashHint(t("chat.imageLimit", { max: MAX_ATTACHMENTS }));
       return;
     }
-    if (images.length > room) flashHint(`一次最多再添加 ${room} 张图`);
+    if (images.length > room) flashHint(t("chat.imageRoom", { room }));
     const added: PendingImage[] = [];
     for (const file of images.slice(0, room)) {
       try {
         added.push(await compressImage(file));
       } catch {
-        flashHint(`无法解码图片：${file.name || "剪贴板内容"}`);
+        flashHint(t("chat.imageDecodeFailed", { name: file.name || t("chat.clipboard") }));
       }
     }
     if (added.length > 0) setPendingImages((prev) => [...prev, ...added]);
@@ -852,7 +853,7 @@ export default function ChatView({
     // 入库,切回视觉模型后可继续引用),但明确告知本次模型看不到
     if (pendingImages.length > 0 && !visionOk) {
       flashHint(
-        "当前模型不支持视觉，图片不会随本次提问发送；图片已保存，切回视觉模型后可继续引用",
+        t("chat.visionModelFallback"),
       );
     }
     // 会话全局唯一;tabId 记录本次提问的页面上下文(工具去该 tab 执行)
@@ -913,8 +914,8 @@ export default function ChatView({
                 type="button"
                 onClick={onOpenSessions}
                 disabled={busy}
-                aria-label="历史会话"
-                title={busy ? "回复结束后可查看历史会话" : undefined}
+                aria-label={t("chat.openSessions")}
+                title={busy ? t("chat.busySessionsHint") : undefined}
                 className={busy ? "icon-btn opacity-30" : "icon-btn"}
               >
                 <HistoryIcon />
@@ -923,8 +924,8 @@ export default function ChatView({
                 type="button"
                 onClick={resetConversation}
                 disabled={busy}
-                aria-label="开始新对话"
-                title={busy ? "回复结束后可开始新对话" : undefined}
+                aria-label={t("chat.newChat")}
+                title={busy ? t("chat.busyNewChatHint") : undefined}
                 className={busy ? "icon-btn opacity-30" : "icon-btn"}
               >
                 <PlusIcon />
@@ -935,7 +936,7 @@ export default function ChatView({
         <button
           type="button"
           onClick={onOpenSettings}
-          aria-label="打开设置"
+          aria-label={t("chat.openSettings")}
           className="icon-btn"
         >
           <SettingsIcon />
@@ -1010,9 +1011,9 @@ export default function ChatView({
             type="button"
             onClick={onOpenMemory}
             className="memory-hint"
-            aria-label={`本轮已写入 ${memorySaved} 条记忆,查看或编辑`}
+            aria-label={t("chat.memorySavedHint", { n: memorySaved })}
           >
-            <ArchiveIcon /> 已写入 {memorySaved} 条记忆 · 查看/编辑
+            <ArchiveIcon /> {t("chat.memorySavedLabel", { n: memorySaved })}
           </button>
         )}
       </div>
@@ -1036,7 +1037,7 @@ export default function ChatView({
                 <button
                   type="button"
                   onClick={() => removePending(p.id)}
-                  aria-label="移除图片"
+                  aria-label={t("chat.removeImage")}
                   className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-on-surface text-[10px] leading-none text-surface-container-high shadow-sm"
                 >
                   ✕
@@ -1067,8 +1068,8 @@ export default function ChatView({
                 submit();
               }
             }}
-            placeholder="问点什么，或让 TARS 去查"
-            aria-label="提问"
+            placeholder={t("chat.placeholder")}
+            aria-label={t("chat.askInput")}
             disabled={status !== "idle"}
             className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant disabled:opacity-50"
           />
@@ -1088,8 +1089,8 @@ export default function ChatView({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            aria-label="添加图片"
-            title={visionOk ? "添加图片" : "当前模型未开启「多模态」"}
+            aria-label={t("chat.addImage")}
+            title={visionOk ? t("chat.addImage") : t("chat.visionOffTitle")}
             className="icon-btn"
           >
             <ImageIcon />
@@ -1101,13 +1102,13 @@ export default function ChatView({
                 onClick={() => setModelPopOpen((o) => !o)}
                 aria-haspopup="listbox"
                 aria-expanded={modelPopOpen}
-                aria-label="选择模型"
+                aria-label={t("chat.selectModel")}
                 className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
               >
                 <span className="min-w-0 truncate">
                   {curModels.find((m) => m.id === modelId)?.alias ||
                     modelId ||
-                    "选择模型"}
+                    t("chat.selectModel")}
                 </span>
                 <svg
                   width="10"
@@ -1127,7 +1128,7 @@ export default function ChatView({
               {modelPopOpen && (
                 <div
                   role="listbox"
-                  aria-label="可选模型"
+                  aria-label={t("chat.modelOptions")}
                   className="combo-pop combo-pop--up"
                 >
                   {providers
@@ -1167,7 +1168,7 @@ export default function ChatView({
             <button
               type="submit"
               disabled={!input.trim() && pendingImages.length === 0}
-              aria-label="发送"
+              aria-label={t("chat.send")}
               className="icon-btn-filled ml-auto h-8 w-8 text-[14px] leading-none"
             >
               ↑
@@ -1176,7 +1177,7 @@ export default function ChatView({
             <button
               type="button"
               onClick={cancel}
-              aria-label="停止"
+              aria-label={t("chat.stop")}
               className="icon-btn-filled error ml-auto h-8 w-8"
             >
               <svg
@@ -1257,9 +1258,9 @@ function EmptyState() {
   return (
     <div className="px-2 py-10 text-center">
       <p className="mx-auto max-w-[220px] text-[15px] leading-relaxed text-on-surface-variant">
-        有什么问题，直接问。
+        {t("chat.emptyTitle")}
         <br />
-        我可以读取当前页面、联网搜索，也能帮你点按、填写。
+        {t("chat.emptySub")}
       </p>
     </div>
   );
@@ -1392,7 +1393,7 @@ function TickerRow({ item }: { item: ReasoningSeg }) {
         <span className="trace-icon" aria-hidden="true">
           <SparkleIcon />
         </span>
-        <span className="trace-label trace-shimmer">思考中</span>
+        <span className="trace-label trace-shimmer">{t("chat.trace.thinking")}</span>
         <span className="trace-tail-text" aria-hidden="true">
           {tailSlice(item.text)}
         </span>
@@ -1417,7 +1418,7 @@ function ReasoningRow({ item }: { item: ReasoningSeg }) {
         <span className="trace-icon" aria-hidden="true">
           <SparkleIcon />
         </span>
-        <span className="trace-label">思考过程</span>
+        <span className="trace-label">{t("chat.trace.reasoning")}</span>
         <span className="trace-tail">
           <ChevronIcon />
         </span>
@@ -1438,10 +1439,10 @@ function ToolRow({ item }: { item: ToolSeg }) {
   const [open, setOpen] = useState(false);
   const statusText =
     item.status === "running"
-      ? "运行中"
+      ? t("chat.trace.running")
       : item.status === "error"
-        ? "失败"
-        : "完成";
+        ? t("chat.trace.failed")
+        : t("chat.trace.done");
   return (
     <div
       className="trace-row"
@@ -1473,14 +1474,14 @@ function ToolRow({ item }: { item: ToolSeg }) {
       <div className="trace-body-wrap">
         <div className="trace-body">
           <CopyableSection
-            label="参数"
+            label={t("chat.trace.args")}
             text={
-              item.args === undefined ? "(无)" : stringifyPreview(item.args)
+              item.args === undefined ? t("chat.trace.none") : stringifyPreview(item.args)
             }
           />
           {item.result !== undefined && (
             <CopyableSection
-              label={item.status === "error" ? "错误" : "结果"}
+              label={item.status === "error" ? t("chat.trace.error") : t("chat.trace.result")}
               text={stringifyPreview(item.result)}
             />
           )}
@@ -1507,7 +1508,7 @@ function CopyableSection({ label, text }: { label: string; text: string }) {
       <div className="trace-sec-row">
         <span className="trace-sec">{label}</span>
         <button type="button" onClick={copy} className="trace-copy-btn">
-          {copied ? "已复制 ✓" : "复制"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
       <pre className="trace-pre">{truncate(text, PREVIEW_CHARS)}</pre>
@@ -1780,10 +1781,10 @@ const NoticeBubble = memo(function NoticeBubble() {
  *  解释 AI 为何可能不记得很早的细节 —— 静默压缩会显得像无故失忆 */
 const CompactionDivider = memo(function CompactionDivider() {
   return (
-    <div className="ctx-divider" role="note" aria-label="上下文已压缩">
+    <div className="ctx-divider" role="note" aria-label={t("chat.compactionNote")}>
       <span className="ctx-divider-line" />
       <span className="ctx-divider-label">
-        <ArchiveIcon /> 此处之前的对话已压缩为摘要
+        <ArchiveIcon /> {t("chat.compactionDivider")}
       </span>
       <span className="ctx-divider-line" />
     </div>
@@ -1882,9 +1883,9 @@ function CodeBlock({
   return (
     <figure className="code-block">
       <figcaption className="code-block-head">
-        <span>{lang || "代码"}</span>
+        <span>{lang || t("chat.code.plain")}</span>
         <button type="button" onClick={copy} className="code-copy-btn">
-          {copied ? "已复制 ✓" : "复制"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       </figcaption>
       <pre {...rest}>{children}</pre>

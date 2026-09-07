@@ -9,7 +9,7 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "build": "tsc --noEmit && vite build && node scripts/postbuild-offscreen.mjs",
+    "build": "tsc --noEmit && node scripts/check-i18n.mjs && vite build && node scripts/postbuild-offscreen.mjs",
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit",
     "icons:export": "node scripts/export-icons.mjs",

@@ -3,12 +3,21 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MSG, PORT_NAME, type SessionMeta } from "../shared/messages";
+import { t } from "../shared/i18n";
 import { createLogger } from "../shared/logger";
 
 const log = createLogger({ ctx: "panel" });
 
 const DAY = 86_400_000;
-const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const WEEKDAYS = [
+  t("sessions.weekday.su"),
+  t("sessions.weekday.mo"),
+  t("sessions.weekday.tu"),
+  t("sessions.weekday.we"),
+  t("sessions.weekday.th"),
+  t("sessions.weekday.fr"),
+  t("sessions.weekday.sa"),
+];
 
 /** 行内短时间:组头已表达大粒度(今天/昨天/7 天内),行内只留细粒度 ——
  *  今天 → HH:mm;昨天 → 「昨天」;7 天内 → 「周三」;更早 → M/D(跨年带年份) */
@@ -23,7 +32,7 @@ function shortTime(ts: number): string {
       minute: "2-digit",
       hour12: false,
     });
-  if (ts >= startOfToday.getTime() - DAY) return "昨天";
+  if (ts >= startOfToday.getTime() - DAY) return t("sessions.yesterday");
   if (ts >= startOfToday.getTime() - 7 * DAY) return WEEKDAYS[d.getDay()];
   const sameYear = d.getFullYear() === now.getFullYear();
   return sameYear
@@ -37,10 +46,10 @@ function groupSessions(list: SessionMeta[]) {
   startOfToday.setHours(0, 0, 0, 0);
   const t0 = startOfToday.getTime();
   const groups: { label: string; items: SessionMeta[] }[] = [
-    { label: "今天", items: [] },
-    { label: "昨天", items: [] },
-    { label: "7 天内", items: [] },
-    { label: "更早", items: [] },
+    { label: t("sessions.groupToday"), items: [] },
+    { label: t("sessions.groupYesterday"), items: [] },
+    { label: t("sessions.groupWeek"), items: [] },
+    { label: t("sessions.groupEarlier"), items: [] },
   ];
   for (const s of list) {
     if (s.updatedAt >= t0) groups[0].items.push(s);
@@ -132,7 +141,7 @@ export default function SessionsView({
         <button
           type="button"
           onClick={onBack}
-          aria-label="返回对话"
+          aria-label={t("common.backToChat")}
           className="icon-btn"
         >
           <svg
@@ -149,12 +158,12 @@ export default function SessionsView({
             <path d="M10 3 5 8l5 5" />
           </svg>
         </button>
-        <h2 className="m-0 text-[16px] font-medium text-on-surface">历史会话</h2>
+        <h2 className="m-0 text-[16px] font-medium text-on-surface">{t("sessions.title")}</h2>
         <button
           type="button"
           onClick={onNew}
-          aria-label="发起新对话"
-          title="发起新对话"
+          aria-label={t("sessions.newChat")}
+          title={t("sessions.newChat")}
           className="icon-btn ml-auto"
         >
           <svg
@@ -199,8 +208,8 @@ export default function SessionsView({
                 setQuery("");
               }
             }}
-            placeholder="搜索会话"
-            aria-label="搜索会话"
+            placeholder={t("sessions.searchPlaceholder")}
+            aria-label={t("sessions.searchPlaceholder")}
             autoComplete="off"
             spellCheck={false}
             className="search-bar"
@@ -216,7 +225,7 @@ export default function SessionsView({
           <EmptyState onNew={onNew} />
         ) : groups.length === 0 ? (
           <p className="px-1 py-8 text-center text-[12.5px] text-on-surface-variant">
-            没有找到匹配「{query.trim()}」的会话
+            {t("sessions.noMatch", { query: query.trim() })}
           </p>
         ) : (
           groups.map((g) => (
@@ -278,12 +287,12 @@ function SessionRow({
             </span>
             {active && (
               <span className="shrink-0 rounded-full bg-primary px-2 py-px text-[10.5px] font-medium text-on-primary">
-                当前
+                {t("sessions.activeBadge")}
               </span>
             )}
           </span>
           <span className="mt-0.5 block text-[11px] text-on-surface-variant">
-            {shortTime(s.updatedAt)} · {s.msgCount} 条
+            {shortTime(s.updatedAt)} · {t("sessions.msgCount", { n: s.msgCount })}
           </span>
         </button>
         <button
@@ -291,8 +300,8 @@ function SessionRow({
           onClick={() => onRemove(s.id)}
           aria-label={
             confirming
-              ? `再点一次确认删除「${s.title}」`
-              : `删除会话「${s.title}」`
+              ? t("sessions.confirmDeleteOf", { title: s.title })
+              : t("sessions.deleteOf", { title: s.title })
           }
           className={`shrink-0 rounded-full p-1.5 transition-colors duration-150 ${
             confirming
@@ -300,7 +309,7 @@ function SessionRow({
               : "text-on-surface-variant opacity-0 hover:bg-error/8 hover:text-error focus-visible:opacity-100 group-hover:opacity-100"
           }`}
         >
-          {confirming ? "确认删除" : <TrashIcon />}
+          {confirming ? t("common.confirmDelete") : <TrashIcon />}
         </button>
       </div>
     </li>
@@ -364,10 +373,10 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         <path d="M12 7v5l3 2" />
       </svg>
       <p className="m-0 text-[13px] text-on-surface-variant">
-        还没有历史会话
+        {t("sessions.empty")}
       </p>
       <button type="button" onClick={onNew} className="settings-btn">
-        发起新对话
+        {t("sessions.newChat")}
       </button>
     </div>
   );

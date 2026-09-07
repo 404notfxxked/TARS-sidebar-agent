@@ -107,7 +107,8 @@ export interface AppConfig {
 }
 
 export type SearchProviderId = "tavily" | "bocha" | "brave";
-const SEARCH_PROVIDER_IDS: SearchProviderId[] = ["tavily", "bocha", "brave"];
+export const SEARCH_PROVIDER_IDS = ["auto", "tavily", "bocha", "brave"] as const;
+export type SearchProviderOrder = (typeof SEARCH_PROVIDER_IDS)[number];
 
 /** 设置里的搜索服务选项:auto = 不用服务商,抓取搜索引擎结果页兜底 */
 export type SearchProviderSetting = "auto" | SearchProviderId;
@@ -124,13 +125,8 @@ export interface SearchConfig {
   services: Record<SearchProviderId, SearchServiceEntry>;
 }
 
-/** 各选项展示名(设置页下拉用) */
-export const SEARCH_PROVIDER_LABELS: Record<SearchProviderSetting, string> = {
-  auto: "自动（免 Key，抓取搜索页）",
-  tavily: "Tavily",
-  bocha: "博查 Bocha",
-  brave: "Brave Search",
-};
+/** 各选项展示名(设置页下拉用;文案在 i18n 字典,这里只定键序) */
+
 
 /** 上下文压缩触发档位:占可用窗口(contextTokens − maxTokens − 余量)的比例 */
 export type CompactLevel = "early" | "standard" | "late";
@@ -274,7 +270,7 @@ export function normalizeSearch(v: unknown): SearchConfig {
       ? s.provider
       : "auto";
   const services = {} as Record<SearchProviderId, SearchServiceEntry>;
-  for (const id of SEARCH_PROVIDER_IDS) {
+  for (const id of SEARCH_PROVIDER_IDS.slice(1) as SearchProviderId[]) {
     const e = s.services?.[id];
     services[id] = {
       baseUrl: typeof e?.baseUrl === "string" ? e.baseUrl : "",

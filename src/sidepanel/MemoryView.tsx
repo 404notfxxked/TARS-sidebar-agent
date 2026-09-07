@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MSG, type MemoryItem } from "../shared/messages";
+import { t } from "../shared/i18n";
 import {
   MEMORY_BUDGET_TOKENS,
   MEMORY_MAX_CHARS,
@@ -119,7 +120,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
         <button
           type="button"
           onClick={onBack}
-          aria-label="返回设置"
+          aria-label={t("memory.backToSettings")}
           className="icon-btn"
         >
           <svg
@@ -136,7 +137,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
             <path d="M10 3 5 8l5 5" />
           </svg>
         </button>
-        <h2 className="m-0 text-[16px] font-medium text-on-surface">记忆</h2>
+        <h2 className="m-0 text-[16px] font-medium text-on-surface">{t("memory.entryTitle")}</h2>
 
         {/* 溢出菜单:清空全部(两段确认;菜单收起即复位)。
             Esc 在此拦下先关菜单,不冒泡到 App 层关整页 */}
@@ -152,7 +153,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
         >
           <button
             type="button"
-            aria-label="记忆页菜单"
+            aria-label={t("memory.pageMenu")}
             aria-expanded={menuOpen}
             className="icon-btn"
             onClick={() => {
@@ -193,7 +194,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
                       : "text-error hover:bg-error/8"
                   }`}
                 >
-                  {confirmClear ? "再点一次确认清空" : "清空全部记忆"}
+                  {confirmClear ? t("memory.confirmClearAll") : t("memory.clearAll")}
                 </button>
               </div>
             </>
@@ -216,16 +217,16 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
                 void add();
               }
             }}
-            placeholder="添加记忆,如:偏好简洁的中文回答"
-            aria-label="添加记忆"
+            placeholder={t("memory.addPlaceholder")}
+            aria-label={t("memory.add")}
             autoComplete="off"
             spellCheck={false}
             className="memory-add"
           />
           <button
             type="button"
-            aria-label="保存这条记忆"
-            title="添加"
+            aria-label={t("memory.addBtn")}
+            title={t("common.add")}
             disabled={!newMemory.trim()}
             onClick={() => void add()}
             className="icon-btn-filled absolute right-[5px] top-1/2 h-[26px] w-[26px] -translate-y-1/2"
@@ -246,10 +247,15 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
         </div>
         {memories !== null && memories.length > 0 && (
           <p className="mb-0 mt-1.5 px-1 text-[11px] leading-4 text-on-surface-variant">
-            已保存 {memories.length} 条 · 每轮注入约 {usedTokens} /{" "}
-            {MEMORY_BUDGET_TOKENS} token
+            {t("memory.saved", {
+              n: memories.length,
+              used: usedTokens,
+              budget: MEMORY_BUDGET_TOKENS,
+            })}
             {plan && plan.dropped.length > 0 && (
-              <span className="text-error"> · {plan.dropped.length} 条未注入(置顶优先)</span>
+              <span className="text-error">
+                {" · "}{t("memory.dropped", { n: plan.dropped.length })}
+              </span>
             )}
           </p>
         )}
@@ -332,7 +338,7 @@ function MemoryRow({
           <button
             type="button"
             onClick={onEditStart}
-            title="点击编辑"
+            title={t("memory.clickToEdit")}
             className="min-w-0 flex-1 cursor-pointer text-left text-[13px] leading-5 text-on-surface"
           >
             {m.text}
@@ -344,8 +350,8 @@ function MemoryRow({
         <span className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
-            aria-label={m.pinned ? "取消置顶" : "置顶"}
-            title={m.pinned ? "取消置顶" : "置顶"}
+            aria-label={m.pinned ? t("memory.unpin") : t("memory.pin")}
+            title={m.pinned ? t("memory.unpin") : t("memory.pin")}
             onClick={onPin}
             className={
               m.pinned
@@ -358,17 +364,17 @@ function MemoryRow({
           {confirming ? (
             <button
               type="button"
-              aria-label="确认删除"
+              aria-label={t("common.confirmDelete")}
               onClick={onRemove}
               className="btn-text danger px-2 text-[11px]"
             >
-              确认删除
+              {t("common.confirmDelete")}
             </button>
           ) : (
             <button
               type="button"
-              aria-label="删除记忆"
-              title="删除"
+              aria-label={t("memory.deleteOne")}
+              title={t("memory.deleteOne")}
               onClick={onRemove}
               className="icon-btn text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-error"
             >
@@ -454,9 +460,9 @@ function EmptyState() {
         <path d="M3 7h18M4 7l1.2 12.2A2 2 0 0 0 7.2 21h9.6a2 2 0 0 0 2-1.8L20 7" />
         <path d="M9 11h6" />
       </svg>
-      <p className="m-0 text-[13px] text-on-surface-variant">还没有记忆</p>
+      <p className="m-0 text-[13px] text-on-surface-variant">{t("memory.empty")}</p>
       <p className="m-0 text-[11.5px] leading-4 text-on-surface-variant/80">
-        在对话里说「记住…」,AI 会自动保存;也可以在上面手动添加
+        {t("memory.emptyHint")}
       </p>
     </div>
   );
