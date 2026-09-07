@@ -63,7 +63,10 @@ export async function saveHistory(
   const prev = await db.getSession(sessionId).catch(() => undefined);
   const meta: db.SessionRow = {
     id: sessionId,
-    title: prev?.title || deriveTitle(msgs),
+    title:
+      prev?.title && !isPseudoUserMsg({ role: "user", content: prev.title })
+        ? prev.title
+        : deriveTitle(msgs),
     createdAt: prev?.createdAt ?? now,
     updatedAt: now,
     // msgCount = 下一条待写 seq:库里已有条数 + 本次新增。不能用 msgs.length
@@ -208,9 +211,16 @@ function userRequestText(content: string): string {
   return inner ? inner[1].trim() : content;
 }
 
-/** 首条用户消息 → 列表标题(压平空白后截断) */
+/** 注入型伪消息(<user-memory> / <context-summary>)的 user 角色消息:
+ *  只进 prompt 不进历史,但 deriveTitle 拿到的切片数组以它们开头 */
+function isPseudoUserMsg(m: InternalMsg): boolean {
+  const c = m.content ?? "";
+  return c.startsWith("<user-memory>") || c.startsWith("<context-summary>");
+}
+
+/** 首条用户消息 → 列表标题(压平空白后截断);跳过注入型伪消息 */
 function deriveTitle(msgs: InternalMsg[]): string {
-  const first = msgs.find((m) => m.role === "user");
+  const first = msgs.find((m) => m.role === "user" && !isPseudoUserMsg(m));
   const text = userRequestText(first?.content ?? "")
     .replace(/\s+/g, " ")
     .trim();
