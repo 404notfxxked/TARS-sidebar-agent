@@ -15,6 +15,10 @@ import {
 } from "../shared/memory";
 import { createLogger } from "../shared/logger";
 import { memReq } from "./memoryClient";
+import { useConfirmReset } from "./ui/hooks";
+import SkeletonRows from "./ui/SkeletonRows";
+import SubPageHeader from "./ui/SubPageHeader";
+import { TrashIcon } from "./ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
@@ -25,7 +29,8 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   // 两段确认删除:首点进入待确认,3 秒未跟进自动复位(同历史页)
-  const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+  const [confirmDelId, armConfirmDel, resetConfirmDel] =
+    useConfirmReset<string>();
   // 右上溢出菜单:清空全部记忆(菜单内两段确认,关菜单即复位)
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -35,12 +40,6 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
       .then(setMemories)
       .catch(() => setMemories([])); // 加载失败按空列表呈现,重开页面重试
   }, []);
-
-  useEffect(() => {
-    if (!confirmDelId) return;
-    const t = window.setTimeout(() => setConfirmDelId(null), 3000);
-    return () => window.clearTimeout(t);
-  }, [confirmDelId]);
 
   const add = async () => {
     const text = newMemory.trim();
@@ -75,10 +74,10 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
 
   const remove = (id: string) => {
     if (confirmDelId !== id) {
-      setConfirmDelId(id);
+      armConfirmDel(id);
       return;
     }
-    setConfirmDelId(null);
+    resetConfirmDel();
     setMemories((list) => list?.filter((m) => m.id !== id) ?? list);
     memReq({ type: MSG.MEM_DELETE, id })
       .then(setMemories)
@@ -116,29 +115,11 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="view-in flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 px-3 pb-1 pt-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t("memory.backToSettings")}
-          className="icon-btn"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M10 3 5 8l5 5" />
-          </svg>
-        </button>
-        <h2 className="m-0 text-[16px] font-medium text-on-surface">{t("memory.entryTitle")}</h2>
-
+      <SubPageHeader
+        title={t("memory.entryTitle")}
+        onBack={onBack}
+        backLabel={t("memory.backToSettings")}
+      >
         {/* 溢出菜单:清空全部(两段确认;菜单收起即复位)。
             Esc 在此拦下先关菜单,不冒泡到 App 层关整页 */}
         <div
@@ -200,7 +181,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
             </>
           )}
         </div>
-      </header>
+      </SubPageHeader>
 
       {/* 添加条:胶囊输入 + 圆形添加钮(回车同效) */}
       <div className="px-3 pb-1 pt-1">
@@ -263,7 +244,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
         {memories === null ? (
-          <SkeletonRows />
+          <SkeletonRows widths={[80, 62, 71, 55]} />
         ) : memories.length === 0 ? (
           <EmptyState />
         ) : (
@@ -405,42 +386,7 @@ function StarIcon({ filled }: { filled: boolean }) {
   );
 }
 
-function TrashIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="block"
-    >
-      <path d="M2.5 4h11M6.5 2h3M4 4l.7 9a1.5 1.5 0 0 0 1.5 1.3h3.6a1.5 1.5 0 0 0 1.5-1.3L12 4M6.5 7v4M9.5 7v4" />
-    </svg>
-  );
-}
-
-// ---- 骨架屏 / 空态 ----
-
-function SkeletonRows() {
-  return (
-    <div className="space-y-4 px-2 pt-3" aria-hidden="true">
-      {[80, 62, 71, 55].map((w, i) => (
-        <div key={i} className="animate-pulse space-y-1.5">
-          <div
-            className="h-3 rounded bg-surface-container-highest"
-            style={{ width: `${w}%` }}
-          />
-          <div className="h-2 w-1/4 rounded bg-surface-container-highest" />
-        </div>
-      ))}
-    </div>
-  );
-}
+// ---- 空态 ----
 
 function EmptyState() {
   return (

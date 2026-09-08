@@ -45,6 +45,11 @@ export const zhCN = {
     imageDecodeFailed: "无法解码图片：{name}",
     visionModelFallback:
       "当前模型不支持视觉，图片不会随本次提问发送；图片已保存，切回视觉模型后可继续引用",
+    maxTurnsNotice: "本轮已达到步数上限，任务未完成 —— 发送「继续」可以接着做。",
+    truncatedChars: "…（共 {n} 字）",
+    imageExpired: "图片已失效",
+    pendingImageAlt: "待发送图片 {w}×{h}",
+    imageAlt: "图片 {w}×{h}",
     memorySavedHint: "本轮已写入 {n} 条记忆，查看或编辑",
     memorySavedLabel: "已写入 {n} 条记忆 · 查看/编辑",
     compactionDivider: "上面的对话已压缩成摘要",
@@ -58,6 +63,8 @@ export const zhCN = {
       result: "结果",
       error: "错误",
       none: "（无）",
+      stepsMeta: "{n} 步 · {dur}",
+      thinkingMeta: "思考 · {dur}",
     },
     code: {
       copy: "复制",
@@ -219,6 +226,9 @@ export const zhCN = {
     toolsMeta: "（{n} 个 · 定义约 {tokens} token）",
     deleteServer: "删除此服务器",
     confirmDeleteServer: "再点一次确认删除此服务器",
+    // 记忆
+    memoryHint:
+      "开了之后，你在对话里说「记住…」或聊到稳定的偏好时，AI 会记下来（聊天流里会提示），之后每次对话都带上。关闭只是不再保存和使用，已存的记忆还在，重开即恢复。",
     // 上下文压缩
     compactTiming: "压缩时机",
     compactEarly: "提前 60%",

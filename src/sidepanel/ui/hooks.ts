@@ -1,0 +1,59 @@
+// 面板 UI 小 hooks:两段确认的自动复位、复制成功的轻反馈。
+// 都是从设置/历史/记忆页反复出现的同款逻辑收拢而来。
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+/** 两段确认状态:arm(v) 进入待确认态,ms 内未跟进自动复位(危险动作不单击直发)。
+ *  返回 [待确认值, 进入待确认, 手动复位];值的形态由调用方定 —— 行 id(删除
+ *  某一行)或 true(清空类单目标动作)。第二次点击 = 先查值再 reset 后执行 */
+export function useConfirmReset<T extends string | boolean>(ms = 3000) {
+  const [value, setValue] = useState<T | null>(null);
+  const timer = useRef<number | null>(null);
+  const clear = () => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+  };
+  const arm = useCallback((v: T) => {
+    clear();
+    setValue(v);
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      setValue(null);
+    }, ms);
+  }, [ms]);
+  const reset = useCallback(() => {
+    clear();
+    setValue(null);
+  }, []);
+  useEffect(() => clear, []);
+  return [value, arm, reset] as const;
+}
+
+/** 复制文本到剪贴板 + 「已复制」轻反馈(ms 后自动熄灭);失败静默(剪贴板被拒等)。
+ *  返回 [是否刚复制成功, copy(text)] */
+export function useCopyFlash(ms = 1600) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+  const copy = useCallback(
+    async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        if (timer.current !== null) window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setCopied(false), ms);
+      } catch {
+        /* 剪贴板被拒等:静默 */
+      }
+    },
+    [ms],
+  );
+  return [copied, copy] as const;
+}

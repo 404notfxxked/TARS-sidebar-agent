@@ -1,36 +1,14 @@
-// 对话视图:经 port 连 SW,ReAct agent 的流式回复渲染
+// 对话视图:经 port 连 SW,ReAct agent 的流式回复渲染。
+// 本文件只保留「接线与布局」:port 事件分发、消息列表/输入区渲染、附件入口;
+// 执行流状态机在 chat/useRunSegments,过程卡渲染在 chat/trace,
+// 气泡与 markdown 在 chat/bubbles,图片管线与缓存在 chat/images。
 
 import {
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
-  isValidElement,
-  memo,
-  type ComponentPropsWithoutRef,
-  type ReactNode,
 } from "react";
-import ReactMarkdown, {
-  type Options as MarkdownOptions,
-} from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
-// 常用语言子集,替代 rehype-highlight 默认的全量 common 集(37 种),控制产物体积;
-// 各语法自带的别名(js/ts/py/sh…)仍随注册生效,未注册语言的代码块保持纯文本
-import bash from "highlight.js/lib/languages/bash";
-import cpp from "highlight.js/lib/languages/cpp";
-import css from "highlight.js/lib/languages/css";
-import diff from "highlight.js/lib/languages/diff";
-import go from "highlight.js/lib/languages/go";
-import java from "highlight.js/lib/languages/java";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import python from "highlight.js/lib/languages/python";
-import rust from "highlight.js/lib/languages/rust";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
-import yaml from "highlight.js/lib/languages/yaml";
 import {
   MSG,
   PORT_NAME,
@@ -38,7 +16,6 @@ import {
   type CompactionMark,
   type ImageMeta,
 } from "../shared/messages";
-import { base64ToBytes } from "../shared/imageCodec";
 import { t } from "../shared/i18n";
 import { getActiveTabId } from "../shared/contentTools";
 import {
@@ -47,6 +24,25 @@ import {
   type ProviderEntry,
 } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
+import {
+  MAX_ATTACHMENTS,
+  cacheImgUrl,
+  compressImage,
+  resolveImageData,
+  setImageSender,
+  type PendingImage,
+} from "./chat/images";
+import { useRunSegments } from "./chat/useRunSegments";
+import { RunZone } from "./chat/trace";
+import {
+  AssistantBubble,
+  CompactionDivider,
+  ErrorBubble,
+  NoticeBubble,
+  UserBubble,
+} from "./chat/bubbles";
+import ModelPicker from "./chat/ModelPicker";
+import { ArchiveIcon } from "./ui/icons";
 
 // 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
 const log = createLogger({ ctx: "panel" });
@@ -68,155 +64,6 @@ interface ChatMsg {
 
 type AgentStatus = "idle" | "thinking" | "streaming";
 
-// ---- 本轮执行流(segments):思考段 / 文本段 / 工具段按到达顺序交错 ----
-// 事件流本身按时序经单一 port FIFO 送达,前端只需按序落段即可交错渲染。
-// 只属于「进行中 / 刚结束这轮」,不持久化;新一轮开始时文本段归档进 messages,过程段丢弃。
-
-type ToolSeg = {
-  kind: "tool";
-  id: string;
-  name: string;
-  displayName?: string;
-  args?: unknown;
-  status: "running" | "done" | "error";
-  result?: unknown;
-  /** 创建时刻:过程卡分组计时用 */
-  t: number;
-};
-type ReasoningSeg = {
-  kind: "reasoning";
-  text: string;
-  /** 仍在流式生成中:驱动 ticker;阶段收口时置 false */
-  active: boolean;
-  t: number;
-};
-type TextSeg = { kind: "text"; text: string; t: number };
-type RunSegment = ToolSeg | ReasoningSeg | TextSeg;
-type ProcessSeg = ToolSeg | ReasoningSeg;
-
-type ToolCallEvent = Extract<AgentEvent, { type: typeof MSG.AGENT_TOOL_CALL }>;
-type ToolResultEvent = Extract<
-  AgentEvent,
-  { type: typeof MSG.AGENT_TOOL_RESULT }
->;
-
-// 展开预览的截断阈值(字符):工具结果可达 12k,思考过程整段也不短,不整段渲染;
-// 展开区配「复制」按钮,完整内容可取出
-const PREVIEW_CHARS = 500;
-const REASONING_MAX_CHARS = 2000;
-
-// ---- 图片附件:压缩管线 + 字节缓存 ----
-// 入口(文件选择/粘贴)只交 File,统一走 compressImage。压缩必须在面板做 ——
-// MV3 SW 没有 canvas 和 URL.createObjectURL
-
-const MAX_ATTACHMENTS = 4;
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
-const MAX_IMAGE_EDGE = 1600;
-
-interface PendingImage {
-  id: string;
-  mime: string;
-  w: number;
-  h: number;
-  /** 压缩结果的 base64(port 消息是 JSON 语义,只能传字符串,见 imageCodec) */
-  base64: string;
-  /** 面板本地预览 URL(objectURL);发送后转入气泡缓存,不再单独撤销 */
-  url: string;
-}
-
-/** 解码 → 长边缩放 → 按类型重编码(PNG/WebP→WebP 保透明,其余→JPEG)。
- *  结果仍超 2MB 时降质重试一次;解码不出(HEIC 等)直接抛给调用方提示 */
-async function compressImage(file: File): Promise<PendingImage> {
-  const bmp = await createImageBitmap(file);
-  try {
-    const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bmp.width, bmp.height));
-    const w = Math.max(1, Math.round(bmp.width * scale));
-    const h = Math.max(1, Math.round(bmp.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("canvas unavailable");
-    ctx.drawImage(bmp, 0, 0, w, h);
-    const mime =
-      file.type === "image/png" || file.type === "image/webp"
-        ? "image/webp"
-        : "image/jpeg";
-    let blob = await canvasToBlob(canvas, mime, 0.85);
-    if (blob && blob.size > MAX_IMAGE_BYTES) {
-      blob = await canvasToBlob(canvas, mime, 0.7);
-    }
-    if (!blob) throw new Error("image encode failed");
-    const base64 = await blobToBase64(blob);
-    return {
-      id: crypto.randomUUID(),
-      mime,
-      w,
-      h,
-      base64,
-      url: URL.createObjectURL(blob),
-    };
-  } finally {
-    bmp.close();
-  }
-}
-
-/** Blob → 纯 base64(去掉 data URL 前缀) */
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => {
-      const dataUrl = String(fr.result);
-      resolve(dataUrl.slice(dataUrl.indexOf(",") + 1));
-    };
-    fr.onerror = () => reject(fr.error ?? new Error("read failed"));
-    fr.readAsDataURL(blob);
-  });
-}
-
-function canvasToBlob(
-  canvas: HTMLCanvasElement,
-  mime: string,
-  quality: number,
-): Promise<Blob | null> {
-  return new Promise((resolve) => canvas.toBlob(resolve, mime, quality));
-}
-
-// 历史图片的 objectURL 缓存:id → url。面板生命周期内不淘汰(侧栏关闭即销毁,
-// 量级小);字节缺失时经 GET_IMAGE 消息向后台取,IMAGE_DATA 事件回填
-const imgUrlCache = new Map<string, string>();
-const imgInflight = new Map<string, Promise<string | null>>();
-const imgWaiters = new Map<string, (url: string | null) => void>();
-let sendGetImage: ((id: string) => void) | null = null;
-
-function requestImgUrl(id: string): Promise<string | null> {
-  const cached = imgUrlCache.get(id);
-  if (cached) return Promise.resolve(cached);
-  const inflight = imgInflight.get(id);
-  if (inflight) return inflight;
-  const p = new Promise<string | null>((resolve) => {
-    imgWaiters.set(id, resolve);
-  });
-  imgInflight.set(id, p);
-  sendGetImage?.(id);
-  return p;
-}
-
-function resolveImageData(evt: { id: string; mime?: string; base64?: string }): void {
-  const waiter = imgWaiters.get(evt.id);
-  imgWaiters.delete(evt.id);
-  imgInflight.delete(evt.id);
-  if (!evt.base64) {
-    waiter?.(null); // 图片已随会话被清理/清空
-    return;
-  }
-  const url = URL.createObjectURL(
-    new Blob([base64ToBytes(evt.base64)], { type: evt.mime ?? "image/png" }),
-  );
-  imgUrlCache.set(evt.id, url);
-  waiter?.(url);
-}
-
 export default function ChatView({
   onOpenSettings,
   onOpenSessions,
@@ -232,7 +79,7 @@ export default function ChatView({
   /** 历史列表选中的会话:非空时打开它,完事后回调置空 */
   resumeSessionId: string | null;
   onResumeDone: () => void;
-  /** 当前会话变化时回传(历史列表里高亮「当前」) */
+  /** 当前会话变化时回传 App,历史列表据此高亮「当前」 */
   onActiveSessionChange?: (sessionId: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -244,19 +91,36 @@ export default function ChatView({
   const [status, setStatus] = useState<AgentStatus>("idle");
   const [currentSession, setCurrentSession] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
-  const streamingRef = useRef(false);
   const sessionRef = useRef("");
   const historyReqRef = useRef("");
   const listRef = useRef<HTMLDivElement | null>(null);
   // 最近一次已加载历史的会话,防重复请求
   const lastLoadedSessionRef = useRef("");
 
+  // ---- 本轮执行流:状态机(hook)+ 归档出口(文本段 → messages) ----
+  const run = useRunSegments((texts) => {
+    const sid = sessionRef.current;
+    setMessages((ms) => [
+      ...ms,
+      ...texts.map((s) => ({
+        role: "assistant" as const,
+        content: s,
+        sessionId: sid,
+      })),
+    ]);
+  });
+  const {
+    runSegs,
+    runPhase,
+    runEndedAt,
+    openGroups,
+    toggleGroup,
+  } = run;
+
   // ---- 模型选择:按供应商分组展示,切换即写回 modelProvider + model 两字段 ----
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [modelProvider, setModelProvider] = useState("");
   const [modelId, setModelId] = useState("");
-  const [modelPopOpen, setModelPopOpen] = useState(false);
-  const modelPopRef = useRef<HTMLDivElement | null>(null);
   /** 当前供应商(选择器与视觉门控都基于它;引用失效时退回第一个) */
   const curProvider =
     providers.find((p) => p.id === modelProvider) ?? providers[0];
@@ -270,224 +134,6 @@ export default function ChatView({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hintTimer = useRef<number | null>(null);
 
-  // ---- 本轮执行流状态:segs + ref 镜像 ----
-  // ref 镜像让 port 事件回调(只注册一次)总是读到最新段序列,
-  // 且允许一次事件里连贯地「读 → 变 → 写」,避免函数式 setState 里嵌套副作用
-  const [runSegs, setRunSegs] = useState<RunSegment[]>([]);
-  const runSegsRef = useRef<RunSegment[]>([]);
-  const applySegs = (next: RunSegment[]) => {
-    runSegsRef.current = next;
-    setRunSegs(next);
-  };
-  /** live = 执行中(过程卡全展开);settled = 已结束(过程卡收成摘要 chip) */
-  const [runPhase, setRunPhase] = useState<"live" | "settled">("settled");
-  const runPhaseRef = useRef<"live" | "settled">("settled");
-  const setPhase = (p: "live" | "settled") => {
-    runPhaseRef.current = p;
-    setRunPhase(p);
-  };
-  const [runEndedAt, setRunEndedAt] = useState<number | null>(null);
-  /** 已展开回看的过程卡(以卡内首段在 segs 中的下标为 key,段序列只追加、下标即稳定身份) */
-  const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
-
-  // ---- 思考流缓冲:delta 先进缓冲,按固定节拍合入状态 ----
-  // 流式期间只渲染单行 ticker(尾部内容),行高恒定不推挤后续消息;
-  // 渲染频率从「每 delta 一次」降到 ~10Hz
-  const reasoningBufRef = useRef("");
-  const reasoningFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ---- 正文流缓冲:同一节拍策略。否则每个 delta 全量重解析该段 markdown,
-  // 长回答是 O(n²) 重复解析;合帧到 ~10Hz 后,重解析频率与段长解耦 ----
-  const textBufRef = useRef("");
-  const textFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /** 把缓冲同步合入最后一个活跃思考段(节拍到期 / 阶段收口前调用) */
-  const flushReasoning = () => {
-    if (reasoningFlushRef.current !== null) {
-      clearTimeout(reasoningFlushRef.current);
-      reasoningFlushRef.current = null;
-    }
-    const buf = reasoningBufRef.current;
-    if (!buf) return;
-    reasoningBufRef.current = "";
-    const segs = runSegsRef.current;
-    const last = segs[segs.length - 1];
-    if (last?.kind === "reasoning" && last.active) {
-      applySegs([...segs.slice(0, -1), { ...last, text: last.text + buf }]);
-    }
-    // 活跃段已被收口(异常时序),缓冲无从归属,丢弃
-  };
-
-  /** 直接丢弃缓冲(新一轮开始 / 清空对话:旧缓冲不属于任何段) */
-  const dropReasoningBuf = () => {
-    if (reasoningFlushRef.current !== null) {
-      clearTimeout(reasoningFlushRef.current);
-      reasoningFlushRef.current = null;
-    }
-    reasoningBufRef.current = "";
-  };
-
-  /** 把缓冲同步合入最后一个文本段(节拍到期 / 阶段收口前调用);
-   *  末段已不是文本段(时序异常)时缓冲无从归属,丢弃 */
-  const flushText = () => {
-    if (textFlushRef.current !== null) {
-      clearTimeout(textFlushRef.current);
-      textFlushRef.current = null;
-    }
-    const buf = textBufRef.current;
-    if (!buf) return;
-    textBufRef.current = "";
-    const segs = runSegsRef.current;
-    const last = segs[segs.length - 1];
-    if (last?.kind === "text") {
-      applySegs([...segs.slice(0, -1), { ...last, text: last.text + buf }]);
-    }
-  };
-
-  /** 直接丢弃正文缓冲(同 dropReasoningBuf) */
-  const dropTextBuf = () => {
-    if (textFlushRef.current !== null) {
-      clearTimeout(textFlushRef.current);
-      textFlushRef.current = null;
-    }
-    textBufRef.current = "";
-  };
-
-  // reasoning delta → 入缓冲;末段不是活跃思考段则先开新段(行立即出现,文本由节拍供给)
-  const appendReasoning = (delta: string) => {
-    reasoningBufRef.current += delta;
-    const segs = runSegsRef.current;
-    const last = segs[segs.length - 1];
-    if (!(last?.kind === "reasoning" && last.active)) {
-      applySegs([
-        ...segs,
-        { kind: "reasoning", text: "", active: true, t: Date.now() },
-      ]);
-    }
-    if (reasoningFlushRef.current === null) {
-      reasoningFlushRef.current = setTimeout(flushReasoning, 100);
-    }
-  };
-
-  // 任何「下一阶段」事件(工具开始 / 文本开始)→ 先冲刷两种缓冲(别丢尾部字符),再收口活跃思考段
-  const collapseReasoning = () => {
-    flushReasoning();
-    flushText();
-    const segs = runSegsRef.current;
-    if (segs.some((s) => s.kind === "reasoning" && s.active)) {
-      applySegs(
-        segs.map((s) =>
-          s.kind === "reasoning" && s.active ? { ...s, active: false } : s,
-        ),
-      );
-    }
-  };
-
-  /** 文本 delta:已在文本段则入缓冲按节拍合入;否则开新段(首 delta 立即上屏) */
-  const appendTextDelta = (delta: string) => {
-    const segs = runSegsRef.current;
-    const last = segs[segs.length - 1];
-    if (streamingRef.current && last?.kind === "text") {
-      textBufRef.current += delta;
-      if (textFlushRef.current === null) {
-        textFlushRef.current = setTimeout(flushText, 100);
-      }
-    } else {
-      flushText(); // 防御:残留缓冲仍归属上一个文本段
-      streamingRef.current = true;
-      applySegs([...segs, { kind: "text", text: delta, t: Date.now() }]);
-    }
-  };
-
-  const pushTool = (evt: ToolCallEvent) => {
-    flushText(); // 正文缓冲归属前一段,先落盘再追加工具段
-    const segs = runSegsRef.current;
-    applySegs([
-      ...segs,
-      {
-        kind: "tool",
-        id: evt.id,
-        name: evt.name,
-        displayName: evt.displayName,
-        args: evt.args,
-        status: "running",
-        t: Date.now(),
-      },
-    ]);
-  };
-
-  const applyToolResult = (evt: ToolResultEvent) => {
-    const segs = runSegsRef.current;
-    if (!segs.some((s) => s.kind === "tool" && s.id === evt.id)) return;
-    applySegs(
-      segs.map((s) =>
-        s.kind === "tool" && s.id === evt.id
-          ? { ...s, status: evt.ok ? "done" : "error", result: evt.result }
-          : s,
-      ),
-    );
-  };
-
-  /** 结束兜底:冲刷缓冲、归一残留 running 工具(防 spinner 卡死)、收口思考段、记录结束时刻 */
-  const settleRun = () => {
-    streamingRef.current = false;
-    flushReasoning();
-    flushText();
-    const segs = runSegsRef.current;
-    const next = segs.map((s) => {
-      if (s.kind === "reasoning") return s.active ? { ...s, active: false } : s;
-      if (s.kind === "tool")
-        return s.status === "running" ? { ...s, status: "done" as const } : s;
-      return s;
-    });
-    applySegs(next);
-    setRunEndedAt(Date.now());
-    setPhase("settled");
-  };
-
-  /** 归档:把本轮文本段依序转成 assistant 消息落回 messages。
-   *  在追加下一条 user 消息之前调用,保证旧答案永远排在新问题之前;
-   *  过程段不归档(不持久化),由随后的 clearRun 丢弃 */
-  const flushRunTexts = () => {
-    flushReasoning();
-    flushText();
-    streamingRef.current = false;
-    const segs = runSegsRef.current;
-    // 空白文本段与渲染侧同规则跳过:不归档成空气消息
-    const texts = segs.filter(
-      (s): s is TextSeg => s.kind === "text" && s.text.trim().length > 0,
-    );
-    if (texts.length === 0) return;
-    const sid = sessionRef.current;
-    setMessages((ms) => [
-      ...ms,
-      ...texts.map((s) => ({
-        role: "assistant" as const,
-        content: s.text,
-        sessionId: sid,
-      })),
-    ]);
-    applySegs(segs.filter((s) => s.kind !== "text"));
-  };
-
-  /** 新一轮:清空段序列与回看开关 */
-  const clearRun = () => {
-    dropReasoningBuf();
-    streamingRef.current = false;
-    applySegs([]);
-    setRunEndedAt(null);
-    setOpenGroups(new Set());
-    setPhase("live");
-  };
-
-  const toggleGroup = (firstIdx: number) =>
-    setOpenGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(firstIdx)) next.delete(firstIdx);
-      else next.add(firstIdx);
-      return next;
-    });
-
   /** 打开面板 = 一律新会话(历史去列表找):会话 id 在首次提交时才生成,
    *  没发过消息就不会在后台产生空会话记录 */
   const resolveContext = async (): Promise<{
@@ -500,45 +146,39 @@ export default function ChatView({
   };
 
   const connect = (): chrome.runtime.Port => {
-    // 复用已有连接（没断开就不新建）
+    // 复用已有连接(没断开就不新建)
     if (portRef.current) return portRef.current;
 
     const port = chrome.runtime.connect({ name: PORT_NAME });
     portRef.current = port;
 
-    // delta 顺序有保证:后台 readSSE 按序处理事件,port 单通道 FIFO 送达
-
+    // delta 顺序有保证:后台 readSSE 按序处理事件,port 单通道 FIFO 送达。
+    // run.* 操作内部走 ref 读最新状态,此监听器只注册一次也安全
     port.onMessage.addListener((evt: AgentEvent) => {
       switch (evt.type) {
         case MSG.AGENT_STARTED:
           sessionRef.current = evt.sessionId;
           setStatus("thinking");
           setMemorySaved(0); // 新一轮,轻提示重新累计
-          // 新一轮开始:文本段归档兜底(正常在 submit 已做),过程段丢弃
-          flushRunTexts();
-          clearRun();
+          run.onStarted();
           break;
         case MSG.AGENT_THINKING:
-          streamingRef.current = false; // 切断文本段,下一 delta 开新段
+          run.onThinking();
           setStatus("thinking");
           break;
         case MSG.AGENT_REASONING:
-          appendReasoning(evt.delta);
+          run.onReasoningDelta(evt.delta);
           break;
         case MSG.AGENT_MESSAGE:
-          // 文本开始 = 下一阶段:先收口思考段,再进段流式
-          collapseReasoning();
           setStatus("streaming");
-          appendTextDelta(evt.delta);
+          run.onMessageDelta(evt.delta);
           break;
         case MSG.AGENT_TOOL_CALL:
-          collapseReasoning();
-          pushTool(evt);
-          streamingRef.current = false;
+          run.onToolCall(evt);
           setStatus("thinking");
           break;
         case MSG.AGENT_TOOL_RESULT:
-          applyToolResult(evt);
+          run.onToolResult(evt);
           // 记忆落库轻提示:成功的非重复保存累计,回复尾渲染「已写入 N 条」
           if (evt.name === "memory_save" && evt.ok) {
             const r = evt.result as { duplicate?: boolean } | null;
@@ -546,7 +186,7 @@ export default function ChatView({
           }
           break;
         case MSG.AGENT_DONE:
-          settleRun();
+          run.onSettled();
           setStatus("idle");
           // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示
           if (evt.reason === "max-turns") {
@@ -563,7 +203,7 @@ export default function ChatView({
           break;
         case MSG.AGENT_ERROR:
           // 错误详情由后台日志记录,面板只负责呈现(独立错误样式,不走 markdown)
-          settleRun();
+          run.onSettled();
           setStatus("idle");
           setMessages((ms) => [
             ...ms,
@@ -600,10 +240,7 @@ export default function ChatView({
     port.onDisconnect.addListener(() => {
       log.warn("chat", "port disconnected");
       portRef.current = null;
-      streamingRef.current = false;
-      // SW 休眠 / 刷新导致断开:run 已死,归一残留状态避免 UI 卡在 thinking;
-      // 已结束(settled)的展示不动,用户可能正在回看
-      if (runPhaseRef.current === "live") settleRun();
+      run.onPortDisconnected();
       setStatus("idle");
     });
 
@@ -631,7 +268,7 @@ export default function ChatView({
     setCompaction(null);
     setMemorySaved(0);
     setInput("");
-    clearRun();
+    run.newRound();
     setCurrentSession(sessionId);
     sessionRef.current = sessionId;
     if (sessionId) {
@@ -661,7 +298,7 @@ export default function ChatView({
   useEffect(() => {
     connect();
     // 历史图片取字节的发送通道(ChatImage 组件经模块级 requestImgUrl 调用)
-    sendGetImage = (id) => connect().postMessage({ type: MSG.GET_IMAGE, id });
+    setImageSender((id) => connect().postMessage({ type: MSG.GET_IMAGE, id }));
     // 设置页悬浮关闭后不重挂,配置变更靠 storage 事件同步模型列表
     const onStorage = (
       changes: Record<string, chrome.storage.StorageChange>,
@@ -692,9 +329,6 @@ export default function ChatView({
       setModelId(c.model);
     });
     return () => {
-      streamingRef.current = false;
-      dropReasoningBuf();
-      dropTextBuf();
       chrome.storage.onChanged.removeListener(onStorage);
       portRef.current?.disconnect();
       portRef.current = null;
@@ -702,29 +336,10 @@ export default function ChatView({
     };
   }, []);
 
-  // 模型选择器打开期间:点外 / Esc 关闭
-  useEffect(() => {
-    if (!modelPopOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!modelPopRef.current?.contains(e.target as Node))
-        setModelPopOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setModelPopOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [modelPopOpen]);
-
   /** 切换默认模型:写供应商 + 模型两个字段,后台每轮 run 重读配置,下一轮生效 */
   const pickModel = (providerId: string, id: string) => {
     setModelProvider(providerId);
     setModelId(id);
-    setModelPopOpen(false);
     savePrefs({ modelProvider: providerId, model: id }).catch((err) =>
       log.warn("chat", "save model pref failed", { error: String(err) }),
     );
@@ -767,7 +382,7 @@ export default function ChatView({
     setCompaction(null);
     setMemorySaved(0);
     setInput("");
-    clearRun(); // 对话清空,本轮执行流也不保留
+    run.newRound(); // 对话清空,本轮执行流也不保留
     setCurrentSession("");
     // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
     sessionRef.current = "";
@@ -867,10 +482,10 @@ export default function ChatView({
       images: pendingImages.length,
     });
     // 先归档上一轮文本段(保证它排在本条 user 消息之前),再清空执行流开新一轮
-    flushRunTexts();
+    run.archiveTexts();
     // 本地回显:预览 url 直接转入气泡缓存,渲染无需再向后台取字节
     const metas = pendingImages.map(({ id, mime, w, h }) => ({ id, mime, w, h }));
-    for (const p of pendingImages) imgUrlCache.set(p.id, p.url);
+    for (const p of pendingImages) cacheImgUrl(p.id, p.url);
     setMessages((ms) => [
       ...ms,
       {
@@ -888,7 +503,7 @@ export default function ChatView({
       h,
     }));
     setPendingImages([]);
-    clearRun(); // AGENT_STARTED 会再兜一次
+    run.newRound(); // AGENT_STARTED 会再兜一次
     connect().postMessage({
       type: MSG.USER_MESSAGE,
       payload: {
@@ -1031,7 +646,7 @@ export default function ChatView({
               <div key={p.id} className="group relative">
                 <img
                   src={p.url}
-                  alt={`待发送图片 ${p.w}×${p.h}`}
+                  alt={t("chat.pendingImageAlt", { w: p.w, h: p.h })}
                   className="h-14 w-14 rounded-lg object-cover"
                 />
                 <button
@@ -1096,73 +711,12 @@ export default function ChatView({
             <ImageIcon />
           </button>
           {providers.some((p) => p.models.length > 0) && (
-            <div ref={modelPopRef} className="relative min-w-0">
-              <button
-                type="button"
-                onClick={() => setModelPopOpen((o) => !o)}
-                aria-haspopup="listbox"
-                aria-expanded={modelPopOpen}
-                aria-label={t("chat.selectModel")}
-                className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
-              >
-                <span className="min-w-0 truncate">
-                  {curModels.find((m) => m.id === modelId)?.alias ||
-                    modelId ||
-                    t("chat.selectModel")}
-                </span>
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  className="shrink-0"
-                >
-                  <path d="m3 6 5 5-5 5" />
-                </svg>
-              </button>
-              {modelPopOpen && (
-                <div
-                  role="listbox"
-                  aria-label={t("chat.modelOptions")}
-                  className="combo-pop combo-pop--up"
-                >
-                  {providers
-                    .filter((p) => p.models.length > 0)
-                    .map((p) => (
-                      <div key={p.id} role="group" aria-label={p.name}>
-                        <div
-                          aria-hidden="true"
-                          className="px-3 pb-0.5 pt-2 text-[10.5px] font-medium uppercase tracking-wide text-on-surface-variant/70 first:pt-1.5"
-                        >
-                          {p.name || new URL(p.baseUrl).hostname}
-                        </div>
-                        {p.models.map((m) => {
-                          const selected =
-                            p.id === curProvider?.id && m.id === modelId;
-                          return (
-                            <button
-                              key={`${p.id}/${m.id}`}
-                              type="button"
-                              role="option"
-                              aria-selected={selected}
-                              className="combo-option"
-                              title={m.alias ? m.id : undefined}
-                              onClick={() => pickModel(p.id, m.id)}
-                            >
-                              {(m.alias || m.id) + (selected ? " ✓" : "")}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
+            <ModelPicker
+              providers={providers}
+              modelProvider={modelProvider}
+              modelId={modelId}
+              onPick={pickModel}
+            />
           )}
           {status === "idle" ? (
             <button
@@ -1254,468 +808,6 @@ function SettingsIcon() {
   );
 }
 
-function EmptyState() {
-  return (
-    <div className="px-2 py-10 text-center">
-      <p className="mx-auto max-w-[220px] text-[15px] leading-relaxed text-on-surface-variant">
-        {t("chat.emptyTitle")}
-        <br />
-        {t("chat.emptySub")}
-      </p>
-    </div>
-  );
-}
-
-// ---- 执行流组件:内容 ⇆ 过程交错 ----
-
-/** 本轮执行流渲染:连续的过程段(思考/工具)聚成一张过程卡,文本段渲染为气泡 */
-function RunZone({
-  segs,
-  phase,
-  endedAt,
-  openGroups,
-  onToggleGroup,
-}: {
-  segs: RunSegment[];
-  phase: "live" | "settled";
-  endedAt: number | null;
-  openGroups: Set<number>;
-  onToggleGroup: (firstIdx: number) => void;
-}) {
-  const parts: ReactNode[] = [];
-  let group: { s: ProcessSeg; i: number }[] = [];
-  const closeGroup = (endT: number) => {
-    if (group.length === 0) return;
-    const firstIdx = group[0].i;
-    parts.push(
-      <ProcessCard
-        key={`g${firstIdx}`}
-        entries={group}
-        phase={phase}
-        durationMs={Math.max(0, endT - group[0].s.t)}
-        open={openGroups.has(firstIdx)}
-        onToggle={() => onToggleGroup(firstIdx)}
-      />,
-    );
-    group = [];
-  };
-  segs.forEach((s, i) => {
-    if (s.kind === "text") {
-      // 空白文本段(模型在工具调用间隙常吐空/换行 content):
-      // 渲染即空气泡,还会切断过程卡分组,把一轮过程拆成「1 步」卡串 —— 跳过
-      if (!s.text.trim()) return;
-      closeGroup(s.t); // 文本段开始 = 前一张过程卡计时截止
-      parts.push(<AssistantBubble key={`t${i}`} text={s.text} />);
-    } else {
-      group.push({ s, i });
-    }
-  });
-  closeGroup(endedAt ?? Date.now());
-  return <>{parts}</>;
-}
-
-/** 过程卡:live 态展示工具行 + 活跃思考 ticker(已收口思考行隐藏,保紧凑);
- * settled 态收拢为一行摘要 chip,点击展开完整行回看 */
-function ProcessCard({
-  entries,
-  phase,
-  durationMs,
-  open,
-  onToggle,
-}: {
-  entries: { s: ProcessSeg; i: number }[];
-  phase: "live" | "settled";
-  durationMs: number;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  if (phase === "live") {
-    const rows = entries.filter(
-      (e) => e.s.kind === "tool" || (e.s.kind === "reasoning" && e.s.active),
-    );
-    return (
-      <div className="trace msg-in">
-        {rows.map((e) =>
-          e.s.kind === "reasoning" ? (
-            <TickerRow key={`r${e.i}`} item={e.s} />
-          ) : (
-            <ToolRow key={e.s.id} item={e.s} />
-          ),
-        )}
-      </div>
-    );
-  }
-  const tools = entries
-    .map((e) => e.s)
-    .filter((s): s is ToolSeg => s.kind === "tool");
-  const hasError = tools.some((t) => t.status === "error");
-  const meta = tools.length
-    ? `${tools.length} 步 · ${fmtDur(durationMs)}`
-    : `思考 · ${fmtDur(durationMs)}`;
-  const chain = summarizeChain(tools);
-  return (
-    <div className="trace msg-in" data-open={open}>
-      <button
-        type="button"
-        className="trace-header trace-summary"
-        onClick={onToggle}
-        aria-expanded={open}
-      >
-        <span className="trace-icon" aria-hidden="true">
-          {hasError ? <MarkError /> : <MarkOk />}
-        </span>
-        <span className="trace-summary-meta">{meta}</span>
-        {chain && <span className="trace-summary-chain">{chain}</span>}
-        <span className="trace-tail">
-          <ChevronIcon />
-        </span>
-      </button>
-      <div className="trace-rows-wrap">
-        <div className="trace-rows">
-          {entries.map((e) =>
-            e.s.kind === "reasoning" ? (
-              <ReasoningRow key={`r${e.i}`} item={e.s} />
-            ) : (
-              <ToolRow key={e.s.id} item={e.s} />
-            ),
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** 思考中 ticker:单行,只显示最近的尾部内容(节流刷新,不推挤布局) */
-function TickerRow({ item }: { item: ReasoningSeg }) {
-  return (
-    <div className="trace-row" data-kind="reasoning" data-active="true">
-      <div className="trace-line">
-        <span className="trace-icon" aria-hidden="true">
-          <SparkleIcon />
-        </span>
-        <span className="trace-label trace-shimmer">{t("chat.trace.thinking")}</span>
-        <span className="trace-tail-text" aria-hidden="true">
-          {tailSlice(item.text)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/** 已收口的思考行(settled 展开区内):一行「思考过程」,点击展开完整文本回看。
- *  展开态是行内局部状态 —— 与 ToolRow 一致,不进 runSegs,
- *  否则会触发近底跟随的段更新 effect(旧版正是这样被拽底的) */
-function ReasoningRow({ item }: { item: ReasoningSeg }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="trace-row" data-kind="reasoning" data-open={open}>
-      <button
-        type="button"
-        className="trace-header"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="trace-icon" aria-hidden="true">
-          <SparkleIcon />
-        </span>
-        <span className="trace-label">{t("chat.trace.reasoning")}</span>
-        <span className="trace-tail">
-          <ChevronIcon />
-        </span>
-      </button>
-      <div className="trace-body-wrap">
-        <div className="trace-body">
-          <div className="reasoning-text">
-            {truncate(item.text, REASONING_MAX_CHARS)}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** 工具行:名称 + 状态常显(对勾/叉以描边画入),参数/结果点击展开(摘要截断) */
-function ToolRow({ item }: { item: ToolSeg }) {
-  const [open, setOpen] = useState(false);
-  const statusText =
-    item.status === "running"
-      ? t("chat.trace.running")
-      : item.status === "error"
-        ? t("chat.trace.failed")
-        : t("chat.trace.done");
-  return (
-    <div
-      className="trace-row"
-      data-kind="tool"
-      data-status={item.status}
-      data-open={open}
-    >
-      <button
-        type="button"
-        className="trace-header"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span className="trace-icon" aria-hidden="true">
-          {item.status === "running" ? (
-            <span className="trace-spinner" />
-          ) : item.status === "error" ? (
-            <MarkError />
-          ) : (
-            <MarkOk />
-          )}
-        </span>
-        <span className="trace-label">{item.displayName ?? item.name}</span>
-        <span className="trace-tail">
-          <span className="trace-status">{statusText}</span>
-          <ChevronIcon />
-        </span>
-      </button>
-      <div className="trace-body-wrap">
-        <div className="trace-body">
-          <CopyableSection
-            label={t("chat.trace.args")}
-            text={
-              item.args === undefined ? t("chat.trace.none") : stringifyPreview(item.args)
-            }
-          />
-          {item.result !== undefined && (
-            <CopyableSection
-              label={item.status === "error" ? t("chat.trace.error") : t("chat.trace.result")}
-              text={stringifyPreview(item.result)}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** 参数/结果小节:标题行带「复制」(取完整内容);预览截断展示 */
-function CopyableSection({ label, text }: { label: string; text: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* 剪贴板被拒等:静默 */
-    }
-  };
-  return (
-    <>
-      <div className="trace-sec-row">
-        <span className="trace-sec">{label}</span>
-        <button type="button" onClick={copy} className="trace-copy-btn">
-          {copied ? t("common.copied") : t("common.copy")}
-        </button>
-      </div>
-      <pre className="trace-pre">{truncate(text, PREVIEW_CHARS)}</pre>
-    </>
-  );
-}
-
-function MarkOk() {
-  return (
-    <svg
-      className="trace-mark mark-ok"
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-    >
-      <path d="M2.6 6.4 4.9 8.7 9.4 3.4" />
-    </svg>
-  );
-}
-
-function MarkError() {
-  return (
-    <svg
-      className="trace-mark mark-error"
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-    >
-      <path d="M3.2 3.2 8.8 8.8M8.8 3.2 3.2 8.8" />
-    </svg>
-  );
-}
-
-/** 毫秒 → 「5s」「1m03s」(下限 1s,避免闪 0s) */
-function fmtDur(ms: number): string {
-  const s = Math.max(1, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
-}
-
-/** 工具链摘要:连续同名合并 ×n,「查找元素 → 点击元素 → 读取章节×2」 */
-function summarizeChain(tools: ToolSeg[]): string {
-  const runs: { name: string; n: number }[] = [];
-  for (const t of tools) {
-    const name = t.displayName ?? t.name;
-    const last = runs[runs.length - 1];
-    if (last?.name === name) last.n += 1;
-    else runs.push({ name, n: 1 });
-  }
-  return runs.map((r) => (r.n > 1 ? `${r.name}×${r.n}` : r.name)).join(" → ");
-}
-
-/** 四角星(SF Symbols sparkle 风):思考过程的图标 */
-function SparkleIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 2.75C8.6 5.4 10.6 7.4 13.25 8 10.6 8.6 8.6 10.6 8 13.25 7.4 10.6 5.4 8.6 2.75 8 5.4 7.4 7.4 5.4 8 2.75Z" />
-    </svg>
-  );
-}
-
-/** 折叠指示箭头:单个 SVG,开合沿同一路径旋转(CSS 接管 transform) */
-function ChevronIcon() {
-  return (
-    <svg
-      className="trace-chevron"
-      width="10"
-      height="10"
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-    >
-      <path d="M4.5 2.75 8.25 6 4.5 9.25" />
-    </svg>
-  );
-}
-
-/** unknown → 可展示文本:字符串原样,对象 JSON 美化,失败退 String() */
-function stringifyPreview(v: unknown): string {
-  if (typeof v === "string") return v;
-  try {
-    return JSON.stringify(v, null, 2) ?? String(v);
-  } catch {
-    return String(v);
-  }
-}
-
-/** ticker 单行容量(按显示宽度估算:CJK≈1 单位,西文≈0.55;≈220px @12px) */
-const TAIL_WIDTH_UNITS = 17;
-
-/** 思考 ticker:从尾部按显示宽度截取最近的单行内容,越界时前缀 … 标记截断 */
-function tailSlice(s: string): string {
-  let units = 0;
-  let i = s.length;
-  while (i > 0) {
-    const cp = s.codePointAt(i - 1)!;
-    const w = cp > 0x2e7f ? 1 : 0.55; // CJK 及全角记 1,其余记约半宽
-    if (units + w > TAIL_WIDTH_UNITS) break;
-    units += w;
-    i -= cp > 0xffff ? 2 : 1;
-  }
-  const tail = s.slice(i).replace(/\s+$/, "");
-  return i > 0 && tail ? `…${tail}` : tail;
-}
-
-/** 超长文本截断,尾部标注总字数 */
-function truncate(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max)}…(共 ${s.length} 字)` : s;
-}
-
-// markdown 渲染配置:引用保持稳定,配合 memo 让历史消息不因无关状态重渲染/重解析
-const MD_REMARK: NonNullable<MarkdownOptions["remarkPlugins"]> = [remarkGfm];
-const MD_REHYPE: NonNullable<MarkdownOptions["rehypePlugins"]> = [
-  [
-    rehypeHighlight,
-    {
-      languages: {
-        bash,
-        cpp,
-        css,
-        diff,
-        go,
-        java,
-        javascript,
-        json,
-        python,
-        rust,
-        sql,
-        typescript,
-        xml,
-        yaml,
-      },
-    },
-  ],
-];
-const MD_COMPONENTS: NonNullable<MarkdownOptions["components"]> = {
-  pre: CodeBlock,
-};
-
-const UserBubble = memo(function UserBubble({
-  text,
-  images,
-}: {
-  text: string;
-  images?: ImageMeta[];
-}) {
-  return (
-    <div className="msg-in ml-auto flex w-fit max-w-[86%] flex-col items-end gap-1.5">
-      {images && images.length > 0 && (
-        <div className="flex max-w-full flex-wrap justify-end gap-1.5">
-          {images.map((im) => (
-            <ChatImage key={im.id} meta={im} />
-          ))}
-        </div>
-      )}
-      {text && (
-        <div className="whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
-          {text}
-        </div>
-      )}
-    </div>
-  );
-});
-
-/** 气泡里的图片:优先 objectURL 缓存(刚发送的已在),缺失时向后台取字节;
- *  取不到(随会话被清理)显示失效占位。点击原图新开查看 */
-function ChatImage({ meta }: { meta: ImageMeta }) {
-  const [url, setUrl] = useState<string | null>(
-    () => imgUrlCache.get(meta.id) ?? null,
-  );
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (url) return;
-    let alive = true;
-    requestImgUrl(meta.id).then((u) => {
-      if (!alive) return;
-      if (u) setUrl(u);
-      else setFailed(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [meta.id, url]);
-  if (failed) {
-    return (
-      <div className="flex h-20 w-28 items-center justify-center rounded-lg bg-surface-container-high text-[11px] text-on-surface-variant">
-        图片已失效
-      </div>
-    );
-  }
-  if (!url) {
-    return (
-      <div className="h-20 w-28 animate-pulse rounded-lg bg-surface-container-high" />
-    );
-  }
-  return (
-    <a href={url} target="_blank" rel="noreferrer">
-      <img
-        src={url}
-        alt={`图片 ${meta.w}×${meta.h}`}
-        className="max-h-48 rounded-lg object-contain"
-      />
-    </a>
-  );
-}
-
 function ImageIcon() {
   return (
     <svg
@@ -1736,171 +828,14 @@ function ImageIcon() {
   );
 }
 
-const AssistantBubble = memo(function AssistantBubble({
-  text,
-}: {
-  text: string;
-}) {
+function EmptyState() {
   return (
-    <div className="markdown msg-in pl-3 text-[13px] leading-relaxed">
-      <ReactMarkdown
-        remarkPlugins={MD_REMARK}
-        rehypePlugins={MD_REHYPE}
-        components={MD_COMPONENTS}
-      >
-        {text}
-      </ReactMarkdown>
+    <div className="px-2 py-10 text-center">
+      <p className="mx-auto max-w-[220px] text-[15px] leading-relaxed text-on-surface-variant">
+        {t("chat.emptyTitle")}
+        <br />
+        {t("chat.emptySub")}
+      </p>
     </div>
   );
-});
-
-const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
-  return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-error-container px-3.5 py-2.5 text-[13px] leading-relaxed text-on-error-container">
-      <WarnIcon />
-      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
-        {text}
-      </span>
-    </div>
-  );
-});
-
-/** 系统运行提示条(非错误):步数耗尽等状态说明,视觉层级低于错误 */
-const NoticeBubble = memo(function NoticeBubble() {
-  return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
-      <InfoIcon />
-      <span className="min-w-0 flex-1">
-        本轮已达到步数上限,任务未完成 —— 发送「继续」可以接着做。
-      </span>
-    </div>
-  );
-});
-
-/** 压缩分隔条:标记「此处之前的历史已压成摘要」(原文仍在库里,模型只看摘要)。
- *  解释 AI 为何可能不记得很早的细节 —— 静默压缩会显得像无故失忆 */
-const CompactionDivider = memo(function CompactionDivider() {
-  return (
-    <div className="ctx-divider" role="note" aria-label={t("chat.compactionNote")}>
-      <span className="ctx-divider-line" />
-      <span className="ctx-divider-label">
-        <ArchiveIcon /> {t("chat.compactionDivider")}
-      </span>
-      <span className="ctx-divider-line" />
-    </div>
-  );
-});
-
-/** 压缩分隔条小图标(归档盒) */
-function ArchiveIcon() {
-  return (
-    <svg
-      className="inline-block align-[-2px]"
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="3" width="20" height="5" rx="1" />
-      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-      <path d="M10 12h4" />
-    </svg>
-  );
-}
-
-/** 信息圆标(系统提示条) */
-function InfoIcon() {
-  return (
-    <svg
-      className="mt-0.5 shrink-0"
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="6.2" />
-      <path d="M8 7.5v3.2" />
-      <path d="M8 5h.01" />
-    </svg>
-  );
-}
-
-/** 警示三角(错误消息) */
-function WarnIcon() {
-  return (
-    <svg
-      className="mt-0.5 shrink-0"
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M8 2.2 14.6 13.4H1.4L8 2.2Z" />
-      <path d="M8 6.4v3" />
-      <path d="M8 11.7h.01" />
-    </svg>
-  );
-}
-
-/** 代码块容器:顶部条(语言 + 复制)+ 横向滚动代码体。
- *  容器锁 max-width,长行靠 pre 的 overflow-x 滚动,不再撑破消息宽度 */
-function CodeBlock({
-  node: _node,
-  children,
-  ...rest
-}: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) {
-  const first = Array.isArray(children) ? children[0] : children;
-  const lang = isValidElement(first)
-    ? (/language-([\w+-]+)/.exec(
-        String((first.props as { className?: string }).className ?? ""),
-      )?.[1] ?? "")
-    : "";
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(nodeText(children));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* 剪贴板被拒等:静默 */
-    }
-  };
-  return (
-    <figure className="code-block">
-      <figcaption className="code-block-head">
-        <span>{lang || t("chat.code.plain")}</span>
-        <button type="button" onClick={copy} className="code-copy-btn">
-          {copied ? t("common.copied") : t("common.copy")}
-        </button>
-      </figcaption>
-      <pre {...rest}>{children}</pre>
-    </figure>
-  );
-}
-
-/** ReactNode → 纯文本(复制代码块用,穿透 hljs 的高亮 span 树) */
-function nodeText(node: ReactNode): string {
-  if (node == null || typeof node === "boolean") return "";
-  if (typeof node === "string" || typeof node === "number")
-    return String(node);
-  if (Array.isArray(node)) return node.map(nodeText).join("");
-  if (isValidElement(node)) {
-    return nodeText((node.props as { children?: ReactNode }).children);
-  }
-  return "";
 }

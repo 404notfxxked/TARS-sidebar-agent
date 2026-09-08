@@ -5,6 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MSG, PORT_NAME, type SessionMeta } from "../shared/messages";
 import { t } from "../shared/i18n";
 import { createLogger } from "../shared/logger";
+import { useConfirmReset } from "./ui/hooks";
+import SkeletonRows from "./ui/SkeletonRows";
+import SubPageHeader from "./ui/SubPageHeader";
+import { TrashIcon } from "./ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
@@ -75,7 +79,7 @@ export default function SessionsView({
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   // 两段确认删除:第一次点变「确认删除」,3s 不跟进而自动复位
-  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [confirmId, armConfirm, resetConfirm] = useConfirmReset<string>();
   const [query, setQuery] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
 
@@ -92,21 +96,15 @@ export default function SessionsView({
     };
   }, []);
 
-  useEffect(() => {
-    if (!confirmId) return;
-    const t = window.setTimeout(() => setConfirmId(null), 3000);
-    return () => window.clearTimeout(t);
-  }, [confirmId]);
-
   const refresh = () =>
     portRef.current?.postMessage({ type: MSG.LIST_SESSIONS });
 
   const remove = (id: string) => {
     if (confirmId !== id) {
-      setConfirmId(id);
+      armConfirm(id);
       return;
     }
-    setConfirmId(null);
+    resetConfirm();
     setSessions((list) => list?.filter((s) => s.id !== id) ?? list);
     portRef.current?.postMessage({ type: MSG.DELETE_SESSION, sessionId: id });
     // 删除无回执,延迟拉一次列表兜底(后台失败时列表会还原)
@@ -137,28 +135,7 @@ export default function SessionsView({
 
   return (
     <div className="view-in flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center gap-2 px-3 pb-1 pt-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t("common.backToChat")}
-          className="icon-btn"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M10 3 5 8l5 5" />
-          </svg>
-        </button>
-        <h2 className="m-0 text-[16px] font-medium text-on-surface">{t("sessions.title")}</h2>
+      <SubPageHeader title={t("sessions.title")} onBack={onBack}>
         <button
           type="button"
           onClick={onNew}
@@ -179,7 +156,7 @@ export default function SessionsView({
             <path d="M8 3.5v9M3.5 8h9" />
           </svg>
         </button>
-      </header>
+      </SubPageHeader>
 
       {/* 搜索:输入内 Esc 先清词(冒泡被拦下,不关页面) */}
       <div className="px-3 pb-1 pt-1">
@@ -220,7 +197,7 @@ export default function SessionsView({
       {/* 顶部不留 padding:组头吸顶后若上方有缝,行会从缝里露出来(间距在组头自身 padding 里) */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {sessions === null ? (
-          <SkeletonRows />
+          <SkeletonRows widths={[72, 55, 63, 46]} />
         ) : sessions.length === 0 ? (
           <EmptyState onNew={onNew} />
         ) : groups.length === 0 ? (
@@ -316,42 +293,7 @@ function SessionRow({
   );
 }
 
-function TrashIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="block"
-    >
-      <path d="M2.5 4h11M6.5 2h3M4 4l.7 9a1.5 1.5 0 0 0 1.5 1.3h3.6a1.5 1.5 0 0 0 1.5-1.3L12 4M6.5 7v4M9.5 7v4" />
-    </svg>
-  );
-}
-
-// ---- 骨架屏 / 空态 ----
-
-function SkeletonRows() {
-  return (
-    <div className="space-y-4 px-2 pt-3" aria-hidden="true">
-      {[72, 55, 63, 46].map((w, i) => (
-        <div key={i} className="animate-pulse space-y-1.5">
-          <div
-            className="h-3 rounded bg-surface-container-highest"
-            style={{ width: `${w}%` }}
-          />
-          <div className="h-2 w-2/5 rounded bg-surface-container-highest" />
-        </div>
-      ))}
-    </div>
-  );
-}
+// ---- 空态 ----
 
 function EmptyState({ onNew }: { onNew: () => void }) {
   return (
