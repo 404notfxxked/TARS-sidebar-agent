@@ -9,10 +9,10 @@
 // 失败按原因进冷却(storage.session,SW 重启不丢;两条路径共用同一冷却表);
 // 用户中止 run 时在途请求立即中断。
 
-import { abortWithTimeout, getToolExecutionContext } from "./toolContext";
-import { createLogger } from "../shared/logger";
-import { normalizeSearch } from "../shared/configStore";
-import type { SearchProviderId } from "../shared/configStore";
+import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext";
+import { createLogger } from "../../shared/logger";
+import { normalizeSearch } from "../../shared/configStore";
+import type { SearchProviderId } from "../../shared/configStore";
 import { runScrapeSearch } from "./scrapeSearch";
 
 const log = createLogger({ ctx: "bg" });

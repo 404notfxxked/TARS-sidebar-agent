@@ -7,9 +7,9 @@
 // 与业界对齐:Claude Code(结构化摘要/保留近期原文)、Gemini CLI(阈值比例)、
 // Anthropic Context Editing(先清工具结果再摘要的两层策略)
 
-import type { CompactLevel } from "../shared/configStore";
-import { createLogger } from "../shared/logger";
-import type { ChatProvider, InternalMsg } from "./provider";
+import type { CompactLevel } from "../../shared/configStore";
+import { createLogger } from "../../shared/logger";
+import type { ChatProvider, InternalMsg } from "../provider";
 
 const log = createLogger({ ctx: "bg" });
 

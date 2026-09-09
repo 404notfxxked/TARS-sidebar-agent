@@ -3,7 +3,7 @@
 // 编译期校验和 scripts/check-i18n.mjs 的静态扫描,这里守运行时行为。
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getLocale, setLocale, subscribeLocale, t } from "./i18n";
+import { getLocale, setLocale, subscribeLocale, t } from "./index";
 import { zhCN } from "./locales/zh-CN";
 import { enUS } from "./locales/en-US";
 

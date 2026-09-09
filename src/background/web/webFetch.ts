@@ -9,9 +9,9 @@
 // 取消:用户中止 run 时,在途抓取立即中断(offscreen 侧的解析为本地纯计算,
 // 不受影响,结果会被丢弃)。
 
-import { callOffscreenParser, ensureOffscreenDocument } from "../shared/docBridge";
-import { abortWithTimeout, getToolExecutionContext } from "./toolContext";
-import { createLogger } from "../shared/logger";
+import { callOffscreenParser, ensureOffscreenDocument } from "../../shared/docBridge";
+import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext";
+import { createLogger } from "../../shared/logger";
 
 const log = createLogger({ ctx: "bg" });
 

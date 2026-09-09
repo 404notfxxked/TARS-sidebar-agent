@@ -7,9 +7,9 @@
 //   连带清掉、磁盘紧张时可能被驱逐,当历史被当作可丢弃数据时这些都不再致命
 // - 首次启动把旧版 chrome.storage.session 里的 history:* 一次性搬进来
 
-import type { InternalMsg } from "./provider/types";
-import type { ChatRecord, SessionMeta } from "../shared/messages";
-import { createLogger } from "../shared/logger";
+import type { InternalMsg } from "../provider/types";
+import type { ChatRecord, SessionMeta } from "../../shared/messages";
+import { createLogger } from "../../shared/logger";
 import * as db from "./sessionDb";
 
 const log = createLogger({ ctx: "bg" });

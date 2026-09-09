@@ -12,11 +12,11 @@ import {
   createLogger,
   installGlobalErrorHook,
 } from "../shared/logger";
-import { runAgentLoop, type AgentPort } from "./agent";
+import { runAgentLoop, type AgentPort } from "./agent/agent";
 import {
   listServerTools,
   testServer,
-} from "./mcpManager";
+} from "./mcp/mcpManager";
 import {
   addMemory,
   clearMemories,
@@ -24,7 +24,7 @@ import {
   loadMemories,
   setMemoryPinned,
   updateMemory,
-} from "./memoryStore";
+} from "./memory/memoryStore";
 import {
   clearAllSessions,
   deleteSession,
@@ -35,7 +35,7 @@ import {
   migrateLegacySessionStorage,
   pruneExpiredSessions,
   toChatRecords,
-} from "./sessionHistory";
+} from "./sessions/sessionHistory";
 
 const log = createLogger({ ctx: "bg" });
 installGlobalErrorHook(log);

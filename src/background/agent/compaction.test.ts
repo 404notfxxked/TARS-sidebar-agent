@@ -10,7 +10,7 @@ import {
   shouldCompact,
   usableTokens,
 } from "./compaction";
-import type { ChatProvider, InternalMsg } from "./provider/types";
+import type { ChatProvider, InternalMsg } from "../provider/types";
 
 const user = (content: string): InternalMsg => ({ role: "user", content });
 const assistant = (content: string): InternalMsg => ({ role: "assistant", content });

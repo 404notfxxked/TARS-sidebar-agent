@@ -12,7 +12,7 @@
 // IDB 的两个耐久性短板(用户「清除浏览数据」会清掉、磁盘紧张可被驱逐)
 // 由保留期策略化解——数据本就是短命数据,见 sessionHistory.ts 的注释。
 
-import type { MemoryTag } from "../shared/memory";
+import type { MemoryTag } from "../../shared/memory";
 
 const DB_NAME = "tars";
 const DB_VERSION = 3;

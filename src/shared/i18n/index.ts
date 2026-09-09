@@ -5,7 +5,7 @@
 // 语言只有面板在用:current 是面板运行态,启动时 main.tsx 从配置读入,
 // 设置页切换;SW 侧文案(模型可见)始终英文,不走这里。
 
-import type { LocalePref } from "./configStore";
+import type { LocalePref } from "../configStore";
 import { zhCN } from "./locales/zh-CN";
 import { enUS } from "./locales/en-US";
 

@@ -6,8 +6,8 @@ import {
   MSG,
   PORT_NAME,
   type McpToolInfo,
-} from "../shared/messages";
-import type { McpServerEntry } from "../shared/mcp";
+} from "../../shared/messages";
+import type { McpServerEntry } from "../../shared/mcp";
 
 /** 发一条请求,等指定类型的回包原样返回 */
 function portReq(

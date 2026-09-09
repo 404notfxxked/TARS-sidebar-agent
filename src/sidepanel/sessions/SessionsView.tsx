@@ -2,13 +2,13 @@
 // 点击切回,单条删除。数据经 port 向后台要(SW 是 IndexedDB 唯一读写方),本视图不碰 IDB。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MSG, PORT_NAME, type SessionMeta } from "../shared/messages";
-import { t } from "../shared/i18n";
-import { createLogger } from "../shared/logger";
-import { useConfirmReset, useLocale } from "./ui/hooks";
-import SkeletonRows from "./ui/SkeletonRows";
-import SubPageHeader from "./ui/SubPageHeader";
-import { TrashIcon } from "./ui/icons";
+import { MSG, PORT_NAME, type SessionMeta } from "../../shared/messages";
+import { t } from "../../shared/i18n";
+import { createLogger } from "../../shared/logger";
+import { useConfirmReset, useLocale } from "../ui/hooks";
+import SkeletonRows from "../ui/SkeletonRows";
+import SubPageHeader from "../ui/SubPageHeader";
+import { TrashIcon } from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 

@@ -24,9 +24,9 @@
 import {
   callOffscreenParser,
   ensureOffscreenDocument,
-} from "../shared/docBridge";
-import { abortWithTimeout, getToolExecutionContext } from "./toolContext";
-import { createLogger } from "../shared/logger";
+} from "../../shared/docBridge";
+import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext";
+import { createLogger } from "../../shared/logger";
 import type { WebSearchResult } from "./webSearch";
 
 const log = createLogger({ ctx: "bg" });

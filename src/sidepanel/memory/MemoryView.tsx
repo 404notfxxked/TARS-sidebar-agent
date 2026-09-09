@@ -4,8 +4,8 @@
 // 数据经 MEM_* 消息走后台(memoryClient),本视图不碰 IDB。
 
 import { useEffect, useMemo, useState } from "react";
-import { MSG, type MemoryItem } from "../shared/messages";
-import { t } from "../shared/i18n";
+import { MSG, type MemoryItem } from "../../shared/messages";
+import { t } from "../../shared/i18n";
 import {
   type MemoryTag,
   type MemoryTextLike,
@@ -13,14 +13,14 @@ import {
   memoryBudgetTokens,
   memoryUsedTokens,
   planMemoryInjection,
-} from "../shared/memory";
-import { loadConfig, selectedContextTokens } from "../shared/configStore";
-import { createLogger } from "../shared/logger";
-import { memReq } from "./memoryClient";
-import { useConfirmReset } from "./ui/hooks";
-import SkeletonRows from "./ui/SkeletonRows";
-import SubPageHeader from "./ui/SubPageHeader";
-import { TrashIcon } from "./ui/icons";
+} from "../../shared/memory";
+import { loadConfig, selectedContextTokens } from "../../shared/configStore";
+import { createLogger } from "../../shared/logger";
+import { memReq } from "../clients/memoryClient";
+import { useConfirmReset } from "../ui/hooks";
+import SkeletonRows from "../ui/SkeletonRows";
+import SubPageHeader from "../ui/SubPageHeader";
+import { TrashIcon } from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 

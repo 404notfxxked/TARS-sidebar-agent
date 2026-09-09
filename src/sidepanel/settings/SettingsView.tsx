@@ -9,17 +9,17 @@ import {
   loadConfig,
   selectedContextTokens,
   type AppConfig,
-} from "../shared/configStore";
-import { t } from "../shared/i18n";
-import SubPageHeader from "./ui/SubPageHeader";
-import ModelSection, { type ModelDomain } from "./settings/ModelSection";
-import AppearanceSection from "./settings/AppearanceSection";
-import WebSection from "./settings/WebSection";
-import McpSection from "./settings/McpSection";
-import MemorySection from "./settings/MemorySection";
-import CompactionSection from "./settings/CompactionSection";
-import DataSection from "./settings/DataSection";
-import DiagnosticsSection from "./settings/DiagnosticsSection";
+} from "../../shared/configStore";
+import { t } from "../../shared/i18n";
+import SubPageHeader from "../ui/SubPageHeader";
+import ModelSection, { type ModelDomain } from "./ModelSection";
+import AppearanceSection from "./AppearanceSection";
+import WebSection from "./WebSection";
+import McpSection from "./McpSection";
+import MemorySection from "./MemorySection";
+import CompactionSection from "./CompactionSection";
+import DataSection from "./DataSection";
+import DiagnosticsSection from "./DiagnosticsSection";
 
 export default function SettingsView({
   onBack,

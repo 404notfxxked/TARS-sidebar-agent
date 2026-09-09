@@ -16,12 +16,12 @@
 // - MRTR(InputRequiredResult,服务器要采样/追问):V1 明确不支持,直接
 //   报错让模型换路;不静默吞 —— 模型需要知道这条路走不通
 
-import type { ToolSchema } from "../shared/toolTypes";
-import type { Tool } from "./tools";
-import type { McpConfig, McpServerEntry } from "../shared/mcp";
-import { MCP_TOOL_PREFIX, mcpWireName, sanitizeWirePart } from "../shared/mcp";
-import { createLogger } from "../shared/logger";
-import { getToolExecutionContext } from "./toolContext";
+import type { ToolSchema } from "../../shared/toolTypes";
+import type { Tool } from "../tools/tools";
+import type { McpConfig, McpServerEntry } from "../../shared/mcp";
+import { MCP_TOOL_PREFIX, mcpWireName, sanitizeWirePart } from "../../shared/mcp";
+import { createLogger } from "../../shared/logger";
+import { getToolExecutionContext } from "../tools/toolContext";
 import { McpClient, encodeHeaderValue } from "./mcpClient";
 
 const log = createLogger({ ctx: "bg" });

@@ -39,7 +39,7 @@ walk(SRC);
 // ---- 2) esbuild 转译字典并加载 ----
 const tmp = mkdtempSync(join("/tmp", "i18n-check-"));
 await esbuild.build({
-  entryPoints: [resolve(__dirname, "..", "src", "shared", "locales", "zh-CN.ts")],
+  entryPoints: [resolve(__dirname, "..", "src", "shared", "i18n", "locales", "zh-CN.ts")],
   outfile: join(tmp, "zh-CN.mjs"),
   bundle: true,
   format: "esm",

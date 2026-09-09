@@ -3,10 +3,10 @@
 // 「打开面板总是新会话」的新语义下,没有可自动恢复的历史可拉,丢就是真丢。
 
 import { useEffect, useState } from "react";
-import ChatView from "./ChatView";
-import SettingsView from "./SettingsView";
-import SessionsView from "./SessionsView";
-import MemoryView from "./MemoryView";
+import ChatView from "./chat/ChatView";
+import SettingsView from "./settings/SettingsView";
+import SessionsView from "./sessions/SessionsView";
+import MemoryView from "./memory/MemoryView";
 import { useLocale } from "./ui/hooks";
 
 type Overlay = null | "settings" | "sessions" | "memory";

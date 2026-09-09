@@ -9,7 +9,7 @@
 // - 保存入口两条:模型经 memory_save 工具(少而精,description 里约束)、
 //   用户在记忆页手动添加 —— 都走 addMemory 做 校验/去重
 
-import { createLogger } from "../shared/logger";
+import { createLogger } from "../../shared/logger";
 import {
   MEMORY_MAX_CHARS,
   MEMORY_PREAMBLE,
@@ -18,15 +18,15 @@ import {
   memoryFooterText,
   memoryInjectionLines,
   planMemoryInjection,
-} from "../shared/memory";
-import type { InternalMsg } from "./provider/types";
-import type { MemoryRow } from "./sessionDb";
+} from "../../shared/memory";
+import type { InternalMsg } from "../provider/types";
+import type { MemoryRow } from "../sessions/sessionDb";
 import {
   clearMemoryRows,
   deleteMemoryRow,
   listMemoryRows,
   putMemoryRow,
-} from "./sessionDb";
+} from "../sessions/sessionDb";
 
 const log = createLogger({ ctx: "bg" });
 

@@ -3,7 +3,7 @@
 // a missing key fails tsc. Style: neutral and precise — complete sentences,
 // sentence case for labels, no slang. scripts/check-i18n.mjs only scans zh-CN.
 
-import type { Dict } from "../i18n";
+import type { Dict } from "../index";
 
 export const enUS = {
   common: {

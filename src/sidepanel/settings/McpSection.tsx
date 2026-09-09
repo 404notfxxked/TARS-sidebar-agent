@@ -8,7 +8,7 @@ import type { McpConfig, McpServerEntry } from "../../shared/mcp";
 import { estimateTokens } from "../../shared/memory";
 import type { McpToolInfo } from "../../shared/messages";
 import { t } from "../../shared/i18n";
-import { mcpListTools, mcpTest } from "../mcpClient";
+import { mcpListTools, mcpTest } from "../clients/mcpClient";
 import { useConfirmReset } from "../ui/hooks";
 import SwitchRow from "../ui/SwitchRow";
 import { ExpandCard, SettingsSection, hostOf } from "./parts";

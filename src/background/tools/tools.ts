@@ -1,18 +1,18 @@
 // 工具注册表 - agent loop 可调用的工具
 
-import { callContentTool, getActiveTabId } from "../shared/contentTools";
-import { callOffscreenTool, ensureOffscreenDocument } from "../shared/docBridge";
+import { callContentTool, getActiveTabId } from "../../shared/contentTools";
+import { callOffscreenTool, ensureOffscreenDocument } from "../../shared/docBridge";
 import { getToolExecutionContext } from "./toolContext";
-import { runWebSearch, type WebSearchArgs, type WebSearchResult } from "./webSearch";
-import { runWebFetch, type WebFetchArgs, type WebFetchResult } from "./webFetch";
+import { runWebSearch, type WebSearchArgs, type WebSearchResult } from "../web/webSearch";
+import { runWebFetch, type WebFetchArgs, type WebFetchResult } from "../web/webFetch";
 import {
   addMemory,
   deleteMemoriesByMatch,
   loadMemories,
-} from "./memoryStore";
-import { MEMORY_TAGS, type MemoryTag } from "../shared/memory";
-import type { ToolSchema } from "../shared/toolTypes";
-import { getMcpTool } from "./mcpManager";
+} from "../memory/memoryStore";
+import { MEMORY_TAGS, type MemoryTag } from "../../shared/memory";
+import type { ToolSchema } from "../../shared/toolTypes";
+import { getMcpTool } from "../mcp/mcpManager";
 
 /** 工具定义:注册表条目 = 共享的 ToolSchema(纯 schema)+ 可执行的 execute */
 export interface Tool<P = unknown, R = unknown> extends ToolSchema {

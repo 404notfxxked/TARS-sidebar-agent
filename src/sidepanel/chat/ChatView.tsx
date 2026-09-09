@@ -15,15 +15,15 @@ import {
   type AgentEvent,
   type CompactionMark,
   type ImageMeta,
-} from "../shared/messages";
-import { t } from "../shared/i18n";
-import { getActiveTabId } from "../shared/contentTools";
+} from "../../shared/messages";
+import { t } from "../../shared/i18n";
+import { getActiveTabId } from "../../shared/contentTools";
 import {
   loadConfig,
   savePrefs,
   type ProviderEntry,
-} from "../shared/configStore";
-import { createLogger } from "../shared/logger";
+} from "../../shared/configStore";
+import { createLogger } from "../../shared/logger";
 import {
   MAX_ATTACHMENTS,
   cacheImgUrl,
@@ -31,18 +31,18 @@ import {
   resolveImageData,
   setImageSender,
   type PendingImage,
-} from "./chat/images";
-import { useRunSegments } from "./chat/useRunSegments";
-import { RunZone } from "./chat/trace";
+} from "./images";
+import { useRunSegments } from "./useRunSegments";
+import { RunZone } from "./trace";
 import {
   AssistantBubble,
   CompactionDivider,
   ErrorBubble,
   NoticeBubble,
   UserBubble,
-} from "./chat/bubbles";
-import ModelPicker from "./chat/ModelPicker";
-import { ArchiveIcon } from "./ui/icons";
+} from "./bubbles";
+import ModelPicker from "./ModelPicker";
+import { ArchiveIcon } from "../ui/icons";
 
 // 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
 const log = createLogger({ ctx: "panel" });

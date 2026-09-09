@@ -6,7 +6,7 @@ import { savePrefs } from "../../shared/configStore";
 import { memoryUsedTokens } from "../../shared/memory";
 import { MSG, type MemoryItem } from "../../shared/messages";
 import { t } from "../../shared/i18n";
-import { memReq } from "../memoryClient";
+import { memReq } from "../clients/memoryClient";
 import SwitchRow from "../ui/SwitchRow";
 import { SettingsSection } from "./parts";
 

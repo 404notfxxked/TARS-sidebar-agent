@@ -15,7 +15,9 @@ dist
 package-lock.json
 yarn.lock
 
-tests/
+# 以下三条必须锚定仓库根(前导 /):裸目录名会匹配任意层级同名目录,
+# 曾把 src/background/memory/、src/sidepanel/memory/ 整个忽略掉
+/tests/
 
 .vscode/
 .zcode/
@@ -24,5 +26,5 @@ tests/
 .logs/
 
 # 本地项目记忆(路线图/决策笔记;README「路线图」指向它,不进仓库)
-memory/
-design/
+/memory/
+/design/

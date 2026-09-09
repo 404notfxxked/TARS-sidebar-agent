@@ -24,7 +24,7 @@
 // 注意 fetch 会带 Origin: chrome-extension://<id>,个别严格校验 Origin 的
 // 服务器可能 403 —— 属于服务器侧策略,客户端无解(Origin 是禁止改写的头)。
 
-import { createLogger } from "../shared/logger";
+import { createLogger } from "../../shared/logger";
 
 const log = createLogger({ ctx: "bg" });
 

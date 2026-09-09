@@ -5,15 +5,15 @@ import {
   MSG,
   type AgentEvent,
   type UserMessagePayload,
-} from "../shared/messages";
-import { getTool, toProviderToolSchemas } from "./tools";
+} from "../../shared/messages";
+import { getTool, toProviderToolSchemas } from "../tools/tools";
 import {
   OpenAIAdapter,
   type ChatProvider,
   type ChatResult,
   type InternalMsg,
   type MessageImage,
-} from "./provider";
+} from "../provider";
 import {
   compactHistory,
   isContextOverflow,
@@ -24,12 +24,12 @@ import {
   THRESHOLDS,
   type CompactionOutcome,
 } from "./compaction";
-import { loadConfig, inferMaxTokensField } from "../shared/configStore";
-import type { ToolSchema } from "../shared/toolTypes";
-import { getMcpToolSchemas } from "./mcpManager";
-import { createLogger } from "../shared/logger";
-import { base64ToBytes } from "../shared/imageCodec";
-import { loadMemories, memoryToMsg, renderMemoryBlock } from "./memoryStore";
+import { loadConfig, inferMaxTokensField } from "../../shared/configStore";
+import type { ToolSchema } from "../../shared/toolTypes";
+import { getMcpToolSchemas } from "../mcp/mcpManager";
+import { createLogger } from "../../shared/logger";
+import { base64ToBytes } from "../../shared/imageCodec";
+import { loadMemories, memoryToMsg, renderMemoryBlock } from "../memory/memoryStore";
 import {
   loadImage,
   loadHistory,
@@ -37,8 +37,8 @@ import {
   saveCompaction,
   saveCtx,
   saveHistory,
-} from "./sessionHistory";
-import { setToolExecutionContext } from "./toolContext";
+} from "../sessions/sessionHistory";
+import { setToolExecutionContext } from "../tools/toolContext";
 
 const log = createLogger({ ctx: "bg" });
 

@@ -2,7 +2,7 @@
 // 设置页(摘要入口行)与记忆页(增删改查)共用;CRUD 全走消息,
 // 面板不碰 IDB(SW 是唯一读写方,同 SessionsView 的约束)。
 
-import { MSG, PORT_NAME, type MemoryItem } from "../shared/messages";
+import { MSG, PORT_NAME, type MemoryItem } from "../../shared/messages";
 
 export function memReq(msg: Record<string, unknown>): Promise<MemoryItem[]> {
   return new Promise((resolve, reject) => {
