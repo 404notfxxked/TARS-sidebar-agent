@@ -76,6 +76,14 @@ export function inferMaxTokensField(
     : undefined;
 }
 
+/** 当前选中模型条目的 contextTokens(未命中/未配置 → undefined)。
+ *  面板展示记忆注入估算用,与 agent/压缩共用同一窗口口径 */
+export function selectedContextTokens(cfg: AppConfig): number | undefined {
+  return cfg.providers.find((p) => p.id === cfg.modelProvider)?.models.find(
+    (m) => m.id === cfg.model,
+  )?.contextTokens;
+}
+
 export interface AppConfig {
   /** 模型服务供应商列表;空 = 尚未配置,对话前需先添加 */
   providers: ProviderEntry[];

@@ -1,12 +1,18 @@
 // 长期记忆注入规划单测(shared/memory,面板与后台共用同一套):
-// token 粗估公式 / 置顶优先+最近更新优先 / 预算裁剪的不变式 / 跳过大条目继续装小的。
-// 此前只有 verify-memory T3 的 e2e 覆盖裁剪结果,这里把规划本身钉死。
+// token 粗估公式 / 置顶优先+最近更新优先 / 预算裁剪的不变式 / 跳过大条目继续装小的 /
+// 动态预算(按 contextTokens 缩放)/ 裁剪尾注。此前只有 verify-memory T3 的 e2e
+// 覆盖裁剪结果,这里把规划本身钉死。
 
 import { describe, expect, it } from "vitest";
 import {
   MEMORY_BUDGET_TOKENS,
   MEMORY_PREAMBLE,
   estimateTokens,
+  isMemoryCard,
+  memoryBudgetTokens,
+  memoryFooterText,
+  memoryInjectionLines,
+  memoryLine,
   memoryUsedTokens,
   planMemoryInjection,
 } from "./memory";
@@ -54,12 +60,15 @@ describe("planMemoryInjection", () => {
     expect(kept.map((r) => r.text)).toEqual(["新", "旧"]);
   });
 
-  it("预算不变式:kept 全装下;放回任一条 dropped 就超预算", () => {
-    // 30 条中等长度(400 西文字符 ≈ 104 token/条),总占用必然超 600 预算
+  it("预算不变式:kept 全装下;放回任一条 dropped 就超装箱预算", () => {
+    // 30 条中等长度(400 西文字符 ≈ 104 token/条),总占用必然超 600 预算。
+    // 装箱预算 = 总预算 − 尾注预留(规划时先扣,保证「头注+条目+尾注」≤ 预算)
     const items = Array.from({ length: 30 }, (_, i) =>
       item(`item ${i}: ${"x".repeat(400)}`, i < 3, 1_000 - i),
     );
     const { kept, dropped } = planMemoryInjection(items);
+    const packingBudget =
+      MEMORY_BUDGET_TOKENS - estimateTokens(memoryFooterText(999));
 
     // 裸和(不走 memoryUsedTokens —— 它内部会先规划,把放回的条目再裁掉)
     const rawUsed = (rows: ReturnType<typeof item>[]) =>
@@ -68,9 +77,9 @@ describe("planMemoryInjection", () => {
 
     expect(kept.length).toBeGreaterThan(0);
     expect(kept.length + dropped.length).toBe(items.length);
-    expect(rawUsed(kept)).toBeLessThanOrEqual(MEMORY_BUDGET_TOKENS);
+    expect(rawUsed(kept)).toBeLessThanOrEqual(packingBudget);
     for (const d of dropped) {
-      expect(rawUsed([...kept, d])).toBeGreaterThan(MEMORY_BUDGET_TOKENS);
+      expect(rawUsed([...kept, d])).toBeGreaterThan(packingBudget);
     }
   });
 
@@ -80,6 +89,125 @@ describe("planMemoryInjection", () => {
     const { kept, dropped } = planMemoryInjection([huge, small]);
     expect(kept.map((r) => r.text)).toEqual(["small"]);
     expect(dropped.map((r) => r.text)).toEqual([huge.text]);
+  });
+});
+
+describe("卡片态:优先级 / 行渲染 / 两段式", () => {
+  const card = (
+    text: string,
+    key: string,
+    subject?: string,
+    pinned = false,
+    updatedAt = 0,
+  ) => ({ text, key, subject, pinned, updatedAt });
+
+  it("isMemoryCard:有 key 即卡片,空串/缺省为简条", () => {
+    expect(isMemoryCard({ key: "diet" })).toBe(true);
+    expect(isMemoryCard({ key: "" })).toBe(false);
+    expect(isMemoryCard({})).toBe(false);
+  });
+
+  it("卡片行渲染 key: text,非本人 subject 加前缀;简条保持原文", () => {
+    expect(memoryLine({ text: "不吃香菜", key: "diet", pinned: false, updatedAt: 0 })).toBe(
+      "・diet: 不吃香菜",
+    );
+    expect(
+      memoryLine({
+        text: "花生过敏",
+        key: "allergy",
+        subject: "女儿",
+        pinned: false,
+        updatedAt: 0,
+      }),
+    ).toBe("・(女儿) allergy: 花生过敏");
+    expect(memoryLine({ text: "喜欢简洁回答", pinned: false, updatedAt: 0 })).toBe(
+      "・喜欢简洁回答",
+    );
+  });
+
+  it("排序:置顶 > 卡片 > 简条(同级再按最近更新)", () => {
+    const { kept } = planMemoryInjection([
+      item("新简条", false, 300),
+      card("旧卡片", "diet", undefined, false, 200),
+      item("旧简条", true, 100),
+    ]);
+    expect(
+      kept.map((r) => ("key" in r && r.key ? `卡:${r.key}` : `条:${r.text}`)),
+    ).toEqual(["条:旧简条", "卡:diet", "条:新简条"]);
+  });
+
+  it("两段式:卡片与简条混合时加段头,单一形态不加(存量格式逐字节不变)", () => {
+    const mixed = memoryInjectionLines([
+      { text: "偏好简洁", key: "style", pinned: false, updatedAt: 2 },
+      { text: "女儿爱吃甜食", pinned: false, updatedAt: 1 },
+    ]);
+    expect(mixed).toEqual([
+      "[profile]",
+      "・style: 偏好简洁",
+      "[notes]",
+      "・女儿爱吃甜食",
+    ]);
+    expect(
+      memoryInjectionLines([{ text: "只有简条", pinned: false, updatedAt: 0 }]),
+    ).toEqual(["・只有简条"]);
+    expect(
+      memoryInjectionLines([
+        { text: "只有卡片", key: "diet", pinned: false, updatedAt: 0 },
+      ]),
+    ).toEqual(["・diet: 只有卡片"]);
+  });
+});
+
+describe("memoryBudgetTokens", () => {
+  it("未配置/0 → 兜底 600(不猜窗口,存量行为不变)", () => {
+    expect(memoryBudgetTokens()).toBe(MEMORY_BUDGET_TOKENS);
+    expect(memoryBudgetTokens(0)).toBe(MEMORY_BUDGET_TOKENS);
+  });
+
+  it("小窗按 1% 但保底 200(Ollama 默认 4K 下 600 会占 15%)", () => {
+    expect(memoryBudgetTokens(4096)).toBe(200);
+    expect(memoryBudgetTokens(8192)).toBe(200);
+  });
+
+  it("常规窗口按 1% 缩放", () => {
+    expect(memoryBudgetTokens(32768)).toBe(328);
+    expect(memoryBudgetTokens(131072)).toBe(1311);
+  });
+
+  it("大窗封顶 2000:注意力纪律护栏 + agent loop 每请求携带的成本乘数", () => {
+    expect(memoryBudgetTokens(200000)).toBe(2000);
+    expect(memoryBudgetTokens(1_000_000)).toBe(2000);
+  });
+
+  it("预算随窗口生效:同一批条目,小窗裁得比大窗狠", () => {
+    const items = Array.from({ length: 10 }, (_, i) =>
+      item(`item ${i}: ${"x".repeat(400)}`, false, 1_000 - i),
+    );
+    const big = planMemoryInjection(items, 200_000);
+    const small = planMemoryInjection(items, 4_096);
+    expect(big.kept.length).toBeGreaterThan(small.kept.length);
+    expect(small.dropped.length).toBeGreaterThan(0);
+  });
+});
+
+describe("memoryFooterText / 裁剪尾注", () => {
+  it("单复数", () => {
+    expect(memoryFooterText(1)).toBe("(+1 older entry not shown)");
+    expect(memoryFooterText(3)).toBe("(+3 older entries not shown)");
+  });
+
+  it("有条目被裁时,面板估算含尾注开销,整体仍不破预算(尾注走预留)", () => {
+    const items = Array.from({ length: 30 }, (_, i) =>
+      item(`item ${i}: ${"x".repeat(400)}`, false, 1_000 - i),
+    );
+    const { kept, dropped } = planMemoryInjection(items);
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(memoryUsedTokens(items)).toBe(
+      estimateTokens(MEMORY_PREAMBLE) +
+        kept.reduce((s, r) => s + estimateTokens(`・${r.text}`), 0) +
+        estimateTokens(memoryFooterText(dropped.length)),
+    );
+    expect(memoryUsedTokens(items)).toBeLessThanOrEqual(MEMORY_BUDGET_TOKENS);
   });
 });
 

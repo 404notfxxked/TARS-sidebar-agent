@@ -12,6 +12,8 @@
 // IDB 的两个耐久性短板(用户「清除浏览数据」会清掉、磁盘紧张可被驱逐)
 // 由保留期策略化解——数据本就是短命数据,见 sessionHistory.ts 的注释。
 
+import type { MemoryTag } from "../shared/memory";
+
 const DB_NAME = "tars";
 const DB_VERSION = 3;
 const SESSIONS = "sessions";
@@ -22,7 +24,7 @@ const MEMORIES = "memories";
 /** 长期记忆条目(memories store):跨会话的用户偏好/事实,一行一条 */
 export interface MemoryRow {
   id: string;
-  /** 一条独立成文的记忆(如「用户偏好简洁的中文回答」) */
+  /** 一条独立成文的记忆(如「用户偏好简洁的中文回答」);卡片态即槽位当前值 */
   text: string;
   createdAt: number;
   updatedAt: number;
@@ -30,6 +32,15 @@ export interface MemoryRow {
   pinned: boolean;
   /** 来源:user = 设置页手填;model = 模型经 memory_save 工具写入 */
   source: "user" | "model";
+  /** 卡片槽位名(如 "diet"):有值即卡片态,按 (subject,key) upsert——
+   *  重复保存覆盖旧值而非新增;缺省为简条(一行一句的事实)。IDB 无 schema
+   *  约束,存量行无这些字段,读侧一律按可选容错 */
+  key?: string;
+  /** 卡片关于谁(如家人/医生);缺省即用户本人,注入时非缺省才加前缀 */
+  subject?: string;
+  /** 粗分类(identity/preference/project/health/other):注入分组、记忆页
+   *  徽标与二期蒸馏权重(tag 权重+年龄)共用;缺省不标 */
+  tag?: MemoryTag;
 }
 
 /** 会话压缩元数据:seq ≤ uptoSeq 的消息已压缩为 summary 文本。

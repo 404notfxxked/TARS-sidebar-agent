@@ -7,12 +7,14 @@ import { useEffect, useMemo, useState } from "react";
 import { MSG, type MemoryItem } from "../shared/messages";
 import { t } from "../shared/i18n";
 import {
-  MEMORY_BUDGET_TOKENS,
-  MEMORY_MAX_CHARS,
+  type MemoryTag,
   type MemoryTextLike,
+  MEMORY_MAX_CHARS,
+  memoryBudgetTokens,
   memoryUsedTokens,
   planMemoryInjection,
 } from "../shared/memory";
+import { loadConfig, selectedContextTokens } from "../shared/configStore";
 import { createLogger } from "../shared/logger";
 import { memReq } from "./memoryClient";
 import { useConfirmReset } from "./ui/hooks";
@@ -24,6 +26,8 @@ const log = createLogger({ ctx: "panel" });
 
 export default function MemoryView({ onBack }: { onBack: () => void }) {
   const [memories, setMemories] = useState<MemoryItem[] | null>(null);
+  // 当前模型的上下文窗口:注入预算按它动态缩放(与后台注入同源)
+  const [contextTokens, setContextTokens] = useState<number | undefined>();
   const [newMemory, setNewMemory] = useState("");
   // 行内编辑:点文本进入,失焦/回车提交,清空文本视为取消
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -39,6 +43,9 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
     memReq({ type: MSG.MEM_LIST })
       .then(setMemories)
       .catch(() => setMemories([])); // 加载失败按空列表呈现,重开页面重试
+    loadConfig()
+      .then((c) => setContextTokens(selectedContextTokens(c)))
+      .catch(() => {});
   }, []);
 
   const add = async () => {
@@ -97,14 +104,15 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
       .catch(() => {});
   };
 
-  // 副标:每轮实际注入 token 估算 + 超预算提示(与后台同一套规划函数)
+  // 副标:每轮实际注入 token 估算 + 超预算提示(与后台同一套规划函数,
+  // 预算按当前模型 contextTokens 动态缩放)
   const plan = useMemo(
-    () => (memories ? planMemoryInjection(memories) : null),
-    [memories],
+    () => (memories ? planMemoryInjection(memories, contextTokens) : null),
+    [memories, contextTokens],
   );
   const usedTokens = useMemo(
-    () => (memories ? memoryUsedTokens(memories) : 0),
-    [memories],
+    () => (memories ? memoryUsedTokens(memories, contextTokens) : 0),
+    [memories, contextTokens],
   );
   // 入场 stagger:全局序号封顶 8,30ms/行(同历史页)
   const rowDelay = useMemo(() => {
@@ -231,7 +239,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
             {t("memory.saved", {
               n: memories.length,
               used: usedTokens,
-              budget: MEMORY_BUDGET_TOKENS,
+              budget: memoryBudgetTokens(contextTokens),
             })}
             {plan && plan.dropped.length > 0 && (
               <span className="text-error">
@@ -275,6 +283,22 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
 }
 
 // ---- 行 ----
+
+/** tag 徽标文案:渲染时现取 t()(模块级求值会停在默认语言,契约 6) */
+function memoryTagLabel(tag: MemoryTag): string {
+  switch (tag) {
+    case "identity":
+      return t("memory.tagIdentity");
+    case "preference":
+      return t("memory.tagPreference");
+    case "project":
+      return t("memory.tagProject");
+    case "health":
+      return t("memory.tagHealth");
+    case "other":
+      return t("memory.tagOther");
+  }
+}
 
 function MemoryRow({
   memory: m,
@@ -323,6 +347,12 @@ function MemoryRow({
             className="min-w-0 flex-1 cursor-pointer text-left text-[13px] leading-5 text-on-surface"
           >
             {m.text}
+            {(m.key || m.subject) && (
+              <span className="memory-src">
+                {[m.subject, m.key].filter(Boolean).join("·")}
+              </span>
+            )}
+            {m.tag && <span className="memory-src">{memoryTagLabel(m.tag)}</span>}
             {m.source === "model" && (
               <span className="memory-src">AI</span>
             )}

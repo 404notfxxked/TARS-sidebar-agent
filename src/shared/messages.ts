@@ -4,6 +4,7 @@
 export const PORT_NAME = 'agent-port' as const
 
 import type { McpServerEntry } from "./mcp"
+import type { MemoryTag } from "./memory"
 
 export const MSG = {
   // Side panel → Background
@@ -119,7 +120,8 @@ export interface CompactionMark {
   at: number;
 }
 
-/** 长期记忆条目(面板展示用):与后台 MemoryRow 一致的精简形状 */
+/** 长期记忆条目(面板展示用):与后台 MemoryRow 一致的精简形状。
+ *  key/subject/tag 是卡片态可选字段,与 MemoryRow 同步改(契约 1) */
 export interface MemoryItem {
   id: string;
   text: string;
@@ -127,6 +129,9 @@ export interface MemoryItem {
   updatedAt: number;
   pinned: boolean;
   source: "user" | "model";
+  key?: string;
+  subject?: string;
+  tag?: MemoryTag;
 }
 
 /** MCP 工具清单项(设置页展示用;description 已是服务器原文,面板自行截断) */

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   loadConfig,
+  selectedContextTokens,
   type AppConfig,
 } from "../shared/configStore";
 import { t } from "../shared/i18n";
@@ -120,6 +121,7 @@ export default function SettingsView({
             {/* ── 记忆:开关 + 摘要入口行;条目管理在记忆整页(MemoryView)── */}
             <MemorySection
               initialOn={config.memory}
+              contextTokens={selectedContextTokens(config)}
               onOpenMemory={onOpenMemory}
               run={run}
             />

@@ -12,10 +12,13 @@ import { SettingsSection } from "./parts";
 
 export default function MemorySection({
   initialOn,
+  contextTokens,
   onOpenMemory,
   run,
 }: {
   initialOn: boolean;
+  /** 当前模型的上下文窗口:注入预算按它动态缩放,摘要行估算与后台同源 */
+  contextTokens?: number;
   /** 摘要入口行 → 记忆管理整页(列表不长在这里:平铺时一节超一屏) */
   onOpenMemory: () => void;
   run: (p: Promise<void>) => void;
@@ -51,7 +54,10 @@ export default function MemorySection({
         >
           <span className="min-w-0 truncate pr-2 text-[13px] text-on-surface">
             {memories.length > 0
-              ? t("memory.settingsSaved", { n: memories.length, used: memoryUsedTokens(memories) })
+              ? t("memory.settingsSaved", {
+                  n: memories.length,
+                  used: memoryUsedTokens(memories, contextTokens),
+                })
               : t("memory.settingsEmpty")}
           </span>
           <span className="flex shrink-0 items-center gap-0.5 text-[12.5px] font-medium text-primary">

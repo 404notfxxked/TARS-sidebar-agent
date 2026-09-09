@@ -10,6 +10,7 @@ import {
   deleteMemoriesByMatch,
   loadMemories,
 } from "./memoryStore";
+import { MEMORY_TAGS, type MemoryTag } from "../shared/memory";
 import type { ToolSchema } from "../shared/toolTypes";
 import { getMcpTool } from "./mcpManager";
 
@@ -397,31 +398,74 @@ registerTool<
 // 「少而精」的约束写在 description 里:直注的记忆越多,模型误关联面越大。
 
 registerTool<
-  { content: string },
-  { saved: true; duplicate: boolean; total: number }
+  {
+    content: string;
+    key?: string;
+    subject?: string;
+    tag?: MemoryTag;
+    replaceOf?: string;
+  },
+  {
+    saved: true;
+    duplicate: boolean;
+    upserted?: boolean;
+    replaced?: boolean;
+    total: number;
+  }
 >({
   type: "function",
   name: "memory_save",
   displayName: "保存记忆",
   description:
-    "Save long-term, stable information about the user to memory; it persists across sessions (preferred name, language and conciseness preferences, dietary restrictions, long-running project context, etc.).\nWhen to use: the user says \"remember…\"; or states a clearly reusable personal preference / fact.\nWhen NOT to use: one-off task details, temporary context and ordinary chit-chat are never saved. Memory should be sparse and high-signal — one self-contained sentence per item; when in doubt, do not save. If <user-memory> already contains the same information, do not save again.",
+    "Save long-term, stable information about the user to memory; it persists across sessions (preferred name, language and conciseness preferences, dietary restrictions, long-running project context, etc.).\nWhen to use: the user says \"remember…\"; or states a clearly reusable personal preference / fact.\nWhen NOT to use: one-off task details, temporary context and ordinary chit-chat are never saved. Memory should be sparse and high-signal — one self-contained sentence per item; when in doubt, do not save.\nTwo forms:\n- Profile card (pass key): stable, slot-like facts — identity, preferences, health, ongoing projects. Saving again with the same key+subject overwrites the previous value in place, so prefer cards for facts that may change over time (e.g. key \"diet\" for food restrictions).\n- Plain note (no key): one-off contextual facts that fit no slot.\nRules: if <user-memory> already contains the same information, do not save again. If new information contradicts an entry you can SEE in <user-memory>, replace it via replaceOf instead of saving a conflicting second entry — never replace entries you cannot see there. When a value is true only under conditions (time, place, who it is about), state the condition inside the sentence, e.g. \"As of 2026-05, the user works at X\".",
   parameters: {
     type: "object",
     properties: {
       content: {
         type: "string",
-        description: "The fact to remember, as one self-contained third-person sentence, e.g. \"The user prefers concise answers\"",
+        description:
+          "The fact to remember, as one self-contained third-person sentence, e.g. \"The user prefers concise answers\"",
+      },
+      key: {
+        type: "string",
+        description:
+          "Slot name for a profile card, e.g. \"diet\", \"language\", \"home-city\". Same key+subject overwrites the previous value; omit for a plain note",
+      },
+      subject: {
+        type: "string",
+        description:
+          "Who the card is about when not the user themselves, e.g. \"daughter\", \"Dr. Zhang\". Omit for the user",
+      },
+      tag: {
+        type: "string",
+        enum: MEMORY_TAGS,
+        description:
+          "Coarse category: identity (who they are), preference (likes, dislikes, standing rules), project (ongoing work), health, other",
+      },
+      replaceOf: {
+        type: "string",
+        description:
+          "Id of an existing entry you can see in <user-memory>; its text is replaced by content. Use for corrections, not for adding new facts",
       },
     },
     required: ["content"],
   },
   execute: async (args) => {
-    const { row, duplicate } = await addMemory(
+    const { row, duplicate, upserted, replaced } = await addMemory(
       typeof args?.content === "string" ? args.content : "",
       "model",
+      {
+        key: typeof args?.key === "string" ? args.key : undefined,
+        subject: typeof args?.subject === "string" ? args.subject : undefined,
+        tag: MEMORY_TAGS.includes(args?.tag as MemoryTag)
+          ? (args.tag as MemoryTag)
+          : undefined,
+        replaceOf:
+          typeof args?.replaceOf === "string" ? args.replaceOf : undefined,
+      },
     );
     const total = (await loadMemories()).length;
-    return { saved: true, duplicate, total, text: row.text };
+    return { saved: true, duplicate, upserted, replaced, total, text: row.text };
   },
 });
 

@@ -223,7 +223,7 @@ export async function runAgentLoop(
     // 长期记忆投影:发送时拼装,不写历史(与压缩同构);放在压缩判定前算进
     // 固定开销,记忆块本身也占窗口
     const memoryBlock = memoryEnabled
-      ? renderMemoryBlock(await loadMemories())
+      ? renderMemoryBlock(await loadMemories(), modelEntry?.contextTokens)
       : null;
     const memoryMsg = memoryBlock ? memoryToMsg(memoryBlock) : null;
     const fixedEstimate =
