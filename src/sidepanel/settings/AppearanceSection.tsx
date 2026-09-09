@@ -1,25 +1,32 @@
-// 设置页「外观」分节:主题(浅/深/跟随系统)+ 重点色色板。
+// 设置页「外观」分节:语言 + 主题(浅/深/跟随系统)+ 重点色色板。
 
 import { useState } from "react";
 import {
   savePrefs,
   type AccentPref,
+  type LocalePref,
   type ThemePref,
 } from "../../shared/configStore";
-import { t } from "../../shared/i18n";
+import { setLocale, t } from "../../shared/i18n";
 import { applyAccent, applyThemePreference } from "../theme";
+import { useLocale } from "../ui/hooks";
 import Segmented from "../ui/Segmented";
 import { SettingsSection } from "./parts";
 
-/** 键一律写字面量(禁止动态拼键):动态拼键会绕过 check-i18n 的静态扫描 */
-const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
-  { value: "system", label: t("settings.themeSystem") },
-  { value: "light", label: t("settings.themeLight") },
-  { value: "dark", label: t("settings.themeDark") },
+/** 重点色候选:值与色板固定,与 scripts/generate-m3.mjs 的 ACCENTS 一一对应。
+ *  带文案的选项一律渲染时经 t() 现取 —— 模块级求值只跑一次,换语言即陈旧 */
+const ACCENT_COLORS: [AccentPref, string][] = [
+  ["rose", "#e11d48"],
+  ["coral", "#ea580c"],
+  ["green", "#16a34a"],
+  ["teal", "#0d9488"],
+  ["ocean", "#0b57d0"],
+  ["indigo", "#4f46e5"],
+  ["lilac", "#6750a4"],
+  ["graphite", "#5f6368"],
 ];
 
-/** 重点色候选:与 scripts/generate-m3.mjs 的 ACCENTS 一一对应;键映射
- *  写字面量,不做动态拼键(动态拼键会绕过 check-i18n 静态扫描) */
+/** 键映射一律写字面量(禁止动态拼键:动态拼键会绕过 check-i18n 静态扫描) */
 const ACCENT_LABEL_KEYS: Record<AccentPref, string> = {
   green: "settings.accentGreen",
   ocean: "settings.accentOcean",
@@ -30,22 +37,6 @@ const ACCENT_LABEL_KEYS: Record<AccentPref, string> = {
   rose: "settings.accentRose",
   graphite: "settings.accentGraphite",
 };
-const ACCENT_OPTIONS: { value: AccentPref; label: string; color: string }[] = (
-  [
-    ["green", "#16a34a"],
-    ["ocean", "#0b57d0"],
-    ["teal", "#0d9488"],
-    ["indigo", "#4f46e5"],
-    ["lilac", "#6750a4"],
-    ["coral", "#ea580c"],
-    ["rose", "#e11d48"],
-    ["graphite", "#5f6368"],
-  ] as const
-).map(([value, color]) => ({
-  value: value as AccentPref,
-  label: t(ACCENT_LABEL_KEYS[value]),
-  color,
-}));
 
 export default function AppearanceSection({
   initialTheme,
@@ -58,15 +49,45 @@ export default function AppearanceSection({
 }) {
   const [theme, setTheme] = useState<ThemePref>(initialTheme);
   const [accent, setAccent] = useState<AccentPref>(initialAccent);
+  const locale = useLocale();
+
+  // 主题选项标签渲染时现取,文案随界面语言走
+  const themeOptions: { value: ThemePref; label: string }[] = [
+    { value: "system", label: t("settings.themeSystem") },
+    { value: "light", label: t("settings.themeLight") },
+    { value: "dark", label: t("settings.themeDark") },
+  ];
 
   return (
     <SettingsSection title={t("settings.sectionAppearance")}>
+      {/* 语言:下拉与搜索方式/压缩用模型同款(select.field-input);切换即
+          广播整树重渲染(useLocale 订阅),落盘经 savePrefs。选项标签是各
+          语言「本名」,不随界面语言翻译 */}
+      <div className="settings-field">
+        <label className="field-label" htmlFor="ui-locale">
+          {t("settings.language")}
+        </label>
+        <select
+          id="ui-locale"
+          value={locale}
+          onChange={(e) => {
+            const next = e.target.value as LocalePref;
+            setLocale(next);
+            run(savePrefs({ locale: next }));
+          }}
+          className="field-input"
+        >
+          <option value="zh-CN">{t("settings.languageZh")}</option>
+          <option value="en-US">{t("settings.languageEn")}</option>
+        </select>
+      </div>
+
       <div className="settings-field">
         <span className="field-label">{t("settings.theme")}</span>
         <Segmented
           ariaLabel={t("settings.theme")}
           value={theme}
-          options={THEME_OPTIONS}
+          options={themeOptions}
           onChange={(next) => {
             setTheme(next);
             applyThemePreference(next);
@@ -81,27 +102,29 @@ export default function AppearanceSection({
         <div
           role="radiogroup"
           aria-label={t("settings.accent")}
-          className="flex items-center gap-2.5"
+          className="flex flex-wrap items-center gap-2.5"
         >
-          {ACCENT_OPTIONS.map((a) => (
+          {ACCENT_COLORS.map(([value, color]) => (
             <button
-              key={a.value}
+              key={value}
               type="button"
               role="radio"
-              aria-checked={accent === a.value}
-              aria-label={t("settings.accentAria", { name: a.label })}
-              title={a.label}
+              aria-checked={accent === value}
+              aria-label={t("settings.accentAria", {
+                name: t(ACCENT_LABEL_KEYS[value]),
+              })}
+              title={t(ACCENT_LABEL_KEYS[value])}
               onClick={() => {
-                setAccent(a.value);
-                applyAccent(a.value);
-                run(savePrefs({ accent: a.value }));
+                setAccent(value);
+                applyAccent(value);
+                run(savePrefs({ accent: value }));
               }}
               className="swatch"
-              style={{ backgroundColor: a.color }}
+              style={{ backgroundColor: color }}
             />
           ))}
           <span className="ml-1 text-[11px] text-on-surface-variant">
-            {ACCENT_OPTIONS.find((a) => a.value === accent)?.label}
+            {t(ACCENT_LABEL_KEYS[accent])}
           </span>
         </div>
       </div>

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MSG, PORT_NAME, type SessionMeta } from "../shared/messages";
 import { t } from "../shared/i18n";
 import { createLogger } from "../shared/logger";
-import { useConfirmReset } from "./ui/hooks";
+import { useConfirmReset, useLocale } from "./ui/hooks";
 import SkeletonRows from "./ui/SkeletonRows";
 import SubPageHeader from "./ui/SubPageHeader";
 import { TrashIcon } from "./ui/icons";
@@ -13,15 +13,17 @@ import { TrashIcon } from "./ui/icons";
 const log = createLogger({ ctx: "panel" });
 
 const DAY = 86_400_000;
-const WEEKDAYS = [
-  t("sessions.weekday.su"),
-  t("sessions.weekday.mo"),
-  t("sessions.weekday.tu"),
-  t("sessions.weekday.we"),
-  t("sessions.weekday.th"),
-  t("sessions.weekday.fr"),
-  t("sessions.weekday.sa"),
-];
+/** 星期短名键映射(键写字面量,勿动态拼键);文案在调用时经 t() 现取 */
+const WEEKDAY_KEYS = [
+  "sessions.weekday.su",
+  "sessions.weekday.mo",
+  "sessions.weekday.tu",
+  "sessions.weekday.we",
+  "sessions.weekday.th",
+  "sessions.weekday.fr",
+  "sessions.weekday.sa",
+] as const;
+const weekdayShort = (day: number): string => t(WEEKDAY_KEYS[day]);
 
 /** 行内短时间:组头已表达大粒度(今天/昨天/7 天内),行内只留细粒度 ——
  *  今天 → HH:mm;昨天 → 「昨天」;7 天内 → 「周三」;更早 → M/D(跨年带年份) */
@@ -37,7 +39,7 @@ function shortTime(ts: number): string {
       hour12: false,
     });
   if (ts >= startOfToday.getTime() - DAY) return t("sessions.yesterday");
-  if (ts >= startOfToday.getTime() - 7 * DAY) return WEEKDAYS[d.getDay()];
+  if (ts >= startOfToday.getTime() - 7 * DAY) return weekdayShort(d.getDay());
   const sameYear = d.getFullYear() === now.getFullYear();
   return sameYear
     ? `${d.getMonth() + 1}/${d.getDate()}`
@@ -117,9 +119,11 @@ export default function SessionsView({
     () => sessions?.filter((s) => !kw || s.title.toLowerCase().includes(kw)),
     [sessions, kw],
   );
+  // 依赖带 locale:分组标签来自 t(),换语言后要重算
+  const locale = useLocale();
   const groups = useMemo(
     () => (filtered ? groupSessions(filtered) : []),
-    [filtered],
+    [filtered, locale],
   );
   // 入场 stagger:全局序号封顶 8,30ms/行
   const rowDelay = useMemo(() => {

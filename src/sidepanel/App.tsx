@@ -7,10 +7,13 @@ import ChatView from "./ChatView";
 import SettingsView from "./SettingsView";
 import SessionsView from "./SessionsView";
 import MemoryView from "./MemoryView";
+import { useLocale } from "./ui/hooks";
 
 type Overlay = null | "settings" | "sessions" | "memory";
 
 export default function App() {
+  // 语言订阅:t() 非响应式,切换语言后靠这里触发整棵树重渲染
+  useLocale();
   const [overlay, setOverlay] = useState<Overlay>(null);
   /** 历史列表里选中的会话:交给常驻的 ChatView 打开,消费后清空。
    *  空串也是有效选择 = 「新对话」,所以用 null 表示「无待消费」 */

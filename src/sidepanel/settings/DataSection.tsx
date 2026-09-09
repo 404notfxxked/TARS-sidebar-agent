@@ -9,13 +9,6 @@ import { useConfirmReset } from "../ui/hooks";
 import Segmented from "../ui/Segmented";
 import { SettingsSection } from "./parts";
 
-/** 历史保留期分段选项:值为天数,0 = 不自动清理 */
-const RETENTION_OPTIONS: { value: "7" | "30" | "0"; label: string }[] = [
-  { value: "7", label: t("settings.retention7") },
-  { value: "30", label: t("settings.retention30") },
-  { value: "0", label: t("settings.retentionAll") },
-];
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -51,6 +44,13 @@ export default function DataSection({
     refreshUsage();
   }, []);
 
+  // 历史保留期分段选项:值为天数,0 = 不自动清理;标签渲染时现取 t()
+  const retentionOptions: { value: "7" | "30" | "0"; label: string }[] = [
+    { value: "7", label: t("settings.retention7") },
+    { value: "30", label: t("settings.retention30") },
+    { value: "0", label: t("settings.retentionAll") },
+  ];
+
   const changeRetention = (v: "7" | "30" | "0") => {
     setRetention(v);
     run(savePrefs({ historyRetention: Number(v) }));
@@ -76,7 +76,7 @@ export default function DataSection({
           <span className="field-label">{t("settings.retention")}</span>
           <Segmented
             value={retention}
-            options={RETENTION_OPTIONS}
+            options={retentionOptions}
             onChange={changeRetention}
             ariaLabel={t("settings.retentionAria")}
           />

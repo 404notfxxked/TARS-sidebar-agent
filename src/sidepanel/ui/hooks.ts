@@ -1,7 +1,21 @@
-// 面板 UI 小 hooks:两段确认的自动复位、复制成功的轻反馈。
+// 面板 UI 小 hooks:两段确认的自动复位、复制成功的轻反馈、语言订阅。
 // 都是从设置/历史/记忆页反复出现的同款逻辑收拢而来。
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { LocalePref } from "../../shared/configStore";
+import { getLocale, subscribeLocale } from "../../shared/i18n";
+
+/** 订阅面板语言:t() 是普通函数,组件须调用本 hook 才会在切换语言时重渲染。
+ *  memo 组件里渲染文案的也必须各自调用 —— 父级重渲染穿不透 memo */
+export function useLocale(): LocalePref {
+  return useSyncExternalStore(subscribeLocale, getLocale);
+}
 
 /** 两段确认状态:arm(v) 进入待确认态,ms 内未跟进自动复位(危险动作不单击直发)。
  *  返回 [待确认值, 进入待确认, 手动复位];值的形态由调用方定 —— 行 id(删除

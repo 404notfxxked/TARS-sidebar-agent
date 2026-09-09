@@ -1,4 +1,4 @@
-// 中文文案字典(当前唯一 locale)。键按「视图.元素」分层,插值用 {name}。
+// 中文文案字典(默认 locale,en-US 与它键位一一对应)。键按「视图.元素」分层,插值用 {name}。
 // 规则:面板上任何给用户看的文字都必须从这里取(t("…")),不要再写字面量。
 // 给模型看的文案(工具 description、后台错误串)与日志不在此列。
 
@@ -23,16 +23,16 @@ export const zhCN = {
   chat: {
     placeholder: "问点什么，或让 TARS 去查",
     visionOffTitle: "当前模型未开启「多模态」",
-    imageLimit: "一条消息最多带 {max} 张图",
-    imageRoom: "一次最多再添加 {room} 张图",
+    imageLimit: "一条消息最多添加 {max} 张图",
+    imageRoom: "一次最多添加 {room} 张图",
     clipboard: "剪贴板内容",
     emptyTitle: "有什么问题直接问。",
     emptySub: "我可以读当前网页、联网搜索，也能帮你点按钮、填表单。",
     openSessions: "历史会话",
     newChat: "开始新对话",
     openSettings: "打开设置",
-    busySessionsHint: "回复结束后可查看历史会话",
-    busyNewChatHint: "回复结束后可开始新对话",
+    busySessionsHint: "当前回复结束后可查看历史会话",
+    busyNewChatHint: "当前回复结束后可开始新对话",
     selectModel: "选择模型",
     askInput: "提问",
     modelOptions: "可选模型",
@@ -41,18 +41,18 @@ export const zhCN = {
     removeImage: "移除图片",
     send: "发送",
     stop: "停止",
-    visionOffToast: "当前模型未开启「多模态」，需在设置里勾选后才能发图",
+    visionOffToast: "当前模型未开启「多模态」，需在设置里勾选开启",
     imageDecodeFailed: "无法解码图片：{name}",
     visionModelFallback:
       "当前模型不支持视觉，图片不会随本次提问发送；图片已保存，切回视觉模型后可继续引用",
-    maxTurnsNotice: "本轮已达到步数上限，任务未完成 —— 发送「继续」可以接着做。",
+    maxTurnsNotice: "本轮已达到步数上限，任务未完成",
     truncatedChars: "…（共 {n} 字）",
     imageExpired: "图片已失效",
     pendingImageAlt: "待发送图片 {w}×{h}",
     imageAlt: "图片 {w}×{h}",
     memorySavedHint: "本轮已写入 {n} 条记忆，查看或编辑",
     memorySavedLabel: "已写入 {n} 条记忆 · 查看/编辑",
-    compactionDivider: "上面的对话已压缩成摘要",
+    compactionDivider: "会话已压缩",
     trace: {
       thinking: "思考中",
       reasoning: "思考过程",
@@ -63,8 +63,8 @@ export const zhCN = {
       result: "结果",
       error: "错误",
       none: "（无）",
-      stepsMeta: "{n} 步 · {dur}",
-      thinkingMeta: "思考 · {dur}",
+      stepsMeta: "共 {n} 步 · 耗时 {dur}",
+      thinkingMeta: "思考中 · {dur}",
     },
     code: {
       copy: "复制",
@@ -105,7 +105,8 @@ export const zhCN = {
     clearAll: "清空全部记忆",
     confirmClearAll: "再点一次确认清空",
     empty: "还没有记忆",
-    emptyHint: "在对话里说「记住…」，AI 就会自动存；也可以在上方手动添加",
+    emptyHint:
+      "你可以在对话中聊到自己的偏好，系统会自动保存；也可以在上方手动添加记忆",
     addPlaceholder: "添加一条记忆，比如：偏好简洁的中文回答",
     add: "添加记忆",
     addBtn: "保存这条记忆",
@@ -117,7 +118,7 @@ export const zhCN = {
     dropped: "{n} 条未注入（置顶优先）",
     settingsManage: "管理记忆",
     settingsSaved: "已保存 {n} 条 · 每轮注入约 {used} token",
-    settingsEmpty: "还没有记忆，去对话里说「记住…」或到记忆页手动添加",
+    settingsEmpty: "还没有记忆",
   },
   settings: {
     title: "设置",
@@ -133,12 +134,15 @@ export const zhCN = {
     sectionDiag: "诊断",
     // 模型服务
     addProvider: "添加服务商",
-    providerEmpty: "还没有服务商。点「添加服务商」填入地址和 Key 就能用，可以加多个随时切换。",
-    providerHint: "点卡片展开详细配置。带「当前」标记的，就是对话正在用的服务商。",
+    providerEmpty:
+      "暂无配置的服务商，请点击「添加服务商」，填入服务地址与 API Key 即可启用，支持添加多个服务商并随时切换。",
+    providerHint:
+      "点击卡片展开详细配置，标记有「当前」的服务商为当前对话正在使用的服务商。",
     providerUnnamed: "未命名服务",
     providerName: "名称",
     providerUrl: "Base URL",
-    providerUrlHint: "OpenAI 兼容端点，一般带 /v1。留空就用官方 api.openai.com/v1。",
+    providerUrlHint:
+      "OpenAI 兼容端点，一般带 /v1。留空就用官方 api.openai.com/v1。",
     providerUrlPlaceholder: "https://api.deepseek.com/v1",
     namePlaceholder: "如 DeepSeek",
     apiKey: "API Key",
@@ -148,12 +152,14 @@ export const zhCN = {
     fetchModels: "获取列表",
     fetching: "拉取中…",
     fetchFailed: "获取失败：{error}",
-    fetchNeedKey: "请先填写此服务的 API Key",
-    modelEmptyHint: "还没有模型。点「获取列表」自动拉取，或在下面手动加。",
-    modelRowHint: "点模型行展开配置。带「默认」标记的，就是对话正在用的那个。",
+    fetchNeedKey: "请先填写 API Key",
+    modelEmptyHint:
+      "暂无模型。点击「获取列表」自动拉取模型列表，或在下方手动添加模型。",
+    modelRowHint:
+      "点击模型行展开配置，标记为「默认」的模型为当前对话使用的模型。",
     modelIdPlaceholder: "手动添加模型 ID，如 deepseek-chat",
     alias: "别名",
-    aliasPlaceholder: "显示在模型选择器里的名字",
+    aliasPlaceholder: "在模型选择器里的名称",
     vision: "多模态",
     contextTokens: "上下文窗口",
     ctxPlaceholder: "如 128000",
@@ -168,6 +174,9 @@ export const zhCN = {
     confirmDeleteProvider: "再点一次确认删除此服务",
     setDefault: "设为默认",
     // 外观
+    language: "语言",
+    languageZh: "简体中文",
+    languageEn: "English",
     theme: "主题",
     themeSystem: "跟随系统",
     themeLight: "浅色",
@@ -185,36 +194,41 @@ export const zhCN = {
     // 联网
     webSearch: "联网搜索",
     webSearchHint:
-      "默认关。开了就能联网搜索：不填 Key 就直接抓搜索引擎的结果（质量看网络状况），也可以配 Tavily / 博查 / Brave 的 Key，结果更稳。",
+      "默认关闭。开启后可启用联网搜索功能：若不配置 API Key，将直接抓取搜索引擎结果（结果质量受网络状况影响）；也可配置 Tavily、博查或 Brave 的 API Key，以获得更稳定的搜索结果。",
     searchProvider: "搜索方式",
     searchProviderAuto: "自动（免 Key，抓取搜索页）",
     searchProviderTavily: "Tavily",
     searchProviderBocha: "博查 Bocha",
     searchProviderBrave: "Brave Search",
     searchBaseUrl: "服务地址",
-    searchBaseUrlPlaceholder: "留空用官方端点；自建中转时填写根地址",
-    searchApiKeyPlaceholder: "当前服务的 API Key；留空则退回免 Key 抓取通道",
-    searchKeyConfigured: "已配置此服务的 Key。各家的 Key 分开保存，切换互不影响。",
-    searchKeyMissing: "这家还没填 Key，先走免 Key 抓取。",
+    searchBaseUrlPlaceholder:
+      "留空使用官方地址；若使用自建中转请填写服务器根地址",
+    searchApiKeyPlaceholder: "当前服务的 API Key；留空则使用免 Key 抓取通道",
+    searchKeyConfigured:
+      "已配置该服务 API Key。各服务的 Key 独立存储，切换服务时互不干扰。",
+    searchKeyMissing: "该服务未配置 API Key，当前使用免 Key 网页抓取模式。",
     searchFreeMode:
-      "免 Key 模式直接抓 Bing / DuckDuckGo 的结果页，搜索词会发给它们。被风控时会自动换引擎或稍后再试；想要更稳的质量，配一个搜索服务的 Key。",
+      "免 Key 模式将直接抓取 Bing / DuckDuckGo 的搜索结果页，搜索词会发送至对应搜索引擎。若触发访问限制，系统将自动切换引擎或延迟重试；如需更稳定可靠的搜索质量，建议配置专业搜索服务的 API Key。",
     // MCP
     mcpEnable: "启用 MCP 工具",
     mcpHint:
-      "接入后，服务器的工具会和内置工具一起提供给 AI。调用时，相关内容会发给该服务器的运营方，只接入你信任的服务。支持 HTTP(S) 端点；需要本地进程的 stdio 服务器不支持。",
+      "启用后，MCP 服务器提供的工具将与内置工具共同供 AI 调用。工具调用时，相关请求数据会发送至对应服务器的运营方，请仅接入可信服务。当前仅支持 HTTP(S) 协议的 Streamable HTTP 端点，不支持需本地进程的 stdio 服务器。",
     addServer: "添加服务器",
-    serverEmpty: "还没有服务器。点「添加服务器」填入端点地址，需要认证的再补一条请求头。",
-    serverHint: "点卡片展开配置，「测试连接」会顺带拉工具清单。每台服务器可以单独停用。",
+    serverEmpty:
+      "暂无已配置的服务器。点击「添加服务器」，输入端点地址；如需认证，请补充请求头配置。",
+    serverHint:
+      "点击卡片可展开详细配置，「测试连接」将同步拉取工具清单。每台服务器支持独立启用或停用。",
     serverUnnamed: "未命名服务器",
     serverName: "名称",
     serverNamePlaceholder: "如 GitHub",
     serverUrl: "MCP 端点 URL",
     serverUrlPlaceholder: "https://api.example.com/mcp",
     serverUrlHint:
-      "Streamable HTTP 端点。GitHub、Notion 这类线上服务，或 Figma 桌面版这类本机应用，填它们的 MCP 地址就行。",
+      "Streamable HTTP 端点，请填入 GitHub、Notion 等在线服务，或 Figma 桌面端等本地应用提供的 MCP 地址。",
     headers: "请求头",
     headersPlaceholder: "Authorization: Bearer ghp_…\nx-api-key: …",
-    headersHint: "一行一条，格式「名称: 值」，会随每个请求发送。令牌只存在本机。",
+    headersHint:
+      "每行配置一条请求头，格式为「名称: 值」，将随所有请求自动发送。密钥仅存储在本地设备中。",
     testConnection: "测试连接",
     testing: "连接中…",
     testFailed: "连接失败",
@@ -228,7 +242,7 @@ export const zhCN = {
     confirmDeleteServer: "再点一次确认删除此服务器",
     // 记忆
     memoryHint:
-      "开了之后，你在对话里说「记住…」或聊到稳定的偏好时，AI 会记下来（聊天流里会提示），之后每次对话都带上。关闭只是不再保存和使用，已存的记忆还在，重开即恢复。",
+      "开启后，当您在对话中明确要求「记住…」或提及稳定的偏好设置时，系统会自动将其保存为记忆（聊天界面会同步提示保存状态），并在后续每轮对话中自动携带这些信息。关闭该功能仅会停止新记忆的保存和已有记忆的注入，已存储的记忆数据不会被删除，重新开启即可恢复使用。",
     // 上下文压缩
     compactTiming: "压缩时机",
     compactEarly: "提前 60%",
@@ -237,8 +251,9 @@ export const zhCN = {
     compactModel: "压缩用模型",
     compactFollow: "跟随当前模型",
     compactHint:
-      "聊天记录占到上下文窗口这个比例时，较早的对话会自动压成一条摘要，给新对话腾地方。聊天记录本身不受影响。要先在模型配置里填「上下文窗口」才会生效。",
-    compactModelHint: "压缩就是做总结，选个便宜快速的模型就够，能省钱。留空则用当前模型。",
+      "聊天记录占用上下文窗口达到该比例时，较早的对话会自动生成摘要以释放空间，原聊天记录不受影响。需先在模型配置中填写「上下文窗口」方可生效。",
+    compactModelHint:
+      "压缩仅需生成文本摘要，建议选用低成本、高速度的模型以优化资源使用。留空则使用当前对话模型。",
     // 历史数据
     retention: "保留时长",
     retention7: "7 天",
@@ -247,7 +262,8 @@ export const zhCN = {
     retentionAria: "历史会话保留时长",
     localUsage: "本地占用",
     clearHistory: "清空全部历史",
-    dataFooter: "超过保留时长的会话会自动清掉，删了就找不回来。所有数据只存在本机。",
+    dataFooter:
+      "超过保留时长的会话将被自动清理，且删除后无法恢复。所有数据仅存储在本地设备中。",
     // 诊断
     logs: "运行日志",
     logsUnit: "{n} 条",
@@ -255,6 +271,6 @@ export const zhCN = {
     downloadLogs: "下载日志",
     clearLogs: "清空",
     diagFooter:
-      "各环境最近 400 条执行和报错。要排查问题：点「下载日志」，把文件放进项目的 .logs/ 目录，再让 TARS 读它分析。",
+      "记录了各环境下最近 400 条执行日志与报错信息。如需排查问题，请点击「下载日志」，将保存的文件放入项目的 .logs/ 目录下，即可让 TARS 读取并进行分析。",
   },
 } as const;

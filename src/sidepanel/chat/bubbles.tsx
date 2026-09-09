@@ -33,7 +33,7 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import type { ImageMeta } from "../../shared/messages";
 import { t } from "../../shared/i18n";
-import { useCopyFlash } from "../ui/hooks";
+import { useCopyFlash, useLocale } from "../ui/hooks";
 import { ArchiveIcon } from "../ui/icons";
 import { peekImgUrl, requestImgUrl } from "./images";
 
@@ -73,6 +73,8 @@ export const UserBubble = memo(function UserBubble({
   text: string;
   images?: ImageMeta[];
 }) {
+  // 子树里的 ChatImage 渲染字典文案:订阅 locale,切换语言时穿透 memo 重渲染
+  useLocale();
   return (
     <div className="msg-in ml-auto flex w-fit max-w-[86%] flex-col items-end gap-1.5">
       {images && images.length > 0 && (
@@ -96,6 +98,8 @@ export const AssistantBubble = memo(function AssistantBubble({
 }: {
   text: string;
 }) {
+  // markdown 组件树含代码块容器(渲染「代码/复制」文案):同样订阅 locale
+  useLocale();
   return (
     <div className="markdown msg-in pl-3 text-[13px] leading-relaxed">
       <ReactMarkdown
@@ -122,6 +126,8 @@ export const ErrorBubble = memo(function ErrorBubble({ text }: { text: string })
 
 /** 系统运行提示条(非错误):步数耗尽等状态说明,视觉层级低于错误 */
 export const NoticeBubble = memo(function NoticeBubble() {
+  // 无 prop 的 memo 组件:订阅 locale 才能在切换语言时重渲染
+  useLocale();
   return (
     <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
       <InfoIcon />
@@ -133,6 +139,7 @@ export const NoticeBubble = memo(function NoticeBubble() {
 /** 压缩分隔条:标记「此处之前的历史已压成摘要」(原文仍在库里,模型只看摘要)。
  *  解释 AI 为何可能不记得很早的细节 —— 静默压缩会显得像无故失忆 */
 export const CompactionDivider = memo(function CompactionDivider() {
+  useLocale();
   return (
     <div className="ctx-divider" role="note" aria-label={t("chat.compactionNote")}>
       <span className="ctx-divider-line" />
