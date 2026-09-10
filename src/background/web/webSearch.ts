@@ -1,6 +1,6 @@
 // web_search 工具执行体(service worker 侧)——双模式:
-//   auto(免 Key,默认):抓取搜索结果页 HTML,走 scrapeSearch.ts 的加固链路
-//   (cookie 蹭行 / 语言头 / 节流 / 风控冷却,详见该文件头部说明);
+//   tab(免 Key,默认):后台新开真实搜索引擎标签页,读完整渲染的结果页,
+//   走 tabSearch.ts(引擎表 / 节流 / 风控冷却,详见该文件头部说明);
 //   API(BYOK):设置里配置了服务商 key 时走结构化 API。
 // API 三家预设:Tavily(海外 agent 生态主流)/ 博查(国产,DeepSeek C 端同款,
 // 中文质量好、国内直连稳)/ Brave(独立索引)。响应都是结构化 JSON,直接映射
@@ -13,7 +13,7 @@ import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext"
 import { createLogger } from "../../shared/logger";
 import { normalizeSearch } from "../../shared/configStore";
 import type { SearchProviderId } from "../../shared/configStore";
-import { runScrapeSearch } from "./scrapeSearch";
+import { runTabSearch } from "./tabSearch";
 
 const log = createLogger({ ctx: "bg" });
 
@@ -249,10 +249,24 @@ function classifyFailure(
   return "error";
 }
 
-/** 工具入口:按配置分流到 API 或免 Key 抓取兜底 */
+/** 工具入口:解析参数 → 按配置路由到 API 或真实标签页通道 */
 export async function runWebSearch(
   args: WebSearchArgs,
 ): Promise<WebSearchResult> {
+  const parsed = parseSearchArgs(args);
+  const route = await readSearchRoute();
+  return route.kind === "api"
+    ? runApiSearch(route, parsed)
+    : runTabSearch({
+        query: parsed.query,
+        limit: parsed.limit,
+        allowed: parsed.allowed,
+        blocked: parsed.blocked,
+      });
+}
+
+/** 参数解析与校验收口(query/recency/market 的报错文案是工具契约,勿改) */
+function parseSearchArgs(args: WebSearchArgs): ApiSearchArgs {
   const query = typeof args?.query === "string" ? args.query.trim() : "";
   if (!query) {
     throw new Error("web_search: query is empty; provide the keywords to search");
@@ -270,20 +284,7 @@ export async function runWebSearch(
   const allowed = parseDomainList(args?.allowed_domains);
   const blocked =
     allowed.length === 0 ? parseDomainList(args?.blocked_domains) : [];
-
-  const mode = await readSearchMode();
-  if (mode.kind === "scrape") {
-    // 抓取通道是最小请求形态(只带 q):recency/market 仅 API 通道支持
-    return runScrapeSearch({ query, limit, allowed, blocked });
-  }
-  return runApiSearch(mode, {
-    query,
-    limit,
-    recency,
-    market,
-    allowed,
-    blocked,
-  });
+  return { query, limit, recency, market, allowed, blocked };
 }
 
 type ApiSearchArgs = {
@@ -414,21 +415,24 @@ async function runApiSearch(
   }
 }
 
-/** 读搜索模式:provider=auto 或当前服务没配 key → 免 Key 抓取兜底;否则 API 路径。
+/** 读搜索路由:配置了服务商 key → API;否则一律走真实标签页通道(tab)。
  *  key 按服务商各存一格,只读当前选中那家的(normalizeSearch 兼容旧单槽结构) */
-async function readSearchMode(): Promise<
-  { kind: "scrape" } | { kind: "api"; provider: SearchProviderId; baseUrl: string; apiKey: string }
+async function readSearchRoute(): Promise<
+  { kind: "tab" } | { kind: "api"; provider: SearchProviderId; baseUrl: string; apiKey: string }
 > {
   const bag = await chrome.storage.local.get("search");
   const s = normalizeSearch(bag.search);
-  if (s.provider === "auto") return { kind: "scrape" };
-  const entry = s.services[s.provider];
-  const apiKey = entry.apiKey.trim();
-  if (!apiKey) return { kind: "scrape" };
-  const baseUrl = entry.baseUrl.trim()
-    ? entry.baseUrl.trim().replace(/\/+$/, "")
-    : SEARCH_PROVIDERS[s.provider].defaultBaseUrl;
-  return { kind: "api", provider: s.provider, baseUrl, apiKey };
+  if (s.provider !== "auto") {
+    const entry = s.services[s.provider];
+    const apiKey = entry.apiKey.trim();
+    if (apiKey) {
+      const baseUrl = entry.baseUrl.trim()
+        ? entry.baseUrl.trim().replace(/\/+$/, "")
+        : SEARCH_PROVIDERS[s.provider].defaultBaseUrl;
+      return { kind: "api", provider: s.provider, baseUrl, apiKey };
+    }
+  }
+  return { kind: "tab" };
 }
 
 function validateRecency(v: unknown): Recency {

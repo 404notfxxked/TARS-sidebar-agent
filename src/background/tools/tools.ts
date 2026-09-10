@@ -234,14 +234,16 @@ registerTool<
 });
 
 // ---- 联网搜索 ----
-// 无 Key 方案:SW fetch 搜索引擎 HTML(host_permissions 覆盖)→ offscreen
-// DOMParser 解析。引擎编排与兜底在 background/webSearch.ts,此处只做注册。
+// 免 Key 方案:后台新开真实搜索引擎标签页(tabSearch.ts)→ 完整渲染后取
+// 整页 HTML → offscreen DOMParser 解析。引擎编排与兜底在 background/webSearch.ts,
+// 此处只做注册。描述按「少搜、搜准」纪律写:每次搜索都是一次真实页面访问,
+// 引导模型先宽后窄、优先读结果而非重搜、每题至多三次。
 registerTool<WebSearchArgs, WebSearchResult>({
   type: "function",
   name: "web_search",
   displayName: "网络搜索",
   description:
-    "Search the public web, returning results ranked by relevance (title, URL, snippet).\nWhen to use: fresh information is needed (news, releases, prices, weather), the open page is not enough, or the user explicitly asks to search.\nWhen NOT to use: the current page or your own knowledge suffices; locating content inside an open page → page_find.\nNote: keep query to tight core keywords (trying both Chinese and English can help), never the user's sentence verbatim; when snippets are not enough, prefer web_fetch on the corresponding URL before re-searching (at most three searches including the first); if three cumulative searches all return results clearly unrelated to the topic (titles / sites share nothing with the keywords — usually a degraded search channel), stop immediately, honestly tell the user web search is temporarily unavailable, answer from your own knowledge and note it was not web-verified; do not force unrelated results into an answer; cite source URLs.",
+    "Search the public web, returning results ranked by relevance (title, URL, snippet).\nMechanics: a real browser tab is opened on a search engine (DuckDuckGo / Bing / Google / Baidu, auto-selected), the rendered results page is read, and the tab is closed. Every search is a real page view — keep the total number of searches small.\nWhen to use: fresh information is needed (news, releases, prices, weather), the open page is not enough, or the user explicitly asks to search.\nWhen NOT to use: the current page or your own knowledge suffices; locating content inside an open page → page_find.\nDiscipline:\n1) First search is broad: 2-4 core keywords, no quotes, no operators, never the user's sentence verbatim.\n2) If any result looks promising, web_fetch that URL instead of searching again — snippets are short by design.\n3) Refine, don't repeat: empty or off-topic results usually mean the query was too narrow — drop quotes, change keywords, or try the other language (Chinese ↔ English) once. At most three searches per question; if all three miss, stop and answer from your own knowledge, honestly noting it was not web-verified. Never force unrelated results into an answer; cite source URLs.",
   parameters: {
     type: "object",
     properties: {
@@ -253,12 +255,12 @@ registerTool<WebSearchArgs, WebSearchResult>({
       market: {
         type: "string",
         description:
-          "Result language market, as \"language-REGION\": zh-CN / zh-TW / ja-JP / en-US / ko-KR etc. Match the query's language (Chinese query → zh-CN, Japanese content → ja-JP); only effective with a configured search provider (Brave maps it to a locale param, others ignore it); the key-free scraping channel does not support it",
+          "Result language market, as \"language-REGION\": zh-CN / zh-TW / ja-JP / en-US / ko-KR etc. Match the query's language (Chinese query → zh-CN, Japanese content → ja-JP); only effective with a configured search provider (Brave maps it to a locale param, others ignore it); the default tab channel ignores it",
       },
       recency: {
         type: "string",
         enum: ["day", "week", "month", "year"],
-        description: "Time filter: restrict to the last day / week / month / year; use for time-sensitive queries (news, releases), omit otherwise. Only effective with a configured search provider; the key-free scraping channel (bing / ddg engines) ignores it",
+        description: "Time filter: restrict to the last day / week / month / year; use for time-sensitive queries (news, releases), omit otherwise. Only effective with a configured search provider; the default tab channel ignores it",
       },
       allowed_domains: {
         type: "array",

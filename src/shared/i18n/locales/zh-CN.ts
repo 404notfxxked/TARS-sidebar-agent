@@ -202,21 +202,9 @@ export const zhCN = {
     // 联网
     webSearch: "联网搜索",
     webSearchHint:
-      "默认关闭。开启后可启用联网搜索功能：若不配置 API Key，将直接抓取搜索引擎结果（结果质量受网络状况影响）；也可配置 Tavily、博查或 Brave 的 API Key，以获得更稳定的搜索结果。",
-    searchProvider: "搜索方式",
-    searchProviderAuto: "自动（免 Key，抓取搜索页）",
-    searchProviderTavily: "Tavily",
-    searchProviderBocha: "博查 Bocha",
-    searchProviderBrave: "Brave Search",
-    searchBaseUrl: "服务地址",
-    searchBaseUrlPlaceholder:
-      "留空使用官方地址；若使用自建中转请填写服务器根地址",
-    searchApiKeyPlaceholder: "当前服务的 API Key；留空则使用免 Key 抓取通道",
-    searchKeyConfigured:
-      "已配置该服务 API Key。各服务的 Key 独立存储，切换服务时互不干扰。",
-    searchKeyMissing: "该服务未配置 API Key，当前使用免 Key 网页抓取模式。",
-    searchFreeMode:
-      "免 Key 模式将直接抓取 Bing / DuckDuckGo 的搜索结果页，搜索词会发送至对应搜索引擎。若触发访问限制，系统将自动切换引擎或延迟重试；如需更稳定可靠的搜索质量，建议配置专业搜索服务的 API Key。",
+      "默认关闭。开启后 AI 可联网搜索：搜索通过后台新开真实搜索引擎页面完成（完整渲染、读完即关，不留标签页），无需配置任何 API Key。",
+    searchHow:
+      "引擎在 DuckDuckGo / Bing / Google / 百度 之间自动选择：连续失败或触发风控的引擎会进入几分钟冷却并自动换下一家；搜索词会发送至对应搜索引擎。API Key 搜索服务（Tavily / 博查 / Brave）的代码仍保留，可通过手动写入配置启用，但界面不再提供。",
     // MCP
     mcpEnable: "启用 MCP 工具",
     mcpHint:

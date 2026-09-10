@@ -1,8 +1,10 @@
 // 搜索结果页解析(运行在 offscreen document 的扩展私有 DOM 环境):
-// 仅服务免 Key 抓取兜底路径(scrapeSearch.ts)。选择器只负责「定位条目」,
-// 文本清洗、URL 还原(DDG 跳转包装 / Bing 点击包装)、去重与裁剪在这里统一收口。
-// 注意:DOMParser 解析出的文档 URL 是 about:blank,相对链接必须用
-// 调用方传入的最终响应 URL(base)手工还原,不能依赖 a.href 自动解析。
+// 仅服务免 Key 的 tab 搜索通道(tabSearch.ts 开真实标签页取整页 HTML)。
+// 选择器只负责「定位条目」,文本清洗、URL 还原(DDG 跳转包装 / Bing 点击
+// 包装)、去重与裁剪在这里统一收口。注意:DOMParser 解析出的文档 URL 是
+// about:blank,相对链接必须用调用方传入的最终响应 URL(base)手工还原,
+// 不能依赖 a.href 自动解析。百度的 /link?url= 是加密跳转,无法本地还原,
+// 保留包装 URL(SW fetch 读取时会跟随重定向到真实 URL)。
 
 export interface ParsedSearchResult {
   title: string;
@@ -15,6 +17,8 @@ type ResultParser = (doc: Document, base: string) => ParsedSearchResult[];
 const PARSERS: Record<string, ResultParser> = {
   bing: parseBing,
   ddg: parseDdg,
+  google: parseGoogle,
+  baidu: parseBaidu,
 };
 
 /** 结果条数裁剪上限(单次解析最多保留多少条,超出直接丢弃) */
@@ -75,6 +79,47 @@ function parseDdg(doc: Document, base: string): ParsedSearchResult[] {
       title: a.textContent ?? "",
       url: unwrapDdgRedirect(resolveHref(a.getAttribute("href"), base)),
       snippet: textOf(root?.querySelector(".result__snippet") ?? null),
+    });
+  }
+  return out;
+}
+
+/** Google:#rso 下的 div.g(或顶层结果块),标题在 a > h3,摘要在 .VwiC3b /
+ *  [data-sncf];非 http(s) 的链接(Google 内部跳转/聚合块)直接丢弃 */
+function parseGoogle(doc: Document, base: string): ParsedSearchResult[] {
+  const out: ParsedSearchResult[] = [];
+  for (const g of doc.querySelectorAll("#rso div.g, #rso > div")) {
+    const a = g.querySelector("a[href]");
+    const h3 = a?.querySelector("h3") ?? g.querySelector("h3");
+    if (!a || !h3) continue;
+    const href = a.getAttribute("href") ?? "";
+    if (!/^https?:/i.test(href)) continue;
+    out.push({
+      title: h3.textContent ?? "",
+      url: resolveHref(href, base),
+      snippet: textOf(g.querySelector(".VwiC3b, [data-sncf], .IsZvec")),
+    });
+  }
+  return out;
+}
+
+/** 百度:#content_left 的 .result/.c-container,标题在 h3 a;
+ *  链接是 baidu.com/link?url=<加密串> 跳转包装,保留原样(无法本地还原) */
+function parseBaidu(doc: Document, base: string): ParsedSearchResult[] {
+  const out: ParsedSearchResult[] = [];
+  for (const c of doc.querySelectorAll(
+    "#content_left .result, #content_left .c-container",
+  )) {
+    const a = c.querySelector("h3 a[href]");
+    if (!a) continue;
+    out.push({
+      title: a.textContent ?? "",
+      url: resolveHref(a.getAttribute("href"), base),
+      snippet: textOf(
+        c.querySelector(
+          "[class*='content-right'], .c-abstract, [class*='abstract']",
+        ),
+      ),
     });
   }
   return out;

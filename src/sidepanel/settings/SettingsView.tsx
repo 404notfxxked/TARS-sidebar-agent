@@ -109,11 +109,7 @@ export default function SettingsView({
             />
 
             {/* ── 联网 ── */}
-            <WebSection
-              initialWebSearch={config.webSearch}
-              initialSearch={config.search}
-              run={run}
-            />
+            <WebSection initialWebSearch={config.webSearch} run={run} />
 
             {/* ── MCP:总开关 + 服务器卡片 ── */}
             <McpSection initial={config.mcp} run={run} />

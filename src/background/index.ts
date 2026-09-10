@@ -36,6 +36,7 @@ import {
   pruneExpiredSessions,
   toChatRecords,
 } from "./sessions/sessionHistory";
+import { maybeProbeEngines } from "./web/engineHealth";
 
 const log = createLogger({ ctx: "bg" });
 installGlobalErrorHook(log);
@@ -71,6 +72,10 @@ async function pruneDeadTabLogKeys(): Promise<void> {
   }
 }
 void pruneDeadTabLogKeys();
+
+// 引擎健康表:缺失/超龄(>6h)时探测一次网络环境可达性(SW fetch 各引擎
+// 首页,4s 超时),供搜索引擎动态排序;fire-and-forget,不阻塞启动
+void maybeProbeEngines();
 
 // 会话历史:旧版 storage.session 里的数据搬进 IndexedDB,再按保留期清一次
 // (都有内部捕获,失败只记日志,不阻塞 SW 启动)

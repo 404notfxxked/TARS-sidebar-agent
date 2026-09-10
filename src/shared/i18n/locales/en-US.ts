@@ -208,23 +208,9 @@ export const enUS = {
     // Web search
     webSearch: "Web search",
     webSearchHint:
-      "Off by default. When enabled, the AI can search the web: if no API key is configured, search engine result pages are scraped directly (result quality depends on network conditions); alternatively, configure an API key from Tavily, Bocha, or Brave for more reliable results.",
-    searchProvider: "Search method",
-    searchProviderAuto: "Auto (no API key, scrapes search result pages)",
-    searchProviderTavily: "Tavily",
-    searchProviderBocha: "Bocha",
-    searchProviderBrave: "Brave Search",
-    searchBaseUrl: "Service URL",
-    searchBaseUrlPlaceholder:
-      "Leave empty for the official URL; for a self-hosted proxy, enter the server root URL",
-    searchApiKeyPlaceholder:
-      "API key for this service; leave empty to use the keyless scraping channel",
-    searchKeyConfigured:
-      "An API key is configured for this service. Keys are stored separately for each service, so switching services does not affect them.",
-    searchKeyMissing:
-      "No API key is configured for this service; keyless web scraping is used for now.",
-    searchFreeMode:
-      "In keyless mode, Bing / DuckDuckGo search result pages are scraped directly, and search queries are sent to the corresponding search engine. If access restrictions are triggered, the system automatically switches engines or retries after a delay; for more reliable search quality, configuring an API key for a professional search service is recommended.",
+      "Off by default. When enabled, the AI can search the web: each search opens a real search engine page in a background tab (fully rendered, closed right after, no tab left behind). No API key required.",
+    searchHow:
+      "Engines are auto-selected among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks enter a few minutes of cooldown while the next one takes over; search queries are sent to the corresponding search engine. API-key search services (Tavily / Bocha / Brave) remain supported in code via manual configuration, but the UI for them has been removed.",
     // MCP
     mcpEnable: "Enable MCP tools",
     mcpHint:

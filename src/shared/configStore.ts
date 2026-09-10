@@ -132,7 +132,8 @@ export interface SearchServiceEntry {
   apiKey: string;
 }
 
-/** 搜索服务配置:provider=auto 时 services 无效;单家 baseUrl 留空用官方端点 */
+/** 搜索服务配置:provider=auto 时 services 无效;单家 baseUrl 留空用官方端点。
+ *  免 Key(provider=auto 或该家未配 key)一律走真实标签页通道,无开关 */
 export interface SearchConfig {
   provider: SearchProviderSetting;
   services: Record<SearchProviderId, SearchServiceEntry>;
