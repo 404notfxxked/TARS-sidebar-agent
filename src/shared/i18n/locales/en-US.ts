@@ -62,6 +62,7 @@ export const enUS = {
     trace: {
       thinking: "Thinking",
       reasoning: "Reasoning",
+      interim: "Interim output",
       running: "Running",
       failed: "Failed",
       done: "Done",
@@ -70,7 +71,9 @@ export const enUS = {
       error: "Error",
       none: "(None)",
       stepsMeta: "{n} steps · took {dur}",
-      thinkingMeta: "Thinking · {dur}",
+      thoughtMeta: "Thought for {dur}",
+      thoughtStepsMeta: "Thought for {think} · {n} steps · took {dur}",
+      reasoningMeta: "{dur} · {n} chars",
     },
     code: {
       copy: "Copy",

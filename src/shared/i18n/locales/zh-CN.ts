@@ -56,6 +56,7 @@ export const zhCN = {
     trace: {
       thinking: "思考中",
       reasoning: "思考过程",
+      interim: "过程文案",
       running: "运行中",
       failed: "失败",
       done: "完成",
@@ -64,7 +65,9 @@ export const zhCN = {
       error: "错误",
       none: "（无）",
       stepsMeta: "共 {n} 步 · 耗时 {dur}",
-      thinkingMeta: "思考中 · {dur}",
+      thoughtMeta: "已思考 {dur}",
+      thoughtStepsMeta: "已思考 {think} · 共 {n} 步 · 耗时 {dur}",
+      reasoningMeta: "{dur} · {n} 字",
     },
     code: {
       copy: "复制",

@@ -176,8 +176,11 @@
   .trace-chevron path {
     stroke-width: 1.4;
   }
+  /* 旋转只认各自的开合态:行看行上的 data-open;摘要 chip 看卡片根上的
+     data-open,但选择器限定在 chip 自己的箭头 —— 不能让卡内子行的箭头
+     跟着卡片展开态一起转(收起的子行会错误显示展开箭头) */
   .trace-row[data-open="true"] .trace-chevron,
-  .trace[data-open="true"] .trace-chevron {
+  .trace[data-open="true"] .trace-summary .trace-chevron {
     transform: rotate(90deg);
   }
 
@@ -301,16 +304,35 @@
     word-break: break-word;
   }
 
-  /* 思考中 ticker:只显示最近内容的单行尾部(截断在 JS 侧按宽度完成),
-     行高恒定 → 流式期间不推挤后续消息、不触发滚动抖动 */
-  .trace-tail-text {
-    flex: 1;
-    min-width: 0;
-    white-space: nowrap;
+  /* 思考窗(流式中):固定 3 行高、内容底部锚定、顶部渐隐 —— 流式期间行高恒定
+     不推挤布局、不触发滚动抖动,信息量又远高于单行尾部滚动 */
+  .think-window {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    height: calc(3 * 1.6em);
+    margin: 0 12px 5px;
     overflow: hidden;
-    text-overflow: ellipsis; /* JS 截宽的兜底:极窄面板下不再加 …,直接右裁 */
-    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%);
+    mask-image: linear-gradient(to bottom, transparent, #000 45%);
+  }
+  .think-window .reasoning-text {
     opacity: 0.85;
+  }
+
+  /* 思考/文案展开区没有小节标题,复制按钮独立成行靠右 */
+  .trace-copy-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* 中间文案行的尾部单行预览 */
+  .trace-preview {
+    max-width: 46%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* ---- settled 收拢:过程卡收成一行摘要 chip,点击展开完整行 ---- */
