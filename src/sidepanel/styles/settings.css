@@ -239,6 +239,91 @@
     margin-top: 2px;
   }
 
+  /* ── 信息提示(ⓘ,ui/InfoTip):label 行内小图标 + 悬停/聚焦/点按气泡。
+     定义类短说明装这里;气泡沿用 combo-pop 的浮层语言(container 底 +
+     2 级海拔),锚定图标左缘向右展开,不超出卡片(悬浮层 overflow-hidden) ── */
+  .info-tip {
+    position: relative;
+    display: inline-flex;
+    margin-left: 4px;
+    vertical-align: -1px;
+  }
+  .info-tip-btn {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 9999px;
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.7;
+    cursor: help;
+    transition: opacity 150ms var(--ease-emphasized), color 150ms var(--ease-emphasized);
+  }
+  .info-tip-btn:hover,
+  .info-tip-btn:focus-visible,
+  .info-tip-btn.open {
+    opacity: 1;
+    color: var(--md-sys-color-on-surface);
+  }
+  .info-tip-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: -8px;
+    z-index: 20;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateY(-2px);
+    width: max-content;
+    max-width: 250px;
+    padding: 8px 10px;
+    border-radius: var(--radius-xs);
+    background: var(--md-sys-color-surface-container);
+    box-shadow: var(--shadow-2);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface);
+    text-align: start;
+    pointer-events: none;
+    transition: opacity 150ms var(--ease-emphasized), transform 150ms var(--ease-emphasized),
+      visibility 150ms;
+  }
+  .info-tip:hover .info-tip-pop,
+  .info-tip-btn:focus-visible + .info-tip-pop,
+  .info-tip-btn.open + .info-tip-pop {
+    visibility: visible;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* label 行 + ⓘ:包装行接管 .field-label 的外边距,布局节奏不变 */
+  .field-label-row {
+    display: flex;
+    align-items: center;
+    margin: 10px 0 6px;
+  }
+  .field-label-row .field-label,
+  .settings-field .field-label-row .field-label {
+    margin: 0;
+  }
+
+  /* 「了解详情」折叠(settings/parts 的 HintMore):轻量文字按钮,
+     主色与「管理记忆」入口行同语言;箭头随展开态转向 */
+  .hint-more-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0;
+    border-radius: 4px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-sys-color-primary);
+    cursor: pointer;
+  }
+  .hint-more-btn svg {
+    transition: transform 150ms var(--ease-emphasized);
+  }
+  .hint-more-btn[aria-expanded="true"] svg {
+    transform: rotate(90deg);
+  }
+
   /* 浮层基座(聊天区模型选择弹层):M3 menu —— container 底、xs 圆角、2 级海拔,
      菜单项全出血方角(状态层贴边),不再是旧圆角卡片 */
   .combo-pop {

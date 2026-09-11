@@ -10,8 +10,9 @@ import type { McpToolInfo } from "../../shared/messages";
 import { t } from "../../shared/i18n";
 import { mcpListTools, mcpTest } from "../clients/mcpClient";
 import { useConfirmReset } from "../ui/hooks";
+import InfoTip from "../ui/InfoTip";
 import SwitchRow from "../ui/SwitchRow";
-import { ExpandCard, SettingsSection, hostOf } from "./parts";
+import { ExpandCard, HintMore, SettingsSection, hostOf } from "./parts";
 
 /** 请求头对象 ↔ 文本(每行「名称: 值」;无冒号的行丢弃) */
 const headersToText = (h: Record<string, string>): string =>
@@ -94,6 +95,7 @@ export default function McpSection({
         }}
         hint={t("settings.mcpHint")}
       />
+      <HintMore detail={t("settings.mcpDetail")} />
 
       {/* 服务器卡片:工具清单与测试在卡片展开态 */}
       {mcp.enabled && (
@@ -272,9 +274,12 @@ function McpServerCard({
         />
       </div>
       <div className="settings-field">
-        <label className="field-label" htmlFor={`mcp-url-${entry.id}`}>
-          {t("settings.serverUrl")}
-        </label>
+        <div className="field-label-row">
+          <label className="field-label" htmlFor={`mcp-url-${entry.id}`}>
+            {t("settings.serverUrl")}
+          </label>
+          <InfoTip text={t("settings.serverUrlHint")} />
+        </div>
         <input
           id={`mcp-url-${entry.id}`}
           type="text"
@@ -286,14 +291,14 @@ function McpServerCard({
           spellCheck={false}
           className="field-input font-mono"
         />
-        <p className="field-hint">
-          {t("settings.serverUrlHint")}
-        </p>
       </div>
       <div className="settings-field">
-        <label className="field-label" htmlFor={`mcp-headers-${entry.id}`}>
-          {t("settings.headers")}<span className="font-normal text-on-surface-variant">{t("common.optional")}</span>
-        </label>
+        <div className="field-label-row">
+          <label className="field-label" htmlFor={`mcp-headers-${entry.id}`}>
+            {t("settings.headers")}<span className="font-normal text-on-surface-variant">{t("common.optional")}</span>
+          </label>
+          <InfoTip text={t("settings.headersHint")} />
+        </div>
         <textarea
           id={`mcp-headers-${entry.id}`}
           value={headersText}
@@ -307,9 +312,6 @@ function McpServerCard({
           spellCheck={false}
           className="field-input font-mono"
         />
-        <p className="field-hint">
-          {t("settings.headersHint")}
-        </p>
       </div>
 
       <div className="mb-1 flex items-center gap-2">

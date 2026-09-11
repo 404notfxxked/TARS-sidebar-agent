@@ -7,7 +7,7 @@ import { useState } from "react";
 import { savePrefs } from "../../shared/configStore";
 import { t } from "../../shared/i18n";
 import SwitchRow from "../ui/SwitchRow";
-import { SettingsSection } from "./parts";
+import { HintMore, SettingsSection } from "./parts";
 
 export default function WebSection({
   initialWebSearch,
@@ -31,7 +31,8 @@ export default function WebSection({
         hint={t("settings.webSearchHint")}
       />
 
-      {webSearch && <p className="field-hint">{t("settings.searchHow")}</p>}
+      {/* 引擎机制细节(含「搜索词会发给搜索引擎」的隐私披露)按需展开 */}
+      {webSearch && <HintMore detail={t("settings.searchHow")} />}
     </SettingsSection>
   );
 }

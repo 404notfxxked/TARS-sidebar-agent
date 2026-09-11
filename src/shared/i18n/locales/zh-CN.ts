@@ -19,6 +19,9 @@ export const zhCN = {
     loadFailed: "读取失败",
     unknown: "未知",
     backToChat: "返回对话",
+    moreInfo: "说明",
+    learnMore: "了解详情",
+    showLess: "收起",
   },
   chat: {
     placeholder: "问点什么，或让 TARS 去查",
@@ -150,7 +153,7 @@ export const zhCN = {
     providerName: "名称",
     providerUrl: "Base URL",
     providerUrlHint:
-      "OpenAI 兼容端点，一般带 /v1。留空就用官方 api.openai.com/v1。",
+      "OpenAI 兼容端点，一般以 /v1 结尾；留空使用官方 api.openai.com/v1。",
     providerUrlPlaceholder: "https://api.deepseek.com/v1",
     namePlaceholder: "如 DeepSeek",
     apiKey: "API Key",
@@ -174,6 +177,8 @@ export const zhCN = {
     maxTokens: "最大输出",
     maxPlaceholder: "如 8192",
     maxTokensField: "输出上限字段",
+    maxTokensFieldHint:
+      "请求携带的输出上限字段：OpenAI 推理模型只认 max_completion_tokens，其余端点用 max_tokens；「自动」按模型名推断。",
     maxTokensAuto: "自动（按模型名推断）",
     maxTokensCompat: "max_tokens（兼容端点）",
     maxTokensReasoning: "max_completion_tokens（OpenAI 推理模型）",
@@ -202,13 +207,15 @@ export const zhCN = {
     // 联网
     webSearch: "联网搜索",
     webSearchHint:
-      "默认关闭。开启后 AI 可联网搜索：搜索通过后台新开真实搜索引擎页面完成（完整渲染、读完即关，不留标签页），无需配置任何 API Key。",
+      "默认关闭。开启后 AI 可联网搜索：后台新开真实搜索引擎页面，读完即关，无需配置 API Key。",
     searchHow:
-      "引擎在 DuckDuckGo / Bing / Google / 百度 之间自动选择：连续失败或触发风控的引擎会进入几分钟冷却并自动换下一家；搜索词会发送至对应搜索引擎。API Key 搜索服务（Tavily / 博查 / Brave）的代码仍保留，可通过手动写入配置启用，但界面不再提供。",
+      "引擎在 DuckDuckGo / Bing / Google / 百度 之间自动选择：连续失败或触发风控的引擎会进入几分钟冷却，自动换下一家；搜索词会发送至对应搜索引擎。Tavily / 博查 / Brave 的 API 通道代码仍保留，可手动写入配置启用，界面不再提供。",
     // MCP
     mcpEnable: "启用 MCP 工具",
     mcpHint:
-      "启用后，MCP 服务器提供的工具将与内置工具共同供 AI 调用。工具调用时，相关请求数据会发送至对应服务器的运营方，请仅接入可信服务。当前仅支持 HTTP(S) 协议的 Streamable HTTP 端点，不支持需本地进程的 stdio 服务器。",
+      "启用后，MCP 服务器的工具与内置工具一同供 AI 调用；调用时相关请求数据会发送至对应服务器的运营方，请仅接入可信服务。",
+    mcpDetail:
+      "当前仅支持 HTTP(S) 协议的 Streamable HTTP 端点，需要本地进程的 stdio 服务器不受支持。",
     addServer: "添加服务器",
     serverEmpty:
       "暂无已配置的服务器。点击「添加服务器」，输入端点地址；如需认证，请补充请求头配置。",
@@ -220,11 +227,11 @@ export const zhCN = {
     serverUrl: "MCP 端点 URL",
     serverUrlPlaceholder: "https://api.example.com/mcp",
     serverUrlHint:
-      "Streamable HTTP 端点，请填入 GitHub、Notion 等在线服务，或 Figma 桌面端等本地应用提供的 MCP 地址。",
+      "Streamable HTTP 端点：填入 GitHub、Notion 等在线服务，或 Figma 桌面端等本地应用的 MCP 地址。",
     headers: "请求头",
     headersPlaceholder: "Authorization: Bearer ghp_…\nx-api-key: …",
     headersHint:
-      "每行配置一条请求头，格式为「名称: 值」，将随所有请求自动发送。密钥仅存储在本地设备中。",
+      "每行一条，格式「名称: 值」，随所有请求自动发送；密钥仅存储在本机。",
     testConnection: "测试连接",
     testing: "连接中…",
     testFailed: "连接失败",
@@ -238,7 +245,9 @@ export const zhCN = {
     confirmDeleteServer: "再点一次确认删除此服务器",
     // 记忆
     memoryHint:
-      "开启后，当您在对话中明确要求「记住…」或提及稳定的偏好设置时，系统会自动将其保存为记忆（聊天界面会同步提示保存状态），并在后续每轮对话中自动携带这些信息。关闭该功能仅会停止新记忆的保存和已有记忆的注入，已存储的记忆数据不会被删除，重新开启即可恢复使用。",
+      "对话中明确要求「记住…」或聊到稳定偏好时会自动存为记忆，后续每轮对话自动携带；聊天界面会提示保存状态。",
+    memoryDetail:
+      "关闭该功能仅停止新增保存与已有记忆的注入，已存储的记忆不会删除，重新开启即恢复使用。",
     // 上下文压缩
     compactTiming: "压缩时机",
     compactEarly: "提前 60%",
@@ -247,9 +256,9 @@ export const zhCN = {
     compactModel: "压缩用模型",
     compactFollow: "跟随当前模型",
     compactHint:
-      "聊天记录占用上下文窗口达到该比例时，较早的对话会自动生成摘要以释放空间，原聊天记录不受影响。需先在模型配置中填写「上下文窗口」方可生效。",
+      "聊天记录占用上下文窗口达到该比例时，较早对话自动生成摘要释放空间，原记录不变；需先在模型配置填写「上下文窗口」。",
     compactModelHint:
-      "压缩仅需生成文本摘要，建议选用低成本、高速度的模型以优化资源使用。留空则使用当前对话模型。",
+      "压缩只需生成文本摘要，建议选低成本、高速度的模型；留空则跟随当前对话模型。",
     // 历史数据
     retention: "保留时长",
     retention7: "7 天",
@@ -267,6 +276,6 @@ export const zhCN = {
     downloadLogs: "下载日志",
     clearLogs: "清空",
     diagFooter:
-      "记录了各环境下最近 400 条执行日志与报错信息。如需排查问题，请点击「下载日志」，将保存的文件放入项目的 .logs/ 目录下，即可让 TARS 读取并进行分析。",
+      "记录各环境最近 400 条执行日志与报错。排查问题时点击「下载日志」，把文件放入项目 .logs/ 目录，TARS 即可读取分析。",
   },
 } as const;

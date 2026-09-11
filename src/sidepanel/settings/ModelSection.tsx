@@ -11,6 +11,7 @@ import {
 import { fetchModels } from "../../background/provider";
 import { t } from "../../shared/i18n";
 import { useConfirmReset } from "../ui/hooks";
+import InfoTip from "../ui/InfoTip";
 import { ExpandCard, SettingsSection, hostOf } from "./parts";
 
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
@@ -246,12 +247,12 @@ function ModelRow({
         </div>
       </div>
       <div className="mt-1">
-        <label
-          className="field-label"
-          htmlFor={`model-mtf-${entry.id}`}
-        >
-          {t("settings.maxTokensField")}
-        </label>
+        <div className="field-label-row">
+          <label className="field-label" htmlFor={`model-mtf-${entry.id}`}>
+            {t("settings.maxTokensField")}
+          </label>
+          <InfoTip text={t("settings.maxTokensFieldHint")} />
+        </div>
         <select
           id={`model-mtf-${entry.id}`}
           value={entry.maxTokensField ?? ""}
@@ -426,9 +427,12 @@ function ProviderCard({
         />
       </div>
       <div className="settings-field">
-        <label className="field-label" htmlFor={`p-baseurl-${entry.id}`}>
-          {t("settings.providerUrl")}
-        </label>
+        <div className="field-label-row">
+          <label className="field-label" htmlFor={`p-baseurl-${entry.id}`}>
+            {t("settings.providerUrl")}
+          </label>
+          <InfoTip text={t("settings.providerUrlHint")} />
+        </div>
         <input
           id={`p-baseurl-${entry.id}`}
           type="text"
@@ -440,9 +444,6 @@ function ProviderCard({
           spellCheck={false}
           className="field-input font-mono"
         />
-        <p className="field-hint">
-          {t("settings.providerUrlHint")}
-        </p>
       </div>
       <div className="settings-field">
         <label className="field-label" htmlFor={`p-apikey-${entry.id}`}>

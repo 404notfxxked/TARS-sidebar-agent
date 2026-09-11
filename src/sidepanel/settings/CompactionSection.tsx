@@ -9,6 +9,7 @@ import {
   type ProviderEntry,
 } from "../../shared/configStore";
 import { t } from "../../shared/i18n";
+import InfoTip from "../ui/InfoTip";
 import Segmented from "../ui/Segmented";
 import { SettingsSection, hostOf } from "./parts";
 
@@ -65,9 +66,12 @@ export default function CompactionSection({
         </p>
       </div>
       <div className="settings-field">
-        <label className="field-label" htmlFor="compact-model">
-          {t("settings.compactModel")}
-        </label>
+        <div className="field-label-row">
+          <label className="field-label" htmlFor="compact-model">
+            {t("settings.compactModel")}
+          </label>
+          <InfoTip text={t("settings.compactModelHint")} />
+        </div>
         <select
           id="compact-model"
           value={compactRef}
@@ -87,9 +91,6 @@ export default function CompactionSection({
               </optgroup>
             ))}
         </select>
-        <p className="field-hint">
-          {t("settings.compactModelHint")}
-        </p>
       </div>
     </SettingsSection>
   );

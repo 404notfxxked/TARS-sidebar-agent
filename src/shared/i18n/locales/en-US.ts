@@ -22,6 +22,9 @@ export const enUS = {
     loadFailed: "Failed to load",
     unknown: "Unknown",
     backToChat: "Back to chat",
+    moreInfo: "More info",
+    learnMore: "Learn more",
+    showLess: "Show less",
   },
   chat: {
     placeholder: "Ask something, or let TARS look it up",
@@ -156,7 +159,7 @@ export const enUS = {
     providerName: "Name",
     providerUrl: "Base URL",
     providerUrlHint:
-      "An OpenAI-compatible endpoint, usually ending with /v1. Leave empty to use the official api.openai.com/v1.",
+      "An OpenAI-compatible endpoint, usually ending with /v1. Leave empty for the official api.openai.com/v1.",
     providerUrlPlaceholder: "https://api.deepseek.com/v1",
     namePlaceholder: "e.g. DeepSeek",
     apiKey: "API Key",
@@ -180,6 +183,8 @@ export const enUS = {
     maxTokens: "Max output tokens",
     maxPlaceholder: "e.g. 8192",
     maxTokensField: "Output limit parameter",
+    maxTokensFieldHint:
+      "The output-limit field sent in requests: OpenAI reasoning models only accept max_completion_tokens, other endpoints use max_tokens; Auto infers it from the model name.",
     maxTokensAuto: "Auto (inferred from the model name)",
     maxTokensCompat: "max_tokens (compatible endpoints)",
     maxTokensReasoning: "max_completion_tokens (OpenAI reasoning models)",
@@ -208,13 +213,15 @@ export const enUS = {
     // Web search
     webSearch: "Web search",
     webSearchHint:
-      "Off by default. When enabled, the AI can search the web: each search opens a real search engine page in a background tab (fully rendered, closed right after, no tab left behind). No API key required.",
+      "Off by default. When enabled, the AI can search the web: each search opens a real search engine page in a background tab and closes it right after reading. No API key required.",
     searchHow:
-      "Engines are auto-selected among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks enter a few minutes of cooldown while the next one takes over; search queries are sent to the corresponding search engine. API-key search services (Tavily / Bocha / Brave) remain supported in code via manual configuration, but the UI for them has been removed.",
+      "Engines are selected automatically among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks cool down for a few minutes while the next one takes over. Search queries are sent to the corresponding search engine. The Tavily / Bocha / Brave API channels remain in the code and can be enabled via manual configuration, but no UI is provided.",
     // MCP
     mcpEnable: "Enable MCP tools",
     mcpHint:
-      "When enabled, tools provided by MCP servers are made available to the AI alongside the built-in tools. During a tool call, the relevant request data is sent to the operator of the corresponding server, so connect trusted services only. Only Streamable HTTP endpoints over HTTP(S) are currently supported; stdio servers that require a local process are not supported.",
+      "When enabled, tools provided by MCP servers are available to the AI alongside the built-in tools. During a tool call, the relevant request data is sent to the operator of that server — connect trusted services only.",
+    mcpDetail:
+      "Only Streamable HTTP endpoints over HTTP(S) are currently supported; stdio servers that require a local process are not supported.",
     addServer: "Add server",
     serverEmpty:
       'No servers configured yet. Click "Add server" and enter the endpoint URL; if authentication is required, also add the necessary header configuration.',
@@ -226,11 +233,11 @@ export const enUS = {
     serverUrl: "MCP endpoint URL",
     serverUrlPlaceholder: "https://api.example.com/mcp",
     serverUrlHint:
-      "A Streamable HTTP endpoint. Enter the MCP address provided by an online service such as GitHub or Notion, or by a local application such as the Figma desktop app.",
+      "A Streamable HTTP endpoint: use the MCP address from an online service such as GitHub or Notion, or a local app such as the Figma desktop app.",
     headers: "Headers",
     headersPlaceholder: "Authorization: Bearer ghp_…\nx-api-key: …",
     headersHint:
-      'One header per line in "Name: Value" format. Headers are sent automatically with every request. Secrets are stored only on this device.',
+      'One header per line, "Name: Value" format; sent automatically with every request. Secrets are stored only on this device.',
     testConnection: "Test connection",
     testing: "Connecting…",
     testFailed: "Connection failed",
@@ -244,7 +251,9 @@ export const enUS = {
     confirmDeleteServer: "Click again to confirm deleting this server",
     // Memory
     memoryHint:
-      'When enabled, explicit requests such as "remember …" or mentions of stable preferences in a conversation are saved as memories automatically (the chat interface also shows the save status), and this information is included automatically in every subsequent turn. Turning the feature off only stops saving new memories and injecting existing ones; stored memories are not deleted and become available again once the feature is re-enabled.',
+      'Explicit requests such as "remember …" or mentions of stable preferences are saved as memories automatically and included in every subsequent turn; the chat interface shows the save status.',
+    memoryDetail:
+      "Turning the feature off only stops saving new memories and injecting existing ones; stored memories are not deleted and return once the feature is re-enabled.",
     // Context compaction
     compactTiming: "Compaction timing",
     compactEarly: "Early (60%)",
@@ -253,9 +262,9 @@ export const enUS = {
     compactModel: "Compaction model",
     compactFollow: "Follow current model",
     compactHint:
-      'When the chat history reaches this share of the context window, earlier turns are summarized automatically to free up space; the original history is not modified. Takes effect only after "Context window" is filled in under the model configuration.',
+      'When the chat history reaches this share of the context window, earlier turns are summarized automatically to free up space; the original history is not modified. Requires "Context window" in the model configuration.',
     compactModelHint:
-      "Compaction only needs to produce a text summary, so a low-cost, fast model is recommended to use resources efficiently. Leave empty to use the current conversation model.",
+      "Compaction only needs a text summary, so a low-cost, fast model is recommended. Leave empty to follow the current conversation model.",
     // History data
     retention: "Retention period",
     retention7: "7 days",
@@ -273,6 +282,6 @@ export const enUS = {
     downloadLogs: "Download logs",
     clearLogs: "Clear",
     diagFooter:
-      'Keeps the most recent 400 execution log and error entries for each environment. To investigate an issue, click "Download logs" and place the saved file in the project\'s .logs/ directory so that TARS can read and analyze it.',
+      'Keeps the most recent 400 log and error entries per environment. To investigate an issue, click "Download logs" and place the file in the project\'s .logs/ directory for TARS to read and analyze.',
   },
 } as const satisfies Dict;

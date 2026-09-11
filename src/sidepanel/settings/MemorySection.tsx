@@ -8,7 +8,7 @@ import { MSG, type MemoryItem } from "../../shared/messages";
 import { t } from "../../shared/i18n";
 import { memReq } from "../clients/memoryClient";
 import SwitchRow from "../ui/SwitchRow";
-import { SettingsSection } from "./parts";
+import { HintMore, SettingsSection } from "./parts";
 
 export default function MemorySection({
   initialOn,
@@ -44,6 +44,8 @@ export default function MemorySection({
         }}
         hint={t("settings.memoryHint")}
       />
+      {/* 关闭行为(数据不删除)按需展开;开启态的关键语义留在开关 hint 里 */}
+      <HintMore detail={t("settings.memoryDetail")} />
 
       {memoryOn && (
         <button

@@ -1,7 +1,8 @@
-// 设置页内部共享件:分节骨架、展开卡片骨架、小工具。
+// 设置页内部共享件:分节骨架、展开卡片骨架、「了解详情」折叠、小工具。
 // 只服务 settings/ 下的分节组件;跨视图的通用件在 ui/。
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { t } from "../../shared/i18n";
 
 /** 分节:眉题 + 白卡。卡内子块节奏由 .settings-card > * + * 的 margin 管
  *  (契约 6,勿给子块另垫上下 padding)。首个分节 mt-3,其余 mt-4 */
@@ -79,6 +80,39 @@ export function ExpandCard({
       <div className="model-row-body" data-open={open}>
         <div className="model-row-body-inner">{children}</div>
       </div>
+    </div>
+  );
+}
+
+/** 「了解详情」折叠:一句话说明留在明面,机制/隐私类长说明按需展开
+ *  (定义类短说明走 ui/InfoTip 气泡,警示类保持明面 —— 三层分工见 roadmap)。
+ *  展开体是普通 field-hint 段落,文案由调用侧经 t() 现取 */
+export function HintMore({ detail }: { detail: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        className="hint-more-btn"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? t("common.showLess") : t("common.learnMore")}
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 3.5 4.5 4.5L6 12.5" />
+        </svg>
+      </button>
+      {open && <p className="field-hint mt-1.5">{detail}</p>}
     </div>
   );
 }
