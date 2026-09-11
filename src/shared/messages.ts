@@ -21,6 +21,12 @@ export const MSG = {
   MEM_PIN: 'mem_pin',
   MEM_DELETE: 'mem_delete',
   MEM_CLEAR: 'mem_clear',
+  SKILL_LIST: 'skill_list',
+  SKILL_ADD: 'skill_add',
+  SKILL_GET: 'skill_get',
+  SKILL_UPDATE: 'skill_update',
+  SKILL_TOGGLE: 'skill_toggle',
+  SKILL_DELETE: 'skill_delete',
   MCP_TEST: 'mcp_test',
   MCP_TOOLS: 'mcp_tools',
 
@@ -37,6 +43,8 @@ export const MSG = {
   SESSIONS: 'sessions',
   IMAGE_DATA: 'image_data',
   MEMORIES: 'memories',
+  SKILLS: 'skills',
+  SKILL_RAW: 'skill_raw',
   MCP_TEST_RESULT: 'mcp_test_result',
   MCP_TOOLS_RESULT: 'mcp_tools_result',
 } as const
@@ -89,6 +97,12 @@ export type SideToBg =
   | { type: typeof MSG.MEM_PIN; id: string; pinned: boolean }
   | { type: typeof MSG.MEM_DELETE; id: string }
   | { type: typeof MSG.MEM_CLEAR }
+  | { type: typeof MSG.SKILL_LIST }
+  | { type: typeof MSG.SKILL_ADD; raw: string }
+  | { type: typeof MSG.SKILL_GET; id: string }
+  | { type: typeof MSG.SKILL_UPDATE; id: string; raw: string }
+  | { type: typeof MSG.SKILL_TOGGLE; id: string; enabled: boolean }
+  | { type: typeof MSG.SKILL_DELETE; id: string }
   | { type: typeof MSG.MCP_TEST; server: McpServerEntry }
   | { type: typeof MSG.MCP_TOOLS; server: McpServerEntry }
 
@@ -134,6 +148,18 @@ export interface MemoryItem {
   tag?: MemoryTag;
 }
 
+/** 技能条目(技能页 / 菜单展示用):不含正文 —— 正文较大且展示层用不到,
+ *  编辑时经 SKILL_GET/SKILL_RAW 单独取 */
+export interface SkillInfo {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  updatedAt: number;
+  /** 正文体积(字符),列表行做量级提示 */
+  chars: number;
+}
+
 /** MCP 工具清单项(设置页展示用;description 已是服务器原文,面板自行截断) */
 export interface McpToolInfo {
   name: string;
@@ -172,6 +198,10 @@ export type AgentEvent =
     }
   | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
   | { type: typeof MSG.MEMORIES; memories: MemoryItem[] }
+  /** 技能列表:增删改/启停后都回全量(同 MEMORIES);error = 操作失败原因
+   *  (解析错误等),面板就地展示,列表仍以后台实际状态为准 */
+  | { type: typeof MSG.SKILLS; skills: SkillInfo[]; error?: string }
+  | { type: typeof MSG.SKILL_RAW; id: string; raw?: string }
   | {
       type: typeof MSG.MCP_TEST_RESULT;
       ok: boolean;

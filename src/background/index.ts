@@ -26,6 +26,15 @@ import {
   updateMemory,
 } from "./memory/memoryStore";
 import {
+  deleteSkill,
+  importSkill,
+  listSkills,
+  setSkillEnabled,
+  updateSkill,
+} from "./skills/skillStore";
+import { renderSkillMarkdown } from "../shared/skills";
+import type { SkillInfo } from "../shared/messages";
+import {
   clearAllSessions,
   deleteSession,
   getCompactionMark,
@@ -36,6 +45,19 @@ import {
   pruneExpiredSessions,
   toChatRecords,
 } from "./sessions/sessionHistory";
+import { getSkillRow } from "./sessions/sessionDb";
+
+/** SkillRow → 面板展示形状(不含正文;chars 做量级提示) */
+async function skillInfos(): Promise<SkillInfo[]> {
+  return (await listSkills()).map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    enabled: r.enabled,
+    updatedAt: r.updatedAt,
+    chars: r.body.length,
+  }));
+}
 import { maybeProbeEngines } from "./web/engineHealth";
 
 const log = createLogger({ ctx: "bg" });
@@ -247,6 +269,76 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           type: MSG.MEMORIES,
           memories: await loadMemories(),
         });
+        break;
+      }
+      case MSG.SKILL_LIST: {
+        port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
+        break;
+      }
+      case MSG.SKILL_ADD: {
+        // 解析失败(缺字段/超限)不静默:错误随 SKILLS 回面板就地展示,
+        // 列表仍回后台实际状态 —— 面板不需要再发一次 LIST
+        try {
+          await importSkill(msg.raw);
+          port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
+        } catch (err) {
+          log.warn("skills", "技能导入失败", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          port.postMessage({
+            type: MSG.SKILLS,
+            skills: await skillInfos(),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+      case MSG.SKILL_GET: {
+        // 编辑视图:行重组回 SKILL.md 原文(frontmatter 由 name/description 还原)
+        const row = await getSkillRow(msg.id).catch(() => undefined);
+        port.postMessage({
+          type: MSG.SKILL_RAW,
+          id: msg.id,
+          ...(row
+            ? {
+                raw: renderSkillMarkdown(row.name, row.description, row.body),
+              }
+            : {}),
+        });
+        break;
+      }
+      case MSG.SKILL_UPDATE: {
+        try {
+          await updateSkill(msg.id, msg.raw);
+          port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
+        } catch (err) {
+          log.warn("skills", "技能更新失败", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          port.postMessage({
+            type: MSG.SKILLS,
+            skills: await skillInfos(),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+      case MSG.SKILL_TOGGLE: {
+        try {
+          await setSkillEnabled(msg.id, msg.enabled);
+          port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
+        } catch (err) {
+          port.postMessage({
+            type: MSG.SKILLS,
+            skills: await skillInfos(),
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+      case MSG.SKILL_DELETE: {
+        await deleteSkill(msg.id);
+        port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
         break;
       }
       case MSG.MCP_TEST: {

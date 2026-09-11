@@ -7,9 +7,10 @@ import ChatView from "./chat/ChatView";
 import SettingsView from "./settings/SettingsView";
 import SessionsView from "./sessions/SessionsView";
 import MemoryView from "./memory/MemoryView";
+import SkillView from "./skills/SkillView";
 import { useLocale } from "./ui/hooks";
 
-type Overlay = null | "settings" | "sessions" | "memory";
+type Overlay = null | "settings" | "sessions" | "memory" | "skills";
 
 export default function App() {
   // 语言订阅:t() 非响应式,切换语言后靠这里触发整棵树重渲染
@@ -22,6 +23,8 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState("");
   /** 记忆页的来路:返回时回到原处(设置页进来回设置页,聊天轻提示进来回对话) */
   const [memoryFrom, setMemoryFrom] = useState<"chat" | "settings">("chat");
+  /** 技能页的来路(同 memoryFrom):设置页管理入口 / 聊天 / 菜单空态引导 */
+  const [skillFrom, setSkillFrom] = useState<"chat" | "settings">("settings");
 
   // 悬浮层打开期间 Esc 直接返回
   useEffect(() => {
@@ -42,6 +45,10 @@ export default function App() {
           setMemoryFrom("chat");
           setOverlay("memory");
         }}
+        onOpenSkills={() => {
+          setSkillFrom("chat");
+          setOverlay("skills");
+        }}
         resumeSessionId={resumeSessionId}
         onResumeDone={() => setResumeSessionId(null)}
         onActiveSessionChange={setActiveSessionId}
@@ -58,6 +65,10 @@ export default function App() {
                 setMemoryFrom("settings");
                 setOverlay("memory");
               }}
+              onOpenSkills={() => {
+                setSkillFrom("settings");
+                setOverlay("skills");
+              }}
             />
           ) : overlay === "sessions" ? (
             <SessionsView
@@ -72,9 +83,13 @@ export default function App() {
               }}
               activeId={activeSessionId}
             />
-          ) : (
+          ) : overlay === "memory" ? (
             <MemoryView
               onBack={() => setOverlay(memoryFrom === "settings" ? "settings" : null)}
+            />
+          ) : (
+            <SkillView
+              onBack={() => setOverlay(skillFrom === "settings" ? "settings" : null)}
             />
           )}
         </div>

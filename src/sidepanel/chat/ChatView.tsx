@@ -6,6 +6,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -15,8 +16,10 @@ import {
   type AgentEvent,
   type CompactionMark,
   type ImageMeta,
+  type SkillInfo,
 } from "../../shared/messages";
 import { t } from "../../shared/i18n";
+import { parseSkillInvocation } from "../../shared/skills";
 import { getActiveTabId } from "../../shared/contentTools";
 import {
   loadConfig,
@@ -42,6 +45,8 @@ import {
   UserBubble,
 } from "./bubbles";
 import ModelPicker from "./ModelPicker";
+import SkillMenu from "./SkillMenu";
+import { skillReq } from "../clients/skillClient";
 import { ArchiveIcon } from "../ui/icons";
 
 // 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
@@ -68,6 +73,7 @@ export default function ChatView({
   onOpenSettings,
   onOpenSessions,
   onOpenMemory,
+  onOpenSkills,
   resumeSessionId,
   onResumeDone,
   onActiveSessionChange,
@@ -76,6 +82,8 @@ export default function ChatView({
   onOpenSessions: () => void;
   /** 轻提示直通记忆管理页(不经设置页中转,同 ChatGPT「Memory updated」) */
   onOpenMemory: () => void;
+  /** / 菜单空态引导 → 技能管理整页 */
+  onOpenSkills: () => void;
   /** 历史列表选中的会话:非空时打开它,完事后回调置空 */
   resumeSessionId: string | null;
   onResumeDone: () => void;
@@ -390,6 +398,47 @@ export default function ChatView({
     lastLoadedSessionRef.current = "";
   };
 
+  // ---- / 技能菜单:输入以 / 开头(仅起始位置)时触发 ----
+  // 触发判定走 input 值而非 keydown:避开中文组词中间态;全角 ／ 不触发。
+  // 清单带 3s TTL 缓存,菜单开着才取(SW 全量列表,轻请求;技能页改动后
+  // 最多 3s 自愈)
+  const [skillList, setSkillList] = useState<SkillInfo[] | null>(null);
+  const skillFetchedAtRef = useRef(0);
+  const [slashClosed, setSlashClosed] = useState(false); // Esc 关闭,输入变化后重开
+  const [skillIdx, setSkillIdx] = useState(0);
+  const slashMatch = /^\/([A-Za-z0-9_-]*)$/.exec(input);
+  const slashQuery = slashMatch?.[1] ?? "";
+  const enabledSkills = useMemo(
+    () => (skillList ?? []).filter((s) => s.enabled),
+    [skillList],
+  );
+  const skillMatches = useMemo(() => {
+    const q = slashQuery.toLowerCase();
+    if (!q) return enabledSkills;
+    return enabledSkills.filter(
+      (s) => s.name.includes(q) || s.description.toLowerCase().includes(q),
+    );
+  }, [enabledSkills, slashQuery]);
+  useEffect(() => setSkillIdx(0), [slashQuery]);
+  const slashMenuOpen = !!slashMatch && !slashClosed;
+
+  useEffect(() => {
+    if (!slashMenuOpen || Date.now() - skillFetchedAtRef.current < 3_000) return;
+    skillFetchedAtRef.current = Date.now();
+    skillReq({ type: MSG.SKILL_LIST })
+      .then((r) => setSkillList(r.skills))
+      .catch(() => {
+        skillFetchedAtRef.current = 0; // 失败不缓存,下次触发重取
+      });
+  }, [slashMenuOpen]);
+
+  /** 选中技能:回填 token + 尾随空格(空格使 input 不再匹配 / 形态,菜单随之关闭) */
+  const pickSkill = (name: string) => {
+    setInput(`/${name} `);
+    setSlashClosed(false);
+    setSkillIdx(0);
+  };
+
   // ---- 输入区:textarea 随内容自增高(封顶约 5 行,超出内部滚动) ----
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   useLayoutEffect(() => {
@@ -464,6 +513,14 @@ export default function ChatView({
   const submit = async () => {
     const text = input.trim();
     if ((!text && pendingImages.length === 0) || status !== "idle") return;
+    // /token 命中已停用技能:提示但不拦截(SW 侧同样只认启用,原样透传)
+    const inv = parseSkillInvocation(text);
+    if (inv && skillList) {
+      const hit = skillList.find(
+        (s) => !s.enabled && s.name === inv.name.toLowerCase(),
+      );
+      if (hit) flashHint(t("skills.disabledHint", { name: hit.name }));
+    }
     // 附件是开着视觉模型时贴的、发送前切到了非视觉模型:照常发送(图片仍会
     // 入库,切回视觉模型后可继续引用),但明确告知本次模型看不到
     if (pendingImages.length > 0 && !visionOk) {
@@ -666,13 +723,57 @@ export default function ChatView({
             {attachHint}
           </p>
         )}
+        {slashMenuOpen && (
+          <SkillMenu
+            skills={skillMatches}
+            query={slashQuery}
+            activeIndex={Math.min(skillIdx, Math.max(skillMatches.length - 1, 0))}
+            loading={skillList === null}
+            hasAny={enabledSkills.length > 0}
+            onPick={pickSkill}
+            onHover={setSkillIdx}
+            onManage={onOpenSkills}
+          />
+        )}
         <div className="px-3.5 pt-2">
           <textarea
             ref={inputRef}
             rows={1}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setSlashClosed(false);
+            }}
             onKeyDown={(e) => {
+              // 菜单开着时键盘优先导航/选中;Esc 只关菜单不冒泡关悬浮层
+              if (slashMenuOpen) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSkillIdx((i) => Math.min(i + 1, skillMatches.length - 1));
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSkillIdx((i) => Math.max(i - 1, 0));
+                  return;
+                }
+                if (
+                  (e.key === "Enter" || e.key === "Tab") &&
+                  !e.nativeEvent.isComposing &&
+                  skillMatches.length > 0
+                ) {
+                  e.preventDefault();
+                  pickSkill(
+                    skillMatches[Math.min(skillIdx, skillMatches.length - 1)]
+                      .name,
+                  );
+                  return;
+                }
+                if (e.key === "Escape") {
+                  setSlashClosed(true);
+                  return;
+                }
+              }
               // 输入法组词中的 Enter 是确认候选词,不当作发送
               if (
                 e.key === "Enter" &&

@@ -17,6 +17,7 @@ import AppearanceSection from "./AppearanceSection";
 import WebSection from "./WebSection";
 import McpSection from "./McpSection";
 import MemorySection from "./MemorySection";
+import SkillSection from "./SkillSection";
 import CompactionSection from "./CompactionSection";
 import DataSection from "./DataSection";
 import DiagnosticsSection from "./DiagnosticsSection";
@@ -24,10 +25,13 @@ import DiagnosticsSection from "./DiagnosticsSection";
 export default function SettingsView({
   onBack,
   onOpenMemory,
+  onOpenSkills,
 }: {
   onBack: () => void;
   /** 记忆摘要入口行 → 记忆管理整页(列表不长在这里:平铺时一节超一屏) */
   onOpenMemory: () => void;
+  /** 技能管理入口行 → 技能整页(安装/编辑在整页做) */
+  onOpenSkills: () => void;
 }) {
   // 配置读齐才渲染分节:避免「默认空态闪一帧」;模型服务域(providers +
   // 当前引用)提升到这里,压缩用模型下拉要与它保持同源
@@ -119,6 +123,13 @@ export default function SettingsView({
               initialOn={config.memory}
               contextTokens={selectedContextTokens(config)}
               onOpenMemory={onOpenMemory}
+              run={run}
+            />
+
+            {/* ── 技能:开关 + 管理入口行;安装在技能整页(SkillView)── */}
+            <SkillSection
+              initialOn={config.skills}
+              onOpenSkills={onOpenSkills}
               run={run}
             />
 

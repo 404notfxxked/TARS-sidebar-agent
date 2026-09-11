@@ -39,6 +39,11 @@ import {
   saveHistory,
 } from "../sessions/sessionHistory";
 import { setToolExecutionContext } from "../tools/toolContext";
+import {
+  parseSkillInvocation,
+  renderSkillBlock,
+} from "../../shared/skills";
+import { getEnabledSkillByName } from "../skills/skillStore";
 
 const log = createLogger({ ctx: "bg" });
 
@@ -209,7 +214,15 @@ export async function runAgentLoop(
       // port 传来的是 base64(JSON 语义消息),转回字节供 wire 与落库使用
       bytes: base64ToBytes(im.base64),
     }));
-    const userContent = await buildUserContent(payload.text);
+    // 技能调用(显式):消息以 /name 开头且命中启用技能时,把正文包成
+    // <skill> 块插在 <user-request> 之前;user-request 原文不动(token 保留,
+    // 模型侧多一份显式信号,历史回显与实况一致)。未命中(无 token/未知名/
+    // 已停用/总开关关)一律透传,不报错不打断 —— 宽容纪律同 MCP 幻觉工具名
+    const skillsEnabled = config.skills !== false;
+    const skillBlock = skillsEnabled
+      ? await resolveInvokedSkill(payload.text)
+      : null;
+    const userContent = await buildUserContent(payload.text, skillBlock ?? undefined);
     const systemContent =
       (webEnabled
         ? SYSTEM_PROMPT
@@ -627,8 +640,13 @@ export async function runAgentLoop(
   }
 }
 
-/** 构造 user 消息内容:tab 清单包进 <context>,用户问题包进 <user-request> */
-async function buildUserContent(text: string): Promise<string> {
+/** 构造 user 消息内容:tab 清单与技能指令块(如有)包在 <context> 与
+ *  <user-request> 之间 —— 都在包裹外,历史回放的 userRequestText 投影
+ *  只取 <user-request> 内文,自动丢弃这两块(库保持全量,显示只留原话) */
+async function buildUserContent(
+  text: string,
+  skillBlock?: string,
+): Promise<string> {
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const tabs = await chrome.tabs.query({ currentWindow: true });
@@ -644,10 +662,22 @@ async function buildUserContent(text: string): Promise<string> {
     `当前日期:${date}`,
     tabLines.join("\n"),
     "</context>",
+    ...(skillBlock ? [skillBlock] : []),
     "<user-request>",
     text,
     "</user-request>",
   ].join("\n");
+}
+
+/** 解析本轮消息的技能调用:文本以 /name 开头且命中启用技能 → 返回
+ *  <skill> 指令块;其余情况返回 null(原样透传) */
+async function resolveInvokedSkill(text: string): Promise<string | null> {
+  const inv = parseSkillInvocation(text);
+  if (!inv) return null;
+  const row = await getEnabledSkillByName(inv.name);
+  if (!row) return null;
+  log.info("agent", "skill invoked", { name: row.name, chars: row.body.length });
+  return renderSkillBlock(row.name, row.body);
 }
 
 /** 工具结果转成可回填的字符串(LLM 收到的 observation) */

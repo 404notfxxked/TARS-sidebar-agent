@@ -102,6 +102,9 @@ export interface AppConfig {
   /** 长期记忆总开关:开 = 注册 memory_* 工具 + 每轮注入 <user-memory>;
    *  缺省 = 开。关 = 不注册工具不注入,彻底无痕 */
   memory: boolean;
+  /** 技能总开关:关 = / 调用不生效(菜单与技能页管理不受影响);
+   *  缺省 = 开。技能是用户手动安装的本地指令文本,无网络无外传,空库零成本 */
+  skills: boolean;
   /** 搜索服务配置;开关开着但当前服务 apiKey 为空时 web_search 退回免 Key 抓取 */
   search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
@@ -168,6 +171,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "locale",
     "webSearch",
     "memory",
+    "skills",
     "search",
     "historyRetention",
     "compact",
@@ -202,6 +206,8 @@ export async function loadConfig(): Promise<AppConfig> {
     webSearch: l.webSearch === true,
     // 长期记忆缺省开启(记忆为空时除工具 schema 外无成本;关 = 彻底无痕)
     memory: l.memory !== false,
+    // 技能缺省开启(纯本地文本,空库零成本;关 = / 调用不生效)
+    skills: l.skills !== false,
     search: normalizeSearch(l.search),
     // 历史保留天数:与 sessionHistory.retentionDays 的缺省保持一致(7 天)
     historyRetention:
@@ -310,6 +316,7 @@ export async function savePrefs(
       | "locale"
       | "webSearch"
       | "memory"
+      | "skills"
       | "search"
       | "historyRetention"
       | "compact"

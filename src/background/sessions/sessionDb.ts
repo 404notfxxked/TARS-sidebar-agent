@@ -5,6 +5,7 @@
 //   消息行里只存元数据引用,列表/清理永不碰大对象
 // - memories(v3):跨会话长期记忆条目(keyPath id),独立于会话生命周期,
 //   不随会话删除级联
+// - skills(v4):用户安装的技能(SKILL.md 解析结果),同 memories 独立存续
 // 只有后台 SW 访问此模块(单写者);面板经消息协议间接读写。
 //
 // 为什么选 IndexedDB 而不是 chrome.storage.local:多会话需要按记录追加与
@@ -15,11 +16,12 @@
 import type { MemoryTag } from "../../shared/memory";
 
 const DB_NAME = "tars";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const SESSIONS = "sessions";
 const MESSAGES = "messages";
 const IMAGES = "images";
 const MEMORIES = "memories";
+const SKILLS = "skills";
 
 /** 长期记忆条目(memories store):跨会话的用户偏好/事实,一行一条 */
 export interface MemoryRow {
@@ -41,6 +43,21 @@ export interface MemoryRow {
   /** 粗分类(identity/preference/project/health/other):注入分组、记忆页
    *  徽标与二期蒸馏权重(tag 权重+年龄)共用;缺省不标 */
   tag?: MemoryTag;
+}
+
+/** 技能条目(skills store):SKILL.md 的解析结果 + 状态。frontmatter 字段
+ *  (name/description)在此冗余存储,避免每次列表/菜单都重新解析正文 */
+export interface SkillRow {
+  id: string;
+  /** 调用 token(即 frontmatter name,已过 shared/skills 校验);全库唯一 */
+  name: string;
+  description: string;
+  /** 去 frontmatter 后的 Markdown 正文 */
+  body: string;
+  /** 停用后:不进 / 菜单、调用不生效;内容保留 */
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** 会话压缩元数据:seq ≤ uptoSeq 的消息已压缩为 summary 文本。
@@ -121,6 +138,10 @@ function openDb(): Promise<IDBDatabase> {
       // v3:跨会话长期记忆
       if (!db.objectStoreNames.contains(MEMORIES)) {
         db.createObjectStore(MEMORIES, { keyPath: "id" });
+      }
+      // v4:用户安装的技能
+      if (!db.objectStoreNames.contains(SKILLS)) {
+        db.createObjectStore(SKILLS, { keyPath: "id" });
       }
     };
     req.onsuccess = () => {
@@ -300,5 +321,33 @@ export async function clearMemoryRows(): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(MEMORIES, "readwrite");
   tx.objectStore(MEMORIES).clear();
+  await settled(tx);
+}
+
+// ---- 技能(skills store,同 memories 独立于会话生命周期) ----
+
+export async function listSkillRows(): Promise<SkillRow[]> {
+  const db = await openDb();
+  return p<SkillRow[]>(db.transaction(SKILLS).objectStore(SKILLS).getAll());
+}
+
+export async function getSkillRow(id: string): Promise<SkillRow | undefined> {
+  const db = await openDb();
+  return p<SkillRow | undefined>(
+    db.transaction(SKILLS).objectStore(SKILLS).get(id),
+  );
+}
+
+export async function putSkillRow(row: SkillRow): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(SKILLS, "readwrite");
+  tx.objectStore(SKILLS).put(row);
+  await settled(tx);
+}
+
+export async function deleteSkillRow(id: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(SKILLS, "readwrite");
+  tx.objectStore(SKILLS).delete(id);
   await settled(tx);
 }

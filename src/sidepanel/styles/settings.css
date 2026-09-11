@@ -45,6 +45,35 @@
   .memory-row-in {
     animation: msg-in 250ms var(--ease-emphasized) backwards;
   }
+
+  /* ---- 技能管理页 ---- */
+  /* 行入场:同记忆页 */
+  .skill-row-in {
+    animation: msg-in 250ms var(--ease-emphasized) backwards;
+  }
+  /* 描述两行:列表密度与记忆行一致,换行截断 */
+  .skill-desc {
+    display: block;
+    overflow: hidden;
+    margin-top: 1px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  /* 「停用」徽标:同 memory-src 的胶囊语言 */
+  .skill-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 10px;
+    line-height: 1.6;
+    vertical-align: 1px;
+  }
   /* 添加条:胶囊形态同搜索条,左侧无图标;右内缘嵌一枚圆形添加钮 */
   .memory-add {
     width: 100%;
@@ -349,6 +378,70 @@
     top: calc(100% + 6px);
     right: 0;
     width: max-content;
+  }
+  /* / 技能菜单:输入条上方全宽弹出(锚 = 输入表单容器),双行选项 */
+  .skill-pop {
+    bottom: calc(100% + 6px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: 240px;
+  }
+  .skill-option {
+    display: block;
+    width: 100%;
+    padding: 7px 12px;
+    text-align: left;
+    transition: background 150ms var(--ease-emphasized);
+  }
+  .skill-option:hover,
+  .skill-option[data-active="true"] {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  }
+  .skill-option-name {
+    display: block;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--md-sys-color-on-surface);
+  }
+  .skill-option-desc {
+    display: block;
+    overflow: hidden;
+    margin-top: 1px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .skill-pop-note {
+    margin: 0;
+    padding: 6px 12px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .skill-pop-manage {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin: 2px 12px 6px;
+    padding: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--md-sys-color-primary);
+    cursor: pointer;
+  }
+  .skill-pop-manage:hover {
+    text-decoration: underline;
+  }
+  .skill-pop-foot {
+    margin-top: 2px;
+    padding-top: 5px;
+    padding-bottom: 4px;
+    border-top: 1px solid color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+    text-align: center;
   }
   .combo-option {
     display: block;
