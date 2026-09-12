@@ -51,6 +51,54 @@ describe("parseSkillMarkdown", () => {
     expect(parseSkillMarkdown(raw).name).toBe("tidy");
   });
 
+  it("parses literal block scalars (|) into multi-line description", () => {
+    // humanizer 的真实形状:块标量多行 description + 块后还有顶层键
+    const raw = [
+      "---",
+      "name: humanizer",
+      "description: |",
+      "  Rewrite AI-sounding text so it reads naturally.",
+      "  Use when editing or reviewing prose.",
+      "  Based on Wikipedia's \"Signs of AI writing.\"",
+      "license: MIT",
+      "metadata:",
+      '  version: "2.11.2"',
+      "---",
+      "body here",
+    ].join("\n");
+    const p = parseSkillMarkdown(raw);
+    expect(p.description).toBe(
+      "Rewrite AI-sounding text so it reads naturally.\nUse when editing or reviewing prose.\nBased on Wikipedia's \"Signs of AI writing.\"",
+    );
+    expect(p.body).toBe("body here");
+  });
+
+  it("parses folded block scalars (>) with space-joined lines and blank-line breaks", () => {
+    const raw = [
+      "---",
+      "name: folded",
+      "description: >",
+      "  First line continues",
+      "  on this second line.",
+      "",
+      "  New paragraph here.",
+      "---",
+      "b",
+    ].join("\n");
+    expect(parseSkillMarkdown(raw).description).toBe(
+      "First line continues on this second line.\nNew paragraph here.",
+    );
+  });
+
+  it("accepts chomping indicators (|-, >-) and stops at shallower lines", () => {
+    for (const marker of ["|-", ">-"]) {
+      const p = parseSkillMarkdown(
+        `---\nname: x\ndescription: ${marker}\n  text line\nnext: value\n---\nb`,
+      );
+      expect(p.description).toBe("text line");
+    }
+  });
+
   it("rejects missing frontmatter / unclosed frontmatter", () => {
     expect(() => parseSkillMarkdown("name: x\n---")).toThrow(/must start/);
     expect(() => parseSkillMarkdown("---\nname: x")).toThrow(/not closed/);
@@ -136,5 +184,11 @@ describe("renderSkillBlock / renderSkillMarkdown", () => {
     expect(p.name).toBe("pdf-review");
     expect(p.description).toBe('Has "quotes" and: colons');
     expect(p.body).toBe("# Body\ntext");
+  });
+
+  it("renderSkillMarkdown round-trips a multi-line (block scalar) description", () => {
+    const desc = "Line one.\nLine two with: colon and \"quotes\".";
+    const p = parseSkillMarkdown(renderSkillMarkdown("multi", desc, "b"));
+    expect(p.description).toBe(desc);
   });
 });

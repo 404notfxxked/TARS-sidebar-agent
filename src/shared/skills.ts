@@ -45,16 +45,48 @@ export function parseSkillMarkdown(raw: string): ParsedSkill {
   if (close === -1) error("Frontmatter is not closed (missing closing ---)");
 
   // 最小 frontmatter 解析:顶层 `key: value` + 一层两空格缩进的嵌套 map
-  // (metadata)。值去成对单/双引号;空行与 # 注释跳过
+  // (metadata)+ 块标量(| 逐行保留 / > 折叠为空格,社区 skill 的多行
+  // description 常用)。值去成对单/双引号;空行与 # 注释跳过
+  const fmLines = lines.slice(0, close);
   const map = new Map<string, string | Map<string, string>>();
   let nested: { key: string; map: Map<string, string> } | null = null;
-  for (const line of lines.slice(0, close)) {
+  for (let i = 0; i < fmLines.length; i++) {
+    const line = fmLines[i];
     if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    const indented = /^[ \t]+/.test(line);
     const kv = /^[ \t]*([^:]+):(?:[ \t]*(.*))?$/.exec(line);
     if (!kv) continue; // 不认识的行跳过,不做严格 YAML 校验
     const key = kv[1].trim();
-    const value = unquote((kv[2] ?? "").trim());
+    const rawValue = (kv[2] ?? "").trim();
+
+    // 块标量:`key: |` / `>`(可带 chomping +- )。收集缩进比 key 深的
+    // 后续行;遇到同级/更浅的非空行(下一个顶层键)即止。
+    // chomping 简化:一律 trimEnd(尾部空行对 description 无意义)
+    const block = /^([|>])[+-]?$/.exec(rawValue);
+    if (block) {
+      const keyIndent = line.length - line.trimStart().length;
+      const parts: string[] = [];
+      let blockIndent = -1;
+      let j = i + 1;
+      for (; j < fmLines.length; j++) {
+        const l = fmLines[j];
+        if (!l.trim()) {
+          if (blockIndent >= 0) parts.push(""); // 块内空行保留;块开始前的忽略
+          continue;
+        }
+        const indent = l.length - l.trimStart().length;
+        if (indent <= keyIndent) break;
+        if (blockIndent < 0) blockIndent = indent;
+        parts.push(l.slice(blockIndent));
+      }
+      i = j - 1;
+      const text = block[1] === "|" ? parts.join("\n") : foldLines(parts);
+      nested = null;
+      map.set(key, text.replace(/\s+$/, ""));
+      continue;
+    }
+
+    const indented = /^[ \t]+/.test(line);
+    const value = unquote(rawValue);
     if (indented) {
       if (nested) nested.map.set(key, value);
       continue;
@@ -94,12 +126,30 @@ export function parseSkillMarkdown(raw: string): ParsedSkill {
   return { name, description, body };
 }
 
+/** 折叠块标量(`>`):同一「段落」的连续行以空格连接,空行 = 段落换行 */
+function foldLines(parts: string[]): string {
+  const paras: string[] = [];
+  let run: string[] = [];
+  const flush = () => {
+    if (run.length > 0) {
+      paras.push(run.join(" "));
+      run = [];
+    }
+  };
+  for (const p of parts) {
+    if (!p) flush();
+    else run.push(p);
+  }
+  flush();
+  return paras.join("\n");
+}
+
 function unquote(v: string): string {
   if (v.length >= 2) {
     const q = v[0];
     if (q === '"' && v.endsWith(q)) {
-      // 双引号值做反转义(renderSkillMarkdown 写入时转义了 \ 和 ")
-      return v.slice(1, -1).replace(/\\(.)/g, "$1");
+      // 双引号值做反转义(renderSkillMarkdown 写入时转义了 \、" 与换行)
+      return v.slice(1, -1).replace(/\\(.)/g, (_, c) => (c === "n" ? "\n" : c));
     }
     if (q === "'" && v.endsWith(q)) return v.slice(1, -1);
   }
@@ -136,14 +186,17 @@ export function renderSkillBlock(name: string, body: string): string {
   ].join("\n");
 }
 
-/** 行 → 可编辑的 SKILL.md 原文(技能页「编辑」用;description 加引号防
- *  冒号/引号破坏 frontmatter 结构,再解析时原值还原) */
+/** 行 → 可编辑的 SKILL.md 原文(技能页「编辑」用;description 加引号并
+ *  转义 \、" 与换行(多行 description 来自块标量),再解析时原值还原) */
 export function renderSkillMarkdown(
   name: string,
   description: string,
   body: string,
 ): string {
-  const desc = `"${description.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const desc = `"${description
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")}"`;
   return ["---", `name: ${name}`, `description: ${desc}`, "---", "", body, ""].join(
     "\n",
   );
