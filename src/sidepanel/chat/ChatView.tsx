@@ -738,7 +738,7 @@ export default function ChatView({
           e.preventDefault();
           submit();
         }}
-        className="mx-3 mb-3 rounded-xl bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
+        className="relative mx-3 mb-3 rounded-xl bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
       >
         {pendingImages.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3.5 pt-2">
