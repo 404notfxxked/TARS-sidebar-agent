@@ -97,6 +97,10 @@ export default function ChatView({
   const [memorySaved, setMemorySaved] = useState(0);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
+  /** 待答复的写操作确认请求:非空 = 输入区上方弹确认卡(拒绝/超时由后台兜底) */
+  const [confirmReq, setConfirmReq] = useState<
+    Extract<AgentEvent, { type: typeof MSG.AGENT_CONFIRM_REQUEST }> | null
+  >(null);
   const [currentSession, setCurrentSession] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const sessionRef = useRef("");
@@ -185,6 +189,9 @@ export default function ChatView({
           run.onToolCall(evt);
           setStatus("thinking");
           break;
+        case MSG.AGENT_CONFIRM_REQUEST:
+          setConfirmReq(evt);
+          break;
         case MSG.AGENT_TOOL_RESULT:
           run.onToolResult(evt);
           // 记忆落库轻提示:成功的非重复保存累计,回复尾渲染「已写入 N 条」
@@ -196,6 +203,7 @@ export default function ChatView({
         case MSG.AGENT_DONE:
           run.onSettled();
           setStatus("idle");
+          setConfirmReq(null); // 确认卡随 run 收口清掉(超时拒绝后台已兜底)
           // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示
           if (evt.reason === "max-turns") {
             setMessages((ms) => [
@@ -213,6 +221,7 @@ export default function ChatView({
           // 错误详情由后台日志记录,面板只负责呈现(独立错误样式,不走 markdown)
           run.onSettled();
           setStatus("idle");
+          setConfirmReq(null);
           setMessages((ms) => [
             ...ms,
             {
@@ -250,6 +259,7 @@ export default function ChatView({
       portRef.current = null;
       run.onPortDisconnected();
       setStatus("idle");
+      setConfirmReq(null);
     });
 
     return port;
@@ -380,6 +390,36 @@ export default function ChatView({
       sessionId: sessionRef.current,
     });
   };
+
+  // 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)
+  const answerConfirm = (approved: boolean) => {
+    if (!confirmReq) return;
+    log.info("chat", "confirm answered", { approved, name: confirmReq.name });
+    connect().postMessage({
+      type: MSG.CONFIRM_RESPONSE,
+      requestId: confirmReq.requestId,
+      approved,
+    });
+    setConfirmReq(null);
+  };
+
+  // 面板可见性上报:任务完成通知以「面板是否不可见」为是否打扰的判据。
+  // 走 ref 读端口(重连后仍指向最新),监听只注册一次
+  useEffect(() => {
+    const report = () => {
+      try {
+        portRef.current?.postMessage({
+          type: MSG.PANEL_VISIBILITY,
+          hidden: document.visibilityState === "hidden",
+        });
+      } catch {
+        /* 端口已断开,无需上报 */
+      }
+    };
+    report();
+    document.addEventListener("visibilitychange", report);
+    return () => document.removeEventListener("visibilitychange", report);
+  }, []);
 
   // 开始新对话:只清本地视图。旧会话原样留在历史列表(多会话语义,
   // 不再通知后台删除);下次提交才会生成新的会话 id
@@ -690,6 +730,9 @@ export default function ChatView({
         )}
       </div>
 
+      {/* 写操作确认卡:后台在执行点击/填写前停下等答复;展示目标页与写入内容 */}
+      {confirmReq && <ConfirmCard req={confirmReq} onAnswer={answerConfirm} />}
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -938,5 +981,106 @@ function EmptyState() {
         {t("chat.emptySub")}
       </p>
     </div>
+  );
+}
+
+/** 写操作确认卡:工具名 + 目标页 + 参数摘要(写入内容/定位/是否回车提交),
+ *  给用户足够信息做「允许 / 拒绝」决定;视觉沿用 combo-pop 浮层语言 */
+function ConfirmCard({
+  req,
+  onAnswer,
+}: {
+  req: Extract<AgentEvent, { type: typeof MSG.AGENT_CONFIRM_REQUEST }>;
+  onAnswer: (approved: boolean) => void;
+}) {
+  const args = (req.args ?? {}) as {
+    selector?: string;
+    text?: string;
+    pressEnterAfter?: boolean;
+  };
+  const host = (() => {
+    try {
+      return req.tabUrl ? new URL(req.tabUrl).hostname : "";
+    } catch {
+      return "";
+    }
+  })();
+  const targetLabel = req.tabTitle
+    ? host
+      ? `${req.tabTitle}（${host}）`
+      : req.tabTitle
+    : host;
+  const isFill = req.name === "fill_input";
+  const fillText =
+    isFill && typeof args.text === "string" ? args.text.slice(0, 80) : "";
+  return (
+    <div
+      role="alertdialog"
+      aria-label={t("chat.confirmTitle")}
+      className="mx-3 mb-2 rounded-xl bg-surface-container-high p-3 shadow-2"
+    >
+      <p className="flex items-center gap-1.5 text-[13px] font-medium text-on-surface">
+        <ConfirmIcon />
+        {req.displayName || req.name} · {t("chat.confirmTitle")}
+      </p>
+      {targetLabel && (
+        <p className="mt-1 truncate text-[11.5px] text-on-surface-variant">
+          {t("chat.confirmTarget", { title: targetLabel })}
+        </p>
+      )}
+      {fillText && (
+        <p className="mt-1 break-all text-[11.5px] text-on-surface-variant">
+          {t("chat.confirmFillText", { text: fillText })}
+          {args.text && args.text.length > 80 ? "…" : ""}
+        </p>
+      )}
+      {isFill && args.pressEnterAfter && (
+        <p className="mt-1 text-[11.5px] text-error">
+          {t("chat.confirmSubmitHint")}
+        </p>
+      )}
+      {typeof args.selector === "string" && args.selector && (
+        <p className="mt-1 truncate font-mono text-[11px] text-on-surface-variant">
+          {t("chat.confirmSelectorLabel", { selector: args.selector })}
+        </p>
+      )}
+      <div className="mt-2.5 flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => onAnswer(false)}
+          aria-label={t("chat.confirmDeny")}
+          className="btn-text"
+        >
+          {t("chat.confirmDeny")}
+        </button>
+        <button
+          type="button"
+          onClick={() => onAnswer(true)}
+          aria-label={t("chat.confirmAllow")}
+          className="icon-btn-filled ml-2 h-8 px-3 text-[12px] font-medium leading-none"
+        >
+          {t("chat.confirmAllow")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path d="M8 1.8 13.5 4v4.2c0 3.1-2.3 5.3-5.5 6.2-3.2-.9-5.5-3.1-5.5-6.2V4L8 1.8Z" />
+      <path d="m5.6 8 1.7 1.7 3.1-3.3" strokeLinecap="round" />
+    </svg>
   );
 }

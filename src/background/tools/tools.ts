@@ -2,7 +2,10 @@
 
 import { callContentTool, getActiveTabId } from "../../shared/contentTools";
 import { callOffscreenTool, ensureOffscreenDocument } from "../../shared/docBridge";
-import { getToolExecutionContext } from "./toolContext";
+import {
+  getToolExecutionContext,
+  pickTargetTabId,
+} from "./toolContext";
 import { runWebSearch, type WebSearchArgs, type WebSearchResult } from "../web/webSearch";
 import { runWebFetch, type WebFetchArgs, type WebFetchResult } from "../web/webFetch";
 import {
@@ -40,11 +43,18 @@ export function toProviderToolSchemas(): ToolSchema[] {
   return registry;
 }
 
-/** 解析目标 tabId:参数指定 > run 作用域(提交时捕获) > 实时激活 tab */
+/** 解析目标 tabId:参数指定 > 本 run 最近操作的 tab > 提交时捕获 > 实时激活;
+ *  命中的 tab 记为「最近操作」,同页连续操作省掉重复传 tabId */
 async function resolveTargetTabId(args?: { tabId?: number }): Promise<number> {
   const ctx = getToolExecutionContext();
-  const tabId = args?.tabId ?? ctx?.tabId ?? (await getActiveTabId());
+  const tabId = pickTargetTabId(
+    args?.tabId,
+    ctx?.lastOperatedTabId,
+    ctx?.tabId,
+    await getActiveTabId(),
+  );
   if (tabId === null) throw new Error("no active tab");
+  if (ctx) ctx.lastOperatedTabId = tabId;
   return tabId;
 }
 
@@ -128,7 +138,7 @@ registerTool<
         type: "boolean",
         description: "Force re-extract the page snapshot; use only when you suspect the page changed (SPA route switch, post-click refresh)",
       },
-      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
     },
   },
   execute: (args) =>
@@ -173,7 +183,7 @@ registerTool<
         type: "boolean",
         description: "Force re-extract the page snapshot; use only when you suspect the page changed",
       },
-      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
     },
     required: ["query"],
   },
@@ -216,7 +226,7 @@ registerTool<
         type: "boolean",
         description: "Force re-extract the page snapshot; use only when you suspect the page changed",
       },
-      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
     },
   },
   execute: (args) =>
@@ -331,7 +341,7 @@ registerTool<
         description: "Filter by element type",
       },
       limit: { type: "number", description: "Max elements returned; default 20, cap 50" },
-      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
     },
   },
   execute: async (args) => {
@@ -356,7 +366,7 @@ registerTool<{ selector: string; tabId?: number }, { clicked?: string }>({
     type: "object",
     properties: {
       selector: { type: "string", description: "Target element's absolute CSS path, from find_elements output" },
-      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
     },
     required: ["selector"],
   },
@@ -382,7 +392,7 @@ registerTool<
       selector: { type: "string", description: "Input control's absolute CSS path, from find_elements output" },
       text: { type: "string", description: "Text to write; for select, the option value or visible text to select" },
       pressEnterAfter: { type: "boolean", description: "Append an Enter keypress (keyCode=13) after writing, handy for submitting search boxes; default false" },
-      tabId: { type: "number", description: "Target tab id; omit for the currently active tab" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
     },
     required: ["selector", "text"],
   },

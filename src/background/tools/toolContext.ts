@@ -8,6 +8,25 @@ export interface ToolExecutionContext {
   sessionId: string;
   /** 本次 run 的取消信号(agent 被中止时 abort);联网工具用于中断在途请求 */
   signal?: AbortSignal;
+  /** 本 run 内最近一次被页面工具操作过的 tab(读/写都算):
+   *  连续多步操作同一页时省掉重复传 tabId */
+  lastOperatedTabId?: number;
+}
+
+/**
+ * 目标 tabId 的回退链(纯函数,单测覆盖):
+ * 参数显式指定 > 本 run 最近操作的 tab > 提交时捕获的 tab > 实时激活 tab。
+ * 全部落空返回 null(调用方抛「no active tab」)。
+ */
+export function pickTargetTabId(
+  argsTabId: number | undefined,
+  lastOperatedTabId: number | undefined,
+  submitTabId: number | undefined,
+  activeTabId: number | null,
+): number | null {
+  const picked =
+    argsTabId ?? lastOperatedTabId ?? submitTabId ?? activeTabId ?? null;
+  return picked;
 }
 
 let _ctx: ToolExecutionContext | null = null;

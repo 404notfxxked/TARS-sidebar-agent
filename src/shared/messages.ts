@@ -29,6 +29,8 @@ export const MSG = {
   SKILL_DELETE: 'skill_delete',
   MCP_TEST: 'mcp_test',
   MCP_TOOLS: 'mcp_tools',
+  PANEL_VISIBILITY: 'panel_visibility',
+  CONFIRM_RESPONSE: 'confirm_response',
 
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
@@ -36,6 +38,7 @@ export const MSG = {
   AGENT_REASONING: 'agent_reasoning',
   AGENT_TOOL_CALL: 'agent_tool_call',
   AGENT_TOOL_RESULT: 'agent_tool_result',
+  AGENT_CONFIRM_REQUEST: 'agent_confirm_request',
   AGENT_MESSAGE: 'agent_message',
   AGENT_DONE: 'agent_done',
   AGENT_ERROR: 'agent_error',
@@ -86,6 +89,8 @@ export interface CancelRunPayload {
 export type SideToBg =
   | { type: typeof MSG.USER_MESSAGE; payload: UserMessagePayload }
   | { type: typeof MSG.CANCEL_RUN; sessionId: string }
+  | { type: typeof MSG.PANEL_VISIBILITY; hidden: boolean }
+  | { type: typeof MSG.CONFIRM_RESPONSE; requestId: string; approved: boolean }
   | { type: typeof MSG.LOAD_HISTORY; sessionId: string }
   | { type: typeof MSG.LIST_SESSIONS }
   | { type: typeof MSG.DELETE_SESSION; sessionId: string }
@@ -185,6 +190,18 @@ export type AgentEvent =
       name: string;
       ok: boolean;
       result: unknown;
+    }
+  /** 写操作确认门:SW 在执行 click_element / fill_input 前发出,
+   *  面板弹确认卡,用户答复后经 CONFIRM_RESPONSE 回来;超时视为拒绝 */
+  | {
+      type: typeof MSG.AGENT_CONFIRM_REQUEST;
+      requestId: string;
+      name: string;
+      displayName?: string;
+      args?: unknown;
+      /** 目标标签页(确认卡展示「操作将落在哪个页面」);取不到时缺省 */
+      tabTitle?: string;
+      tabUrl?: string;
     }
   | { type: typeof MSG.AGENT_MESSAGE; delta: string }
   /** reason 缺省 = 兜底/取消路径发的 DONE(如 index.ts 的 finally);"max-turns" = 步数耗尽后收尾 */

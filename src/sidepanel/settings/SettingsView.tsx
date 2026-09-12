@@ -18,6 +18,7 @@ import WebSection from "./WebSection";
 import McpSection from "./McpSection";
 import MemorySection from "./MemorySection";
 import SkillSection from "./SkillSection";
+import SecuritySection from "./SecuritySection";
 import CompactionSection from "./CompactionSection";
 import DataSection from "./DataSection";
 import DiagnosticsSection from "./DiagnosticsSection";
@@ -130,6 +131,13 @@ export default function SettingsView({
             <SkillSection
               initialOn={config.skills}
               onOpenSkills={onOpenSkills}
+              run={run}
+            />
+
+            {/* ── 安全:写操作确认门 + 任务完成通知 ── */}
+            <SecuritySection
+              initialConfirmActions={config.confirmActions}
+              initialNotifyDone={config.notifyDone}
               run={run}
             />
 

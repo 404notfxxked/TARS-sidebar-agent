@@ -62,6 +62,13 @@ export const enUS = {
     memorySavedHint: "{n} memories were saved this turn; view or edit them",
     memorySavedLabel: "{n} memories saved · View/Edit",
     compactionDivider: "Conversation compacted",
+    confirmTitle: "wants to perform a page action",
+    confirmAllow: "Allow",
+    confirmDeny: "Deny",
+    confirmTarget: "Target page: {title}",
+    confirmFillText: "Will type: {text}",
+    confirmSubmitHint: "Presses Enter to submit after typing",
+    confirmSelectorLabel: "Target element: {selector}",
     trace: {
       thinking: "Thinking",
       reasoning: "Reasoning",
@@ -168,6 +175,24 @@ export const enUS = {
     menuHint: "↑↓ to select · Enter to insert · Esc to close",
     disabledHint: "Skill /{name} is disabled; enable it in Settings → Skills",
   },
+  // Security section: page-action confirmation gate + completion notifications.
+  // (Notification copy lives here too; the service worker picks the dict by locale.)
+  security: {
+    confirmActions: "Confirm page actions",
+    confirmActionsHint:
+      "Before clicking or typing on a web page, TARS shows a confirmation card and waits for your decision. This is the recommended default.",
+    confirmActionsDetail:
+      "Covers the two write actions, click_element and fill_input: the card shows the target page and what will be typed, and no reply within 2 minutes counts as a denial. Web content can contain injection-style instructions, so this gate is the final human review; turn it off only when you trust the scenario — TARS will then act on pages immediately.",
+    notifyDone: "Task completion notifications",
+    notifyDoneHint:
+      "When the panel is not visible (window minimized or switched away), a system notification is posted when a task finishes or fails; click it to return to the browser window.",
+  },
+  notify: {
+    doneTitle: "TARS task finished",
+    doneBody: "\"{title}\" has finished. Click to return to the browser",
+    failTitle: "TARS task failed",
+    failBody: "\"{title}\" did not finish: ",
+  },
   settings: {
     title: "Settings",
     saved: "Saved",
@@ -177,6 +202,7 @@ export const enUS = {
     sectionWeb: "Web search",
     sectionMcp: "MCP tools",
     sectionMemory: "Memory",
+    sectionSecurity: "Security",
     sectionCompaction: "Context compaction",
     sectionData: "History data",
     sectionDiag: "Diagnostics",

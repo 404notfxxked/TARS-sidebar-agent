@@ -13,6 +13,9 @@ import {
   installGlobalErrorHook,
 } from "../shared/logger";
 import { runAgentLoop, type AgentPort } from "./agent/agent";
+import { resolveConfirmation } from "./agent/confirmations";
+import { zhCN } from "../shared/i18n/locales/zh-CN";
+import { enUS } from "../shared/i18n/locales/en-US";
 import {
   listServerTools,
   testServer,
@@ -34,6 +37,7 @@ import {
 } from "./skills/skillStore";
 import { renderSkillMarkdown } from "../shared/skills";
 import type { SkillInfo } from "../shared/messages";
+import { loadConfig } from "../shared/configStore";
 import {
   clearAllSessions,
   deleteSession,
@@ -115,6 +119,66 @@ interface RunState {
 // 需跨唤醒存活的数据(会话历史)走 chrome.storage.session,不在这里。
 const activeRuns = new Map<string, RunState>();
 
+// 面板可见性(单面板实例,模块级标记即可):任务完成通知据此判断
+// 「用户是否正看着」。面板不可见 = 收到通知才有意义
+let panelHidden = false;
+
+/** 通知正文里的任务名:用户首条消息截断 */
+function taskLabel(text: string): string {
+  const line = text.trim().split("\n")[0] ?? "";
+  return line.length > 48 ? `${line.slice(0, 48)}…` : line;
+}
+
+/**
+ * run 结束通知:开关开着 + 面板不可见(或浏览器窗口失焦)才发;
+ * 用户取消的 run 不打扰。文案按面板语言现取,点按通知拉回浏览器窗口。
+ */
+async function maybeNotifyRunEnd(opts: {
+  aborted: boolean;
+  error: string;
+  text: string;
+}): Promise<void> {
+  try {
+    if (opts.aborted) return;
+    const config = await loadConfig();
+    if (!config.notifyDone) return;
+    if (!panelHidden) {
+      // 面板自报可见,再核对窗口焦点:面板文档在窗口失焦时仍算 visible
+      const win = await chrome.windows.getLastFocused().catch(() => null);
+      if (win?.focused) return;
+    }
+    const dict = config.locale === "en-US" ? enUS : zhCN;
+    const title = opts.error ? dict.notify.failTitle : dict.notify.doneTitle;
+    const label = taskLabel(opts.text) || "…";
+    const message = opts.error
+      ? `${dict.notify.failBody}${label} ${opts.error.slice(0, 120)}`
+      : dict.notify.doneBody.replace("{title}", label);
+    await chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/icon-128.png",
+      title,
+      message,
+    });
+  } catch (err) {
+    log.warn("notify", "run-end notification failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+// 点通知 → 把浏览器窗口拉回前台(具体落点由 Chrome 决定)
+chrome.notifications.onClicked.addListener(() => {
+  chrome.windows
+    .getAll({ windowTypes: ["normal"] })
+    .then((wins) => {
+      const win = wins.find((w) => w.id !== undefined);
+      if (win?.id !== undefined) {
+        chrome.windows.update(win.id, { focused: true }).catch(() => undefined);
+      }
+    })
+    .catch(() => undefined);
+});
+
 // MV3 事件驱动:onConnect 触发时 SW 被唤醒并分发事件
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name !== PORT_NAME) return;
@@ -150,10 +214,19 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           tabId: msg.payload.tabId,
           text: msg.payload.text,
         });
+        // 观察层:顺带记录 run 是否以错误收场,供结束通知区分文案
+        let runError = "";
+        const agentPort = wrapPort(port, sessionId);
+        const observed: AgentPort = {
+          postMessage: (event) => {
+            if (event.type === MSG.AGENT_ERROR) runError = event.error;
+            agentPort.postMessage(event);
+          },
+        };
         try {
           await runAgentLoop(
             { ...msg.payload, sessionId },
-            wrapPort(port, sessionId),
+            observed,
             run.abort.signal,
           );
         } finally {
@@ -165,6 +238,11 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           } catch {
             /* 端口已断开,前端反正也收不到 */
           }
+          void maybeNotifyRunEnd({
+            aborted: run.abort.signal.aborted,
+            error: runError,
+            text: msg.payload.text,
+          });
         }
         break;
       }
@@ -175,6 +253,16 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           found: run !== undefined,
         });
         run?.abort.abort();
+        break;
+      }
+      case MSG.PANEL_VISIBILITY: {
+        // 面板可见性:任务完成通知的「是否打扰」判据(单面板,全局标记)
+        panelHidden = msg.hidden;
+        break;
+      }
+      case MSG.CONFIRM_RESPONSE: {
+        // 确认卡的答复;未知/过期 requestId 在确认门内静默忽略
+        resolveConfirmation(msg.requestId, msg.approved);
         break;
       }
       case MSG.LOAD_HISTORY: {

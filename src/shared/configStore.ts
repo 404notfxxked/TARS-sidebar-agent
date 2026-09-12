@@ -105,6 +105,11 @@ export interface AppConfig {
   /** 技能总开关:关 = / 调用不生效(菜单与技能页管理不受影响);
    *  缺省 = 开。技能是用户手动安装的本地指令文本,无网络无外传,空库零成本 */
   skills: boolean;
+  /** 写操作确认门:开 = click_element / fill_input 执行前弹面板确认卡,
+   *  超时未答复按拒绝处理;缺省 = 开(安全默认, 宁可多点一次) */
+  confirmActions: boolean;
+  /** 任务完成通知:开 = run 结束且面板不可见时发系统通知;缺省 = 开 */
+  notifyDone: boolean;
   /** 搜索服务配置;开关开着但当前服务 apiKey 为空时 web_search 退回免 Key 抓取 */
   search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
@@ -172,6 +177,8 @@ export async function loadConfig(): Promise<AppConfig> {
     "webSearch",
     "memory",
     "skills",
+    "confirmActions",
+    "notifyDone",
     "search",
     "historyRetention",
     "compact",
@@ -208,6 +215,10 @@ export async function loadConfig(): Promise<AppConfig> {
     memory: l.memory !== false,
     // 技能缺省开启(纯本地文本,空库零成本;关 = / 调用不生效)
     skills: l.skills !== false,
+    // 写操作确认缺省开启:浏览器 agent 的写动作(点按/填写)默认逐次过目
+    confirmActions: l.confirmActions !== false,
+    // 任务完成通知缺省开启(仅面板不可见时才发,不打扰正在看面板的用户)
+    notifyDone: l.notifyDone !== false,
     search: normalizeSearch(l.search),
     // 历史保留天数:与 sessionHistory.retentionDays 的缺省保持一致(7 天)
     historyRetention:
@@ -317,6 +328,8 @@ export async function savePrefs(
       | "webSearch"
       | "memory"
       | "skills"
+      | "confirmActions"
+      | "notifyDone"
       | "search"
       | "historyRetention"
       | "compact"

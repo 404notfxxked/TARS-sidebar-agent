@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TARS — 侧栏智能助手",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "住在浏览器侧栏的 agent：读你正在看的页面，替你联网查，替你点按填写。BYOK，数据只在你与模型端点之间。",
   "permissions": [
     "sidePanel",
@@ -9,7 +9,8 @@
     "activeTab",
     "scripting",
     "storage",
-    "offscreen"
+    "offscreen",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
