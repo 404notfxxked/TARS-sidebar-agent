@@ -90,6 +90,7 @@ export const enUS = {
     memorySavedHint: "{n} memories were saved this turn; view or edit them",
     memorySavedLabel: "{n} memories saved · View/Edit",
     compactionDivider: "Conversation compacted",
+    jumpLatest: "Jump to latest",
     confirmTitle: "wants to perform a page action",
     confirmAllow: "Allow",
     confirmDeny: "Deny",

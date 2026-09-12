@@ -85,6 +85,7 @@ export const zhCN = {
     memorySavedHint: "本轮已写入 {n} 条记忆，查看或编辑",
     memorySavedLabel: "已写入 {n} 条记忆 · 查看/编辑",
     compactionDivider: "会话已压缩",
+    jumpLatest: "回到最新",
     confirmTitle: "请求执行页面操作",
     confirmAllow: "允许执行",
     confirmDeny: "拒绝",

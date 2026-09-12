@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import {
   MSG,
@@ -77,6 +78,7 @@ export default function ChatView({
   resumeSessionId,
   onResumeDone,
   onActiveSessionChange,
+  chatInputRef,
 }: {
   onOpenSettings: () => void;
   onOpenSessions: () => void;
@@ -89,6 +91,8 @@ export default function ChatView({
   onResumeDone: () => void;
   /** 当前会话变化时回传 App,历史列表据此高亮「当前」 */
   onActiveSessionChange?: (sessionId: string) => void;
+  /** 输入框 ref:App 持有,悬浮层关闭/一轮收口后把焦点还给输入框 */
+  chatInputRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   // 当前会话的压缩点(存在 = 更早的历史已压成摘要,列表里渲染分隔条)
@@ -365,22 +369,57 @@ export default function ChatView({
 
   // 近底跟随:流式新内容只在用户本就位于底部附近时才拽底;
   // 上翻回看即暂停(scroll 事件解除 pinned),滚回底部自动恢复跟随。
-  // 展开收起思考行/工具行不再经过 runSegs,不会触发这里
+  // 展开收起思考行/工具行不再经过 runSegs,不会触发这里。
+  // atBottom 是同阈值的渲染态:离开底部时展示「回到最新」悬浮钮
   const pinnedRef = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
+  // 「回到最新」点击后的跟随意图:平滑滚动途中内容继续增长时,平滑重定标到
+  // 新底而不是停在点击时刻的旧底;到底即清,用户主动上滚(scrollTop 回退)也清
+  const followIntentRef = useRef(0);
+  const lastTopRef = useRef(0);
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     const onScroll = () => {
+      const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      if (el.scrollTop < lastTopRef.current) followIntentRef.current = 0;
+      lastTopRef.current = el.scrollTop;
+      if (near) followIntentRef.current = 0;
       pinnedRef.current =
-        el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        near || Date.now() - followIntentRef.current < 2000;
+      setAtBottom(near);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
   useEffect(() => {
     const el = listRef.current;
-    if (el && pinnedRef.current) el.scrollTop = el.scrollHeight;
+    if (!el || !pinnedRef.current) return;
+    // 跟随意图窗口内(刚点过「回到最新」)平滑重定标,日常流式仍直接贴底
+    if (Date.now() - followIntentRef.current < 2000) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages, runSegs, status]);
+
+  // 「回到最新」:平滑滚回底部,滚动途中内容增长由跟随意图接手
+  const scrollToLatest = () => {
+    const el = listRef.current;
+    if (!el) return;
+    followIntentRef.current = Date.now();
+    pinnedRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+
+  // 一轮收口后若焦点已落在 body(停止钮卸载、悬浮层刚关等),把焦点还给
+  // 输入框:下一问是收口后的高频动作,不该让用户再点一次输入框。
+  // 放在渲染后执行,才能看到停止钮卸载后的最终焦点归属
+  useEffect(() => {
+    if (status === "idle" && document.activeElement === document.body) {
+      chatInputRef.current?.focus();
+    }
+  }, [status, chatInputRef]);
 
   const cancel = () => {
     log.info("chat", "cancel clicked", { sessionId: sessionRef.current });
@@ -480,16 +519,15 @@ export default function ChatView({
   };
 
   // ---- 输入区:textarea 随内容自增高(封顶约 5 行,超出内部滚动) ----
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   useLayoutEffect(() => {
-    const el = inputRef.current;
+    const el = chatInputRef.current;
     if (!el) return;
     el.style.height = "auto"; // 先收回再按内容撑开,才能正确收缩
     const h = Math.min(el.scrollHeight, 116);
     el.style.height = `${h}px`;
     // 未到上限不给滚动条,避免 height 追赶 scrollHeight 一帧内出现的幽灵滚动条
     el.style.overflowY = el.scrollHeight > 116 ? "auto" : "hidden";
-  }, [input]);
+  }, [input, chatInputRef]);
 
   const flashHint = (msg: string) => {
     setAttachHint(msg);
@@ -655,10 +693,12 @@ export default function ChatView({
         </button>
       </header>
 
-      <div
-        ref={listRef}
-        className="flex-1 space-y-3 overflow-y-auto px-4 py-2 pb-1"
-      >
+      {/* 消息列表 + 悬浮层锚点:滚离底部时右下角浮现「回到最新」 */}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={listRef}
+          className="h-full space-y-3 overflow-y-auto px-4 pt-2 pb-8"
+        >
         {(() => {
           const visible = messages.filter(
             (m) => m.sessionId === currentSession,
@@ -668,7 +708,7 @@ export default function ChatView({
               <EmptyState
                 onPick={(text) => {
                   setInput(text);
-                  inputRef.current?.focus();
+                  chatInputRef.current?.focus();
                 }}
               />
             );
@@ -736,6 +776,34 @@ export default function ChatView({
             <ArchiveIcon /> {t("chat.memorySavedLabel", { n: memorySaved })}
           </button>
         )}
+        {/* 回合收尾标记(∎ tombstone):静止且有内容时才出现——流式中的活动
+            信号由 ticker/光标承担,空态有招呼语,都不需要它。配合底部大
+            留白给答案一个明确的「全文完」呼吸点,而非贴着输入条戛然而止 */}
+        {status === "idle" &&
+          messages.some((m) => m.sessionId === currentSession) && (
+            <div className="msg-in flex justify-center pt-1" aria-hidden="true">
+              <EndMark />
+            </div>
+          )}
+        </div>
+        {(() => {
+          // 上翻回看后流式仍在推进/内容很长时,给一个单跳回底的入口
+          const hasContent =
+            messages.some((m) => m.sessionId === currentSession) ||
+            runSegs.length > 0;
+          if (atBottom || !hasContent) return null;
+          return (
+            <button
+              type="button"
+              onClick={scrollToLatest}
+              aria-label={t("chat.jumpLatest")}
+              title={t("chat.jumpLatest")}
+              className="jump-latest msg-in"
+            >
+              <ArrowDownIcon />
+            </button>
+          );
+        })()}
       </div>
 
       {/* 写操作确认卡:后台在执行点击/填写前停下等答复;展示目标页与写入内容 */}
@@ -788,8 +856,9 @@ export default function ChatView({
         )}
         <div className="px-3.5 pt-2">
           <textarea
-            ref={inputRef}
+            ref={chatInputRef}
             rows={1}
+            autoFocus
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
@@ -837,8 +906,9 @@ export default function ChatView({
             }}
             placeholder={t("chat.placeholder")}
             aria-label={t("chat.askInput")}
-            disabled={status !== "idle"}
-            className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant disabled:opacity-50"
+            // 运行中不禁用:等待期间预打下一问是高频动作,禁用会把焦点丢给
+            // body;发送由按钮/submit() 的 status 门控拦住
+            className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant"
           />
         </div>
         <div className="flex items-center gap-2 px-2 pb-2 pt-0.5">
@@ -1068,8 +1138,36 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   );
 }
 
-/** 换一批:双箭头循环(rotate/refresh 语义) */
-function ShuffleIcon() {
+/** 回合收尾记号:细线 + 圆点(「——·——」的排版变体)。纯装饰(aria-hidden) */
+function EndMark() {
+  return (
+    <span className="end-mark" aria-hidden="true">
+      <span className="end-mark-dot" />
+    </span>
+  );
+}
+
+/** 回到最新:实心下箭头(滚回列表底部) */
+function ArrowDownIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 2.8v10.4" />
+      <path d="m3.6 9 4.4 4.2L12.4 9" />
+    </svg>
+  );
+}
+
+/** 换一批:双箭头循环(rotate/refresh 语义) */function ShuffleIcon() {
   return (
     <svg
       width="14"

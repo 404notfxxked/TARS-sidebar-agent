@@ -2,7 +2,7 @@
 // 不用条件挂载(旧版做法)的原因:卸载 ChatView 会丢掉对话内状态 ——
 // 「打开面板总是新会话」的新语义下,没有可自动恢复的历史可拉,丢就是真丢。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ChatView from "./chat/ChatView";
 import SettingsView from "./settings/SettingsView";
 import SessionsView from "./sessions/SessionsView";
@@ -16,6 +16,8 @@ export default function App() {
   // 语言订阅:t() 非响应式,切换语言后靠这里触发整棵树重渲染
   useLocale();
   const [overlay, setOverlay] = useState<Overlay>(null);
+  // 输入框 ref 由这里持有:悬浮层收起后把焦点还给输入框,继续打字不用再点
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   /** 历史列表里选中的会话:交给常驻的 ChatView 打开,消费后清空。
    *  空串也是有效选择 = 「新对话」,所以用 null 表示「无待消费」 */
   const [resumeSessionId, setResumeSessionId] = useState<string | null>(null);
@@ -36,6 +38,15 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, [overlay]);
 
+  // 悬浮层收起 → 焦点回归输入框(返回钮已随页面卸载,焦点本来就丢了)
+  const prevOverlayRef = useRef<Overlay>(null);
+  useEffect(() => {
+    if (overlay === null && prevOverlayRef.current !== null) {
+      chatInputRef.current?.focus();
+    }
+    prevOverlayRef.current = overlay;
+  }, [overlay]);
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <ChatView
@@ -52,6 +63,7 @@ export default function App() {
         resumeSessionId={resumeSessionId}
         onResumeDone={() => setResumeSessionId(null)}
         onActiveSessionChange={setActiveSessionId}
+        chatInputRef={chatInputRef}
       />
       {overlay !== null && (
         // 必须自身是 flex 列:内页(设置/历史)根节点靠 flex-1 撑满,

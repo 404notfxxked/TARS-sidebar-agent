@@ -463,3 +463,54 @@
   height: 1px;
   background: var(--md-sys-color-outline-variant);
 }
+
+/* 「回到最新」悬浮钮:用户上翻回看后,右下角单跳回底。浮在消息列表上,
+   属悬浮件,可用阴影(shadow-2)与容器底色脱离列表平面 */
+.jump-latest {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+  box-shadow: var(--shadow-2);
+  cursor: pointer;
+  transition:
+    background 150ms var(--ease-emphasized),
+    color 150ms var(--ease-emphasized);
+}
+.jump-latest:hover {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container-highest));
+  color: var(--md-sys-color-on-surface);
+}
+.jump-latest:active {
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, var(--md-sys-color-surface-container-highest));
+}
+
+/* 回合收尾记号:细线 + 圆点(「——·——」的排版变体),与 ctx-divider /
+   memory-hint 的发丝线同一语言;仅在对话静止且有内容时渲染 */
+.end-mark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.end-mark::before,
+.end-mark::after {
+  content: "";
+  width: 32px;
+  height: 1px;
+  background: var(--md-sys-color-outline-variant);
+}
+.end-mark-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  /* 与两侧发丝线同色同族:outline-variant(更深的 on-surface-variant 视觉过重,已否) */
+  background: var(--md-sys-color-outline-variant);
+}
