@@ -28,3 +28,6 @@ yarn.lock
 # 本地项目记忆(路线图/决策笔记;README「路线图」指向它,不进仓库)
 /memory/
 /design/
+
+# 发版产物(dist 打包的安装 zip,见 memory/release-plan.md;锚定根目录)
+/tars-v*.zip
