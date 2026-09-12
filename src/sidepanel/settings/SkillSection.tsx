@@ -7,7 +7,7 @@ import { MSG, type SkillInfo } from "../../shared/messages";
 import { t } from "../../shared/i18n";
 import { skillReq } from "../clients/skillClient";
 import SwitchRow from "../ui/SwitchRow";
-import { SettingsSection } from "./parts";
+import { EntryRow, SettingsSection } from "./parts";
 
 export default function SkillSection({
   initialOn,
@@ -41,34 +41,16 @@ export default function SkillSection({
         hint={t("skills.hint")}
       />
       {skillsOn && (
-        <button
-          type="button"
-          onClick={onOpenSkills}
-          aria-label={t("skills.manage")}
-          className="-mx-1 flex w-full items-center justify-between rounded-md px-1 py-1.5 text-left transition-colors duration-150 hover:bg-on-surface/8"
-        >
-          <span className="min-w-0 truncate pr-2 text-[13px] text-on-surface">
-            {skills.length > 0
+        <EntryRow
+          ariaLabel={t("skills.manage")}
+          summary={
+            skills.length > 0
               ? t("skills.countLine", { n: skills.length })
-              : t("skills.emptyShort")}
-          </span>
-          <span className="flex shrink-0 items-center gap-0.5 text-[12.5px] font-medium text-primary">
-            {t("skills.manage")}
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m6 3.5 4.5 4.5L6 12.5" />
-            </svg>
-          </span>
-        </button>
+              : t("skills.emptyShort")
+          }
+          action={t("skills.manage")}
+          onClick={onOpenSkills}
+        />
       )}
     </SettingsSection>
   );

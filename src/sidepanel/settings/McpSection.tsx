@@ -123,7 +123,11 @@ export default function McpSection({
             </p>
           )}
           <div className="mt-2">
-            <button type="button" onClick={addServer} className="settings-btn">
+            <button
+              type="button"
+              onClick={addServer}
+              className="settings-btn tonal"
+            >
               {t("settings.addServer")}
             </button>
           </div>
@@ -366,7 +370,7 @@ function McpServerCard({
         </div>
       )}
 
-      <div className="mb-1 mt-2">
+      <div className="danger-divider mb-1">
         <button
           type="button"
           className={`model-row-action model-row-action-danger${

@@ -153,6 +153,7 @@
   }
   .trace-status {
     font-size: 11px;
+    font-feature-settings: "tnum";
     color: var(--md-sys-color-on-surface-variant);
   }
   .trace-row[data-status="error"] .trace-status {
@@ -350,7 +351,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    /* 工具链是机器语义(工具名/调用序列),mono 强化「执行轨迹」的辨识度 */
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px;
     color: var(--md-sys-color-on-surface-variant);
   }
 
@@ -380,6 +383,26 @@
   }
   .trace[data-open="true"] .trace-rows {
     border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  /* ---- 空态快捷提问 chip:胶囊 + 容器底,悬停加深一级 ---- */
+  .empty-chip {
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-surface-container-high);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--md-sys-color-on-surface-variant);
+    transition:
+      background 150ms var(--ease-emphasized),
+      color 150ms var(--ease-emphasized);
+  }
+  .empty-chip:hover {
+    background: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface);
+  }
+  .empty-chip:active {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, var(--md-sys-color-surface-container-highest));
   }
 }
 

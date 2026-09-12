@@ -5,7 +5,8 @@ import { useState, type ReactNode } from "react";
 import { t } from "../../shared/i18n";
 
 /** 分节:眉题 + 白卡。卡内子块节奏由 .settings-card > * + * 的 margin 管
- *  (契约 6,勿给子块另垫上下 padding)。首个分节 mt-3,其余 mt-4 */
+ *  (契约 6,勿给子块另垫上下 padding)。首个分节 mt-3,其余 mt-5
+ *  (分节之间多给一档呼吸,眉题才压得住卡) */
 export function SettingsSection({
   title,
   first = false,
@@ -17,7 +18,7 @@ export function SettingsSection({
 }) {
   return (
     <>
-      <h3 className={`settings-eyebrow mb-1.5 ${first ? "mt-3" : "mt-4"}`}>
+      <h3 className={`settings-eyebrow mb-1.5 ${first ? "mt-3" : "mt-5"}`}>
         {title}
       </h3>
       <div className="settings-card">{children}</div>
@@ -81,6 +82,51 @@ export function ExpandCard({
         <div className="model-row-body-inner">{children}</div>
       </div>
     </div>
+  );
+}
+
+/** 卡内导航入口行:左摘要 + 右主色动作,整行可点去对应整页。
+ *  悬停底色宽度 = 内容列(不出血):桌面指针不需要移动端的大色块靶心,
+ *  px-2 的内缩读作嵌套层级,悬停时色块也不与卡片圆角打架 */
+export function EntryRow({
+  summary,
+  action,
+  onClick,
+  ariaLabel,
+}: {
+  summary: string;
+  /** 右侧动作文案,如「管理记忆」 */
+  action: string;
+  onClick: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left transition-colors duration-150 hover:bg-on-surface/8"
+    >
+      <span className="min-w-0 truncate pr-2 text-[13px] text-on-surface">
+        {summary}
+      </span>
+      <span className="flex shrink-0 items-center gap-0.5 text-[12.5px] font-medium text-primary">
+        {action}
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 3.5 4.5 4.5L6 12.5" />
+        </svg>
+      </span>
+    </button>
   );
 }
 

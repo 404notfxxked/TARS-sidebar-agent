@@ -135,24 +135,25 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
         backLabel={t("skills.backToSettings")}
       />
 
-      {/* 添加区:按钮行 + 可展开的粘贴编辑器(文件导入回填到同一编辑器) */}
+      {/* 添加区:紧凑双钮(主动作 tonal + 次动作 outlined,左对齐不拉伸——
+          桌面指针不需要移动端动作条的半宽大靶心)+ 可展开的粘贴编辑器 */}
       <div className="px-3 pb-1 pt-1">
         {!adding ? (
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
                 setAdding(true);
                 setAddError(null);
               }}
-              className="btn-text flex-1"
+              className="settings-btn tonal"
             >
               {t("skills.add")}
             </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="btn-text flex-1"
+              className="settings-btn"
             >
               {t("skills.importFile")}
             </button>

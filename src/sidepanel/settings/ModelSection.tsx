@@ -142,7 +142,11 @@ export default function ModelSection({
         <p className="field-hint">{t("settings.providerEmpty")}</p>
       )}
       <div className="mt-2">
-        <button type="button" onClick={addProvider} className="settings-btn">
+        <button
+          type="button"
+          onClick={addProvider}
+          className="settings-btn tonal"
+        >
           {t("settings.addProvider")}
         </button>
       </div>
@@ -529,7 +533,7 @@ function ProviderCard({
         )}
       </div>
 
-      <div className="mb-1 mt-2">
+      <div className="danger-divider mb-1">
         <button
           type="button"
           className={`model-row-action model-row-action-danger${

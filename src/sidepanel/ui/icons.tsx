@@ -41,3 +41,29 @@ export function ArchiveIcon() {
     </svg>
   );
 }
+
+/** TARS 品牌标(源:public/icons/icon.svg 的黑白分段气泡):
+ *  底板换 primary-container、气泡换 on-primary-container,分段镂空露底板色,
+ *  跟随重点色。空态等大面积品牌位用 */
+export function LogoMark({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 128 128" aria-hidden="true">
+      <rect
+        width="128"
+        height="128"
+        rx="28"
+        fill="var(--md-sys-color-primary-container)"
+      />
+      <path
+        d="M42 28h44a18 18 0 0 1 18 18v36a18 18 0 0 1-18 18H62L42 104V82a18 18 0 0 1-18-18V46a18 18 0 0 1 18-18Z"
+        fill="var(--md-sys-color-on-primary-container)"
+      />
+      <g fill="var(--md-sys-color-primary-container)">
+        <rect x="36" y="44" width="10" height="26" rx="5" />
+        <rect x="52" y="44" width="10" height="26" rx="5" />
+        <rect x="68" y="44" width="10" height="26" rx="5" />
+        <rect x="84" y="44" width="10" height="26" rx="5" />
+      </g>
+    </svg>
+  );
+}

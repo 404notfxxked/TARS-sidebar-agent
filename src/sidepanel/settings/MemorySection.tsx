@@ -8,7 +8,7 @@ import { MSG, type MemoryItem } from "../../shared/messages";
 import { t } from "../../shared/i18n";
 import { memReq } from "../clients/memoryClient";
 import SwitchRow from "../ui/SwitchRow";
-import { HintMore, SettingsSection } from "./parts";
+import { EntryRow, HintMore, SettingsSection } from "./parts";
 
 export default function MemorySection({
   initialOn,
@@ -48,37 +48,19 @@ export default function MemorySection({
       <HintMore detail={t("settings.memoryDetail")} />
 
       {memoryOn && (
-        <button
-          type="button"
-          onClick={onOpenMemory}
-          aria-label={t("memory.settingsManage")}
-          className="-mx-1 flex w-full items-center justify-between rounded-md px-1 py-1.5 text-left transition-colors duration-150 hover:bg-on-surface/8"
-        >
-          <span className="min-w-0 truncate pr-2 text-[13px] text-on-surface">
-            {memories.length > 0
+        <EntryRow
+          ariaLabel={t("memory.settingsManage")}
+          summary={
+            memories.length > 0
               ? t("memory.settingsSaved", {
                   n: memories.length,
                   used: memoryUsedTokens(memories, contextTokens),
                 })
-              : t("memory.settingsEmpty")}
-          </span>
-          <span className="flex shrink-0 items-center gap-0.5 text-[12.5px] font-medium text-primary">
-            {t("memory.settingsManage")}
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="m6 3.5 4.5 4.5L6 12.5" />
-            </svg>
-          </span>
-        </button>
+              : t("memory.settingsEmpty")
+          }
+          action={t("memory.settingsManage")}
+          onClick={onOpenMemory}
+        />
       )}
     </SettingsSection>
   );

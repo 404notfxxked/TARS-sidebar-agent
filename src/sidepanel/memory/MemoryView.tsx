@@ -235,7 +235,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
           </button>
         </div>
         {memories !== null && memories.length > 0 && (
-          <p className="mb-0 mt-1.5 px-1 text-[11px] leading-4 text-on-surface-variant">
+          <p className="mb-0 mt-1.5 px-1 text-[11px] leading-4 tabular-nums text-on-surface-variant">
             {t("memory.saved", {
               n: memories.length,
               used: usedTokens,

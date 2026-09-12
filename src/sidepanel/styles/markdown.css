@@ -3,6 +3,9 @@
    代码块 = 填充表面 + md 圆角 + 发丝分隔,无边框无阴影 */
 
 @layer components {
+  .markdown {
+    overflow-wrap: break-word;
+  }
   .markdown > *:first-child {
     margin-top: 0;
   }
@@ -10,33 +13,34 @@
     margin-bottom: 0;
   }
   .markdown p {
-    margin: 0.4em 0;
-    line-height: 1.55;
+    margin: 0.5em 0;
+    line-height: 1.6;
   }
+  /* 层级靠字号 + 字重双通道:h2 明显大于正文(1em 曾与正文同字号,层级塌掉) */
   .markdown h1,
   .markdown h2,
   .markdown h3 {
-    margin: 0.7em 0 0.3em;
-    font-weight: 500;
-    line-height: 1.25;
+    margin: 1em 0 0.35em;
+    font-weight: 600;
+    line-height: 1.3;
   }
   .markdown h1 {
-    font-size: 1.08em;
+    font-size: 1.22em;
   }
   .markdown h2 {
-    font-size: 1em;
+    font-size: 1.1em;
   }
   .markdown h3 {
-    font-size: 0.93em;
+    font-size: 1em;
     color: var(--md-sys-color-on-surface-variant);
   }
   .markdown ul,
   .markdown ol {
-    margin: 0.4em 0;
+    margin: 0.5em 0;
     padding-left: 1.3em;
   }
   .markdown li {
-    margin: 0.15em 0;
+    margin: 0.25em 0;
   }
   .markdown a {
     color: var(--md-sys-color-primary);
@@ -58,20 +62,25 @@
   }
 
   .markdown blockquote {
-    margin: 0.5em 0;
+    margin: 0.6em 0;
     padding-left: 0.75em;
-    border-left: 3px solid var(--md-sys-color-outline-variant);
+    border-left: 3px solid var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-surface-variant);
   }
+  /* 表格 = 圆角容器卡:surface 容器色打底,行线只留横向;
+     border-collapse: separate 才能圆角,四角由 th/末行 td 各自补半径 */
   .markdown table {
-    margin: 0.5em 0;
-    border-collapse: collapse;
+    margin: 0.6em 0;
+    max-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: var(--radius-sm);
+    background: var(--md-sys-color-surface-container-low);
     font-size: 12px;
   }
-  /* 只留横向行线(M3:能少画就少画),列靠内边距区分;表头用底色+字重分层 */
   .markdown th,
   .markdown td {
-    padding: 0.35em 0.6em;
+    padding: 0.4em 0.75em;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
     text-align: left;
   }
@@ -80,7 +89,19 @@
   }
   .markdown th {
     background: var(--md-sys-color-surface-container);
-    font-weight: 500;
+    font-weight: 600;
+  }
+  .markdown th:first-child {
+    border-top-left-radius: var(--radius-sm);
+  }
+  .markdown th:last-child {
+    border-top-right-radius: var(--radius-sm);
+  }
+  .markdown tr:last-child td:first-child {
+    border-bottom-left-radius: var(--radius-sm);
+  }
+  .markdown tr:last-child td:last-child {
+    border-bottom-right-radius: var(--radius-sm);
   }
   .markdown hr {
     margin: 0.7em 0;
@@ -129,6 +150,19 @@
     margin: 0;
     padding: 0.6em 0.75em;
     overflow-x: auto;
+    /* 滚动条只在悬停代码块时显形:窄面板上常驻横向滚动条又丑又占视线
+       (触控板/滚轮横滑始终可用) */
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .code-block pre:hover {
+    scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+  }
+  .code-block pre::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+  .code-block pre:hover::-webkit-scrollbar-thumb {
+    background: var(--md-sys-color-outline-variant);
   }
   .code-block pre code {
     display: block;
@@ -136,8 +170,8 @@
     background: none;
     color: var(--md-sys-color-on-surface);
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 11.5px;
-    line-height: 1.5;
+    font-size: 12px;
+    line-height: 1.55;
   }
 }
 

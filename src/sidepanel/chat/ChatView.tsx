@@ -47,7 +47,7 @@ import {
 import ModelPicker from "./ModelPicker";
 import SkillMenu from "./SkillMenu";
 import { skillReq } from "../clients/skillClient";
-import { ArchiveIcon } from "../ui/icons";
+import { ArchiveIcon, LogoMark } from "../ui/icons";
 
 // 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
 const log = createLogger({ ctx: "panel" });
@@ -663,7 +663,15 @@ export default function ChatView({
           const visible = messages.filter(
             (m) => m.sessionId === currentSession,
           );
-          if (visible.length === 0 && status === "idle") return <EmptyState />;
+          if (visible.length === 0 && status === "idle")
+            return (
+              <EmptyState
+                onPick={(text) => {
+                  setInput(text);
+                  inputRef.current?.focus();
+                }}
+              />
+            );
           // 轨迹插在最后一条 user 消息之后:它是「当前这轮」的过程,
           // 本轮流式答案(assistant 气泡)自然排在轨迹后面;历史回放时 trace 为空不渲染
           const lastUserIdx = visible.reduce(
@@ -972,15 +980,113 @@ function ImageIcon() {
   );
 }
 
-function EmptyState() {
+// ---- 空态文案池 ----
+// 键位表是静态字面量(check-i18n 扫描的是源码里全部键形字面量,变量持键
+// 合法、模板拼键才 FAIL);文案渲染期经 t() 现取,换语言即随渲染刷新。
+// 每次空态挂载随机抽一条招呼语 + 3 枚 chips,重开面板即换一批。
+const GREETINGS = [
+  { title: "chat.greetTitle0", sub: "chat.greetSub0" },
+  { title: "chat.greetTitle1", sub: "chat.greetSub1" },
+  { title: "chat.greetTitle2", sub: "chat.greetSub2" },
+  { title: "chat.greetTitle3", sub: "chat.greetSub3" },
+  { title: "chat.greetTitle4", sub: "chat.greetSub4" },
+  { title: "chat.greetTitle5", sub: "chat.greetSub5" },
+  { title: "chat.greetTitle6", sub: "chat.greetSub6" },
+  { title: "chat.greetTitle7", sub: "chat.greetSub7" },
+  { title: "chat.greetTitle8", sub: "chat.greetSub8" },
+  { title: "chat.greetTitle9", sub: "chat.greetSub9" },
+] as const;
+
+const SUGGESTIONS = [
+  "chat.suggestRead",
+  "chat.suggestDigest",
+  "chat.suggestSearch",
+  "chat.suggestForm",
+  "chat.suggestTable",
+  "chat.suggestExplore",
+  "chat.suggestTranslate",
+  "chat.suggestSources",
+  "chat.suggestRemember",
+  "chat.suggestCompare",
+] as const;
+
+/** Fisher-Yates 洗牌(纯函数) */
+function shuffle<T>(items: readonly T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** 空态:品牌标 + 随机招呼语 + 快捷提问 chips(点击即回填输入框并聚焦)。
+ *  chips 从 10 条池里抽 3,「换一批」原地重抽,不必重开面板 */
+function EmptyState({ onPick }: { onPick: (text: string) => void }) {
+  // 挂载时定一次,重渲不重抽(否则流式期间招呼语会跳变)
+  const [greetIdx] = useState(() =>
+    Math.floor(Math.random() * GREETINGS.length),
+  );
+  const [chipKeys, setChipKeys] = useState(() =>
+    shuffle(SUGGESTIONS).slice(0, 3),
+  );
+  const greet = GREETINGS[greetIdx];
   return (
-    <div className="px-2 py-10 text-center">
-      <p className="mx-auto max-w-[220px] text-[15px] leading-relaxed text-on-surface-variant">
-        {t("chat.emptyTitle")}
-        <br />
-        {t("chat.emptySub")}
+    <div className="flex flex-col items-center px-6 pb-10 pt-16 text-center">
+      <LogoMark />
+      <p className="mt-4 text-[15px] font-medium text-on-surface">
+        {t(greet.title)}
       </p>
+      <p className="mt-1.5 max-w-[240px] text-[12.5px] leading-relaxed text-on-surface-variant">
+        {t(greet.sub)}
+      </p>
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        {chipKeys.map((key) => {
+          const label = t(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              className="empty-chip"
+              onClick={() => onPick(label)}
+            >
+              {label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={t("chat.suggestShuffle")}
+          title={t("chat.suggestShuffle")}
+          onClick={() => setChipKeys(shuffle(SUGGESTIONS).slice(0, 3))}
+        >
+          <ShuffleIcon />
+        </button>
+      </div>
     </div>
+  );
+}
+
+/** 换一批:双箭头循环(rotate/refresh 语义) */
+function ShuffleIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12.5 2.5v3h-3" />
+      <path d="M3.2 6.2a5 5 0 0 1 8.6-0.4l0.7 0.9" />
+      <path d="M3.5 13.5v-3h3" />
+      <path d="M12.8 9.8a5 5 0 0 1-8.6 0.4l-0.7-0.9" />
+    </svg>
   );
 }
 
