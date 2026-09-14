@@ -483,9 +483,10 @@
 }
 
 /* 每日一句:出处默认隐藏,悬停/聚焦整块时显形(空间常驻,布局不跳;
-   opacity 0 不影响读屏 DOM 可达) */
+   opacity 0 不影响读屏 DOM 可达)。quote 排空态块尾当注脚,与上排
+   chips 拉开一档间距 */
 .quote-block {
-  margin-top: 6px;
+  margin-top: 16px;
   max-width: 240px;
 }
 .quote-text {

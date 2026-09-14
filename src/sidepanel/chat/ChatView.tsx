@@ -1173,7 +1173,8 @@ function EmptyState({
       <p className="mt-4 text-[15px] font-medium text-on-surface">
         {t(greetKey)}
       </p>
-      {showQuote && <DailyQuote />}
+      {/* 排序 = Momentum 结构:Hero(标+问候)→ 行动(chips)→ 注脚(quote)。
+          quote 是氛围性注脚(出处悬停显形),垫在块尾,空槽溶进块尾留白 */}
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
         {chipKeys.map((key) => {
           const label = t(key);
@@ -1198,6 +1199,7 @@ function EmptyState({
           <RefreshIcon />
         </button>
       </div>
+      {showQuote && <DailyQuote />}
     </div>
   );
 }
