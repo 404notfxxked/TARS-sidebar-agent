@@ -50,10 +50,11 @@ import SkillMenu from "./SkillMenu";
 import { toolLabel } from "./toolNames";
 import {
   dayKeyOf,
-  loadQuote,
   localQuote,
+  peekDailyQuote,
   quoteDisplay,
   timeGreetKey,
+  warmDailyQuote,
   type Quote,
 } from "./greeting";
 import { skillReq } from "../clients/skillClient";
@@ -1094,7 +1095,8 @@ function ImageIcon() {
 
 // ---- 空态问候 ----
 // 标题按本机时段定档(timeGreetKey,挂载时定一次,重渲不跳变);
-// 副标是每日一句:首帧先给本地池播种条,当天缓存/在线补抓到了再换。
+// 副标是每日一句:窥探当日缓存,有就用、没有就用本地池播种条 ——
+// 首帧即终帧,补抓只在后台落盘供下次挂载,挂载中文案绝不跳变。
 // quote 是内容不是产品话术,不进字典,细节见 greeting.ts 头注。
 // chips 仍从 10 条池里抽 3,「换一批」原地重抽。
 const SUGGESTIONS = [
@@ -1126,18 +1128,18 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   // 挂载时定一次,重渲不重抽(否则流式期间招呼语会跳变)
   const [greetKey] = useState(() => timeGreetKey(new Date().getHours()));
   const locale = getLocale();
-  const [quote, setQuote] = useState<Quote>(() =>
-    localQuote(locale, dayKeyOf()),
+  const day = dayKeyOf();
+  // 首帧即终帧:窥探当日缓存,有就用、没有就本地池;异步补抓只落盘
+  // 供下次挂载,绝不替换挂载中的文案(API 延迟不可感知)
+  const [quote, setQuote] = useState<Quote>(
+    () => peekDailyQuote(locale, day) ?? localQuote(locale, day),
   );
   useEffect(() => {
-    let on = true;
-    loadQuote(locale, dayKeyOf()).then((q) => {
-      if (on) setQuote(q);
-    });
-    return () => {
-      on = false;
-    };
-  }, [locale]);
+    // 同步重选(挂载时窥探若尚未成熟,这里补一次;此后不再动):
+    // 语言切换/跨天时按当前语言与日期换一条,依旧不做任何异步替换
+    setQuote(peekDailyQuote(locale, day) ?? localQuote(locale, day));
+    void warmDailyQuote(locale, day);
+  }, [locale, day]);
   const [chipKeys, setChipKeys] = useState(() =>
     shuffle(SUGGESTIONS).slice(0, 3),
   );

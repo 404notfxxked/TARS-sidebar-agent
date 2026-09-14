@@ -2,8 +2,10 @@
 // quote 属内容而非产品话术 —— 本地池与 API 结果都不进 i18n 字典
 // (字典只收 UI 文案;网络内容与工具结果同类,见 i18n/index.ts 头注)。
 // 语言源:zh 走一言(hitokoto)v1,en 走 ZenQuotes,均免 key;
-// 当日结果缓存进 chrome.storage.local,当天打开不再请求、文案稳定;
-// 离线/失败静默回落本地池(按日期播种,当天恒定、隔天轮换)。
+// 当日结果缓存进 chrome.storage.local:挂载时同步窥探,有当日条目就用,
+// 否则用本地池播种条 —— 一次挂载只显示一条(首帧即终帧),补抓在后台
+// 进行、只落盘供下次挂载,API 延迟不会造成挂载中的文案跳变。
+// 离线/失败静默保持本地池(按日期播种,当天恒定、隔天轮换)。
 
 import type { LocalePref } from "../../shared/configStore";
 
@@ -120,34 +122,84 @@ async function fetchQuote(locale: LocalePref): Promise<Quote | undefined> {
   }
 }
 
-/** 每日一句:当日缓存 → 在线补抓(仅 miss 时,成功才落盘)→ 本地池 */
-export async function loadQuote(
+// ---- 当日缓存:同步窥探 + 后台预热 ----
+// 首帧即终帧:一次挂载只显示一条 quote,绝不异步替换 —— 否则 API 延迟
+// 会把挂载中的兜底句换掉,视觉上「先一句、几秒后跳成另一句」。
+// cachePeek 在模块加载(面板打开)时抢跑读一次:undefined = 还没读到,
+// null = 读过且无当日条目。挂载时窥探到当日缓存就用缓存,否则本地池。
+let cachePeek: { day: string; locale: LocalePref; q: Quote } | null | undefined;
+
+function primeCache(): void {
+  if (cachePeek !== undefined) return;
+  const storage =
+    typeof chrome !== "undefined" ? chrome.storage?.local : undefined;
+  if (!storage) {
+    cachePeek = null; // 非扩展环境(单测等)
+    return;
+  }
+  storage
+    .get(QUOTE_CACHE_KEY)
+    .then((hit: Record<string, unknown>) => {
+      const c = hit[QUOTE_CACHE_KEY] as
+        | { day?: string; locale?: string; text?: string; from?: string }
+        | undefined;
+      cachePeek =
+        c?.day && c.locale && c.text
+          ? {
+              day: c.day,
+              locale: c.locale as LocalePref,
+              q: { text: c.text, from: c.from || undefined },
+            }
+          : null;
+    })
+    .catch(() => {
+      cachePeek = null;
+    });
+}
+primeCache();
+
+/** 当日缓存的同步窥探;无当日条目(或尚未读到)返回 undefined */
+export function peekDailyQuote(
   locale: LocalePref,
   dayKey: string,
-): Promise<Quote> {
-  try {
-    const hit = await chrome.storage.local.get(QUOTE_CACHE_KEY);
-    const c = hit[QUOTE_CACHE_KEY] as
-      | { day?: string; locale?: string; text?: string; from?: string }
-      | undefined;
-    if (c?.day === dayKey && c.locale === locale && c.text) {
-      return { text: c.text, from: c.from || undefined };
-    }
-  } catch {
-    // storage 不可用不阻塞问候
-  }
-  const q = await fetchQuote(locale);
-  if (q) {
+): Quote | undefined {
+  primeCache();
+  if (cachePeek === undefined || cachePeek === null) return undefined;
+  return cachePeek.day === dayKey && cachePeek.locale === locale
+    ? cachePeek.q
+    : undefined;
+}
+
+const warming = new Map<string, Promise<void>>();
+
+/** 后台预热:当日缓存缺失时补抓一次并落盘,供下一次挂载使用;
+ *  结果不回给当前挂载(首帧即终帧)。同会话并发调用按 key 去重 */
+export function warmDailyQuote(locale: LocalePref, dayKey: string): Promise<void> {
+  const key = `${locale}:${dayKey}`;
+  const inflight = warming.get(key);
+  if (inflight) return inflight;
+  const task = (async () => {
     try {
-      await chrome.storage.local.set({
-        [QUOTE_CACHE_KEY]: { day: dayKey, locale, ...q },
-      });
+      const hit = await chrome.storage.local.get(QUOTE_CACHE_KEY);
+      const c = hit[QUOTE_CACHE_KEY] as
+        | { day?: string; locale?: string; text?: string }
+        | undefined;
+      if (c?.day === dayKey && c.locale === locale && c.text) return; // 已是当日
+      const q = await fetchQuote(locale);
+      if (q) {
+        await chrome.storage.local.set({
+          [QUOTE_CACHE_KEY]: { day: dayKey, locale, ...q },
+        });
+        cachePeek = { day: dayKey, locale, q }; // 供后续挂载窥探
+      }
     } catch {
-      // 缓存失败无碍,本次已可用
+      // 离线/存储不可用:本次保持本地池,下次挂载再试
+    } finally {
+      warming.delete(key);
     }
-    return q;
-  }
-  return localQuote(locale, dayKey);
+  })();
+  warming.set(key, task);
+  return task;
 }
 
 /** quote 的面板呈现:统一弯引号包正文,署名按语言选破折号 */
