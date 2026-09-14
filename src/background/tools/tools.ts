@@ -243,18 +243,19 @@ registerTool<
 // 免 Key 方案:后台新开真实搜索引擎标签页(tabSearch.ts)→ 完整渲染后取
 // 整页 HTML → offscreen DOMParser 解析。引擎编排与兜底在 background/webSearch.ts,
 // 此处只做注册。描述按「少搜、搜准」纪律写:每次搜索都是一次真实页面访问,
-// 引导模型先宽后窄、优先读结果而非重搜、每题至多三次。
+// 引导模型先宽后窄、引句逐字复制(凭记忆重打易错一字 → 精确匹配归零)、
+// 优先读结果而非重搜、每题至多三次。
 registerTool<WebSearchArgs, WebSearchResult>({
   type: "function",
   name: "web_search",
   description:
-    "Search the public web, returning results ranked by relevance (title, URL, snippet).\nMechanics: a real browser tab is opened on a search engine (DuckDuckGo / Bing / Google / Baidu, auto-selected), the rendered results page is read, and the tab is closed. Every search is a real page view — keep the total number of searches small.\nWhen to use: fresh information is needed (news, releases, prices, weather), the open page is not enough, or the user explicitly asks to search.\nWhen NOT to use: the current page or your own knowledge suffices; locating content inside an open page → page_find.\nDiscipline:\n1) First search is broad: 2-4 core keywords, no quotes, no operators, never the user's sentence verbatim.\n2) If any result looks promising, web_fetch that URL instead of searching again — snippets are short by design.\n3) Refine, don't repeat: empty or off-topic results usually mean the query was too narrow — drop quotes, change keywords, or try the other language (Chinese ↔ English) once. At most three searches per question; if all three miss, stop and answer from your own knowledge, honestly noting it was not web-verified. Never force unrelated results into an answer; cite source URLs.",
+    "Search the public web, returning results ranked by relevance (title, URL, snippet).\nMechanics: a real browser tab is opened on a search engine (DuckDuckGo / Bing / Google / Baidu, auto-selected), the rendered results page is read, and the tab is closed. Every search is a real page view — keep the total number of searches small.\nWhen to use: fresh information is needed (news, releases, prices, weather), the open page is not enough, or the user explicitly asks to search.\nWhen NOT to use: the current page or your own knowledge suffices; locating content inside an open page → page_find.\nDiscipline:\n1) Default query: 2-4 core keywords, no quotes, no operators, not the user's whole sentence.\n2) Tracing where a quote / lyric / proverb / error message comes from: wrap the phrase in double quotes and reproduce it character-for-character from the user's message or the page it appeared on — never retype it from memory, never fix or normalize anything (one wrong character makes the exact match return zero and the engine silently falls back to fuzzy keyword matching, which surfaces unrelated pages). If the source text is no longer in view, do not reconstruct a quoted phrase — fall back to unquoted keywords.\n3) If any result looks promising, web_fetch that URL instead of searching again — snippets are short by design.\n4) Refine, don't repeat: empty or off-topic results usually mean the query was too narrow — drop quotes, change keywords, or try the other language (Chinese ↔ English) once. At most three searches per question; if all three miss, stop and answer from your own knowledge, honestly noting it was not web-verified. Never force unrelated results into an answer; cite source URLs.",
   parameters: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Keyword combination: space-separated core terms, not a long verbatim question",
+        description: "Space-separated core keywords (default), or a double-quoted phrase copied character-for-character from the source when tracing where a quote comes from — not a long conversational sentence",
       },
       max_results: { type: "number", description: "Max results; default 6, max 10" },
       market: {
