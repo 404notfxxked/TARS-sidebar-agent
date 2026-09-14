@@ -47,6 +47,7 @@ import {
 } from "./bubbles";
 import ModelPicker from "./ModelPicker";
 import SkillMenu from "./SkillMenu";
+import { toolLabel } from "./toolNames";
 import { skillReq } from "../clients/skillClient";
 import { ArchiveIcon, LogoMark } from "../ui/icons";
 
@@ -1207,7 +1208,7 @@ function ConfirmCard({
     >
       <p className="flex items-center gap-1.5 text-[13px] font-medium text-on-surface">
         <ConfirmIcon />
-        {req.displayName || req.name} · {t("chat.confirmTitle")}
+        {toolLabel(req.name, req.displayName)} · {t("chat.confirmTitle")}
       </p>
       {targetLabel && (
         <p className="mt-1 truncate text-[11.5px] text-on-surface-variant">

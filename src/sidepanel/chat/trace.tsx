@@ -1,12 +1,13 @@
 // 本轮执行流的渲染层:思考段/文本段/工具段按到达顺序交错。live 时连续过程段
 // 聚卡、文本段流式为气泡;settled 时整轮过程(含中间文案)重排进一张卡,折叠成
-// 「已思考 x · n 步」摘要 chip,点击回看完整过程 —— 折叠态即「已思考 x → 最终回答」。
+// 「已执行 x · n 步」摘要 chip,点击回看完整过程 —— 折叠态即「已执行 x → 最终回答」。
 // 段类型也定义在这里(useRunSegments 是它的状态层)。渲染是纯函数式的:输入段
 // 序列,不持有任何执行流状态。
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { t } from "../../shared/i18n";
+import { t, getLocale } from "../../shared/i18n";
 import { useCopyFlash } from "../ui/hooks";
+import { toolLabel } from "./toolNames";
 import { AssistantBubble } from "./bubbles";
 
 // ---- 本轮执行流(segments):思考段 / 文本段 / 工具段按到达顺序交错 ----
@@ -137,7 +138,7 @@ export function RunZone({
 type Entry = { s: RunSegment; i: number; durMs: number };
 
 /** 过程卡:live 态展示工具行 + 思考行(活跃的为 ticker,已收口的保留可回看);
- *  settled 态收拢为一行摘要 chip(「已思考 x · n 步」),点击展开完整过程回看 */
+ *  settled 态收拢为一行摘要 chip(「已执行 x · n 步」),点击展开完整过程回看 */
 function ProcessCard({
   entries,
   phase,
@@ -187,7 +188,7 @@ function ProcessCard({
               <ReasoningRow key={`r${e.i}`} item={e.s} durMs={e.durMs} />
             )
           ) : e.s.kind === "tool" ? (
-            <ToolRow key={e.s.id} item={e.s} />
+            <ToolRow key={e.s.id} item={e.s} durMs={e.durMs} />
           ) : null,
         )}
       </div>
@@ -197,26 +198,13 @@ function ProcessCard({
   const tools = rows
     .map((r) => r.s)
     .filter((s): s is ToolSeg => s.kind === "tool");
-  const hasReasoning = rows.some((r) => r.s.kind === "reasoning");
   const hasError = tools.some((tl) => tl.status === "error");
   const totalMs = Math.max(0, endT - rows[0].s.t);
-  const thinkDur = rows.reduce(
-    (acc, r) => (r.s.kind === "reasoning" ? acc + r.durMs : acc),
-    0,
-  );
+  // 折叠摘要只报一个总时长 + 步数(业界惯例 "Thought for 5s"/"Worked for 2m"
+  // 一律单一时长);思考耗时明细在展开区的各行里,不进摘要
   const meta = tools.length
-    ? hasReasoning
-      ? t("chat.trace.thoughtStepsMeta", {
-          think: fmtDur(thinkDur),
-          n: tools.length,
-          dur: fmtDur(totalMs),
-        })
-      : t("chat.trace.stepsMeta", { n: tools.length, dur: fmtDur(totalMs) })
-    : t("chat.trace.thoughtMeta", { dur: fmtDur(thinkDur) });
-  // 链摘要只在有工具时展示;思考环节以 ✦ 占位,同时说明「步」的计数口径
-  const chain = tools.length
-    ? summarizeChain(rows.map((r) => r.s).filter((s): s is ProcessSeg => s.kind !== "text"))
-    : "";
+    ? t("chat.trace.stepsMeta", { dur: fmtDur(totalMs) })
+    : t("chat.trace.thoughtMeta", { dur: fmtDur(totalMs) });
   return (
     <div className="trace msg-in" data-open={open}>
       <button
@@ -229,7 +217,6 @@ function ProcessCard({
           {hasError ? <MarkError /> : <MarkOk />}
         </span>
         <span className="trace-summary-meta">{meta}</span>
-        {chain && <span className="trace-summary-chain">{chain}</span>}
         <span className="trace-tail">
           <ChevronIcon />
         </span>
@@ -254,7 +241,7 @@ function ProcessCard({
             ) : e.s.kind === "text" ? (
               <TextRow key={`t${e.i}`} item={e.s} />
             ) : (
-              <ToolRow key={e.s.id} item={e.s} />
+              <ToolRow key={e.s.id} item={e.s} durMs={e.durMs} />
             ),
           )}
         </div>
@@ -363,15 +350,17 @@ function TextRow({ item }: { item: TextSeg }) {
   );
 }
 
-/** 工具行:名称 + 状态常显(对勾/叉以描边画入),参数/结果点击展开(摘要截断) */
-function ToolRow({ item }: { item: ToolSeg }) {
+/** 工具行:名称 + 状态常显(对勾/叉以描边画入),参数/结果点击展开(摘要截断)。
+ *  完成的尾部直接给耗时(✓ 图标已表达完成,不再重复「完成」二字,与
+ *  Manus/Cursor 的每步计时一致);运行中/失败仍用文字 */
+function ToolRow({ item, durMs }: { item: ToolSeg; durMs: number }) {
   const [open, setOpen] = useState(false);
   const statusText =
     item.status === "running"
       ? t("chat.trace.running")
       : item.status === "error"
         ? t("chat.trace.failed")
-        : t("chat.trace.done");
+        : fmtDur(durMs);
   return (
     <div
       className="trace-row"
@@ -394,7 +383,7 @@ function ToolRow({ item }: { item: ToolSeg }) {
             <MarkOk />
           )}
         </span>
-        <span className="trace-label">{item.displayName ?? item.name}</span>
+        <span className="trace-label">{toolLabel(item.name, item.displayName)}</span>
         <span className="trace-tail">
           <span className="trace-status">{statusText}</span>
           <ChevronIcon />
@@ -471,23 +460,15 @@ function MarkError() {
   );
 }
 
-/** 毫秒 → 「5s」「1m03s」(下限 1s,避免闪 0s) */
+/** 毫秒 → 时长短文案(下限 1s,避免闪 0s):zh「5 秒 / 3 分 21 秒」,
+ *  en「5s / 3m 21s」。语言经 getLocale() 渲染时现取,切语言随树重渲刷新 */
 function fmtDur(ms: number): string {
   const s = Math.max(1, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
-}
-
-/** 过程链摘要:思考环节以 ✦ 占位,连续同名合并 ×n,「✦ → 查找元素 → ✦×2」 */
-function summarizeChain(segs: ProcessSeg[]): string {
-  const runs: { name: string; n: number }[] = [];
-  for (const s of segs) {
-    const name = s.kind === "reasoning" ? "✦" : s.displayName ?? s.name;
-    const last = runs[runs.length - 1];
-    if (last?.name === name) last.n += 1;
-    else runs.push({ name, n: 1 });
-  }
-  return runs.map((r) => (r.n > 1 ? `${r.name}×${r.n}` : r.name)).join(" → ");
+  const zh = getLocale() === "zh-CN";
+  if (s < 60) return zh ? `${s} 秒` : `${s}s`;
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return zh ? `${m} 分 ${sec} 秒` : `${m}m ${sec}s`;
 }
 
 /** 四角星(SF Symbols sparkle 风):思考过程的图标 */

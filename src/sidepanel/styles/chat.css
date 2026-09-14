@@ -345,17 +345,6 @@
     font-feature-settings: "tnum";
     color: var(--md-sys-color-on-surface);
   }
-  .trace-summary-chain {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    /* 工具链是机器语义(工具名/调用序列),mono 强化「执行轨迹」的辨识度 */
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 10.5px;
-    color: var(--md-sys-color-on-surface-variant);
-  }
 
   /* 摘要展开区:与行内展开同一套 grid 0fr→1fr 过渡 */
   .trace-rows-wrap {
