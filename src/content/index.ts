@@ -71,8 +71,8 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
 function summarizeResult(name: string, result: unknown): unknown {
   switch (name) {
     case "capture_doc": {
-      const r = result as { html?: string; url?: string };
-      return { htmlBytes: r.html?.length ?? 0, url: r.url };
+      const r = result as { html?: string; url?: string; root?: string };
+      return { htmlBytes: r.html?.length ?? 0, url: r.url, root: r.root };
     }
     case "find_elements": {
       const r = result as { count?: number; returned?: number };
@@ -95,6 +95,9 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
         baseURI: document.baseURI,
         url: location.href,
         title: document.title,
+        // 采样根标签(main/article/body)随快照上报:排查「页面有但读不到」时,
+        // 先看采样根有没有圈错范围
+        root: root.tagName.toLowerCase(),
       };
     }
 

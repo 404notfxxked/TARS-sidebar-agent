@@ -93,6 +93,8 @@ export interface CaptureMeta {
   baseURI: string;
   url: string;
   title: string;
+  /** 采样根标签(main/article/body);诊断用,解析侧自行重新选取、不消费此字段 */
+  root?: string;
 }
 
 // ---- 提取解析 ----
@@ -100,8 +102,11 @@ export interface CaptureMeta {
 /**
  * 从 HTML 快照构建虚拟文档。
  * 剪枝规则是既有 turndown noise 规则的超集(script/style/svg/canvas/iframe 等),
- * 在分节之前物理移除——隐藏内容不再进入 root 文本统计,覆盖率判定更准,
- * 分节范围也不会落在不可见内容里(searchpage 时代的老问题在这里根治)。
+ * 在分节之前物理移除——分节范围不会落在不可见内容里。
+ * 分节策略按结构二分:有标题走「前置节 + 标题节」;无标题页直接全文转换——
+ * 常规块收集只认 p/li 等语义标签,React/Vue 渲染的 div/span 汤(电商详情页的
+ * 价格/SKU 区是典型)会整体漏掉(淘宝商品页事故:整页只读出纯导航 3296 字符,
+ * 价格静默蒸发),turndown 不挑标签,文本节点一视同仁。
  */
 export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
   const parsed = new DOMParser().parseFromString(meta.html, "text/html");
@@ -109,29 +114,37 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
   absolutizeLinks(root, meta.baseURI);
   pruneNoise(root);
 
-  const sections = collectSections(root);
+  const heads = collectHeadings(root);
   const parts: string[] = [];
   let total = 0;
   let truncatedTotal = false;
-  for (let i = 0; i < sections.length; i++) {
-    const s = sections[i];
-    const unit =
-      s.kind === "heading"
-        ? `${"#".repeat(s.level)} ${s.title}\n${sectionText(parsed, root, s, sections[i + 1] ?? null)}`
-        : sectionText(parsed, root, s, sections[i + 1] ?? null);
-    // total > 0 保证至少放下一节
+  // total > 0 保证至少放下一节
+  const pushPart = (unit: string): boolean => {
     if (total > 0 && total + unit.length > DOC_MAX_CHARS) {
       truncatedTotal = true;
-      break;
+      return false;
     }
     parts.push(unit);
     total += unit.length;
-  }
-  if (parts.length === 0) {
-    // 一节都凑不出(内容全隐藏/未渲染),退回整页转换兜底
+    return true;
+  };
+
+  if (heads.length === 0) {
     const full = turndown.turndown(root);
-    parts.push(truncateMarkdown(full, DOC_MAX_CHARS));
+    pushPart(truncateMarkdown(full, DOC_MAX_CHARS));
     truncatedTotal = full.length > DOC_MAX_CHARS;
+  } else {
+    // 前置节:首个标题之前的内容不属于任何标题节,单独补一段,
+    // 否则页面头部信息(常是标题/价格/核心区)静默丢失
+    const preamble = preambleText(parsed, root, heads[0]);
+    if (preamble.trim() !== "") pushPart(preamble);
+    for (let i = 0; i < heads.length; i++) {
+      const h = heads[i];
+      const unit =
+        `${"#".repeat(headingLevel(h))} ${headingTitle(h)}\n` +
+        sectionText(parsed, root, h, heads[i + 1] ?? null);
+      if (!pushPart(unit)) break;
+    }
   }
 
   const md = parts.join("\n\n");
@@ -183,110 +196,12 @@ function pruneNoise(rootEl: HTMLElement): void {
   });
 }
 
-// ---- 页面分节核心(与旧 content 实现同构,锚点改为参数化的 Document)----
-
-interface SectionUnit {
-  el: HTMLElement;
-  title: string;
-  level: number;
-  kind: "heading" | "block";
-}
-
-/** 常规块级标签:直接承载正文的元素 */
-const BLOCK_SELECTOR =
-  "p, li, pre, blockquote, table, dt, dd, figcaption, [role=paragraph]";
-/** 正文总量低于该值时不值得做覆盖率检查 */
-const BLOCK_COVERAGE_CHECK_MIN_CHARS = 200;
-/** 常规块收集到的文字占正文总量比例低于它 → 视为不规范结构,触发宽松补扫 */
-const BLOCK_COVERAGE_RATIO = 0.6;
-/** 补扫时容器的直接文本(不含子孙元素的)至少这么多才算独立内容块 */
-const BLOCK_DIRECT_TEXT_MIN_CHARS = 32;
-/** 兜底块数硬上限:病态页面(几千个碎块)到此为止 */
-const MAX_BLOCK_SECTIONS = 800;
-
-function collectSections(root: HTMLElement): SectionUnit[] {
-  const heads = collectHeadings(root);
-  if (heads.length > 0) {
-    return heads.map((el) => ({
-      el,
-      title: headingTitle(el),
-      level: headingLevel(el),
-      kind: "heading" as const,
-    }));
-  }
-  return collectBlocks(root);
-}
+// ---- 页面分节(前置节 + 标题节;无标题页不走分节,见 buildVirtualDoc)----
 
 function collectHeadings(root: HTMLElement): HTMLElement[] {
   return Array.from(
     root.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6,[role=heading],[aria-level]"),
   ).filter((el) => (el.textContent ?? "").trim().length > 1);
-}
-
-function collectBlocks(root: HTMLElement): SectionUnit[] {
-  const collected = new Set<HTMLElement>();
-  const blocks: HTMLElement[] = [];
-
-  // 从 el 自己往上爬到 root:命中已收集祖先 → 已被覆盖;沿途遇到显式隐藏信号 → 内容不可见。
-  // (pruneNoise 之后理论上不应再有隐藏节点,这里保留双保险防剪枝遗漏的内联技巧。)
-  const candidateStatus = (el: HTMLElement): "covered" | "hidden" | "ok" => {
-    for (let n: HTMLElement | null = el; n && n !== root; n = n.parentElement) {
-      if (collected.has(n)) return "covered";
-      if (n.hasAttribute("hidden") || n.getAttribute("aria-hidden") === "true") {
-        return "hidden";
-      }
-      const st = n.getAttribute("style");
-      if (st && (/display\s*:\s*none/i.test(st) || /visibility\s*:\s*hidden/i.test(st))) {
-        return "hidden";
-      }
-    }
-    return "ok";
-  };
-
-  const tryPush = (el: HTMLElement): void => {
-    if (blocks.length >= MAX_BLOCK_SECTIONS) return;
-    if ((el.textContent ?? "").trim().length < 2) return;
-    if (candidateStatus(el) !== "ok") return;
-    collected.add(el);
-    blocks.push(el);
-  };
-
-  for (const el of root.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)) {
-    tryPush(el);
-  }
-
-  // 覆盖率检查:常规块吃到不到六成正文 → 结构不常规(div/span 自定义容器页),补扫
-  const rootTextLen = (root.textContent ?? "").length;
-  if (rootTextLen >= BLOCK_COVERAGE_CHECK_MIN_CHARS) {
-    let coveredLen = 0;
-    for (const b of blocks) coveredLen += (b.textContent ?? "").length;
-    if (coveredLen < rootTextLen * BLOCK_COVERAGE_RATIO) {
-      const directTextLen = (el: HTMLElement): number => {
-        let len = 0;
-        for (const c of el.childNodes) {
-          if (c.nodeType === Node.TEXT_NODE) len += (c.nodeValue ?? "").trim().length;
-        }
-        return len;
-      };
-      for (const el of root.querySelectorAll<HTMLElement>("*")) {
-        if (blocks.length >= MAX_BLOCK_SECTIONS) break;
-        if (collected.has(el)) continue;
-        if (directTextLen(el) < BLOCK_DIRECT_TEXT_MIN_CHARS) continue;
-        tryPush(el);
-      }
-    }
-  }
-
-  blocks.sort((a, b) =>
-    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-  );
-
-  return blocks.map((el) => ({
-    el,
-    title: (el.textContent ?? "").trim().slice(0, 40),
-    level: 2,
-    kind: "block" as const,
-  }));
 }
 
 function headingLevel(el: HTMLElement): number {
@@ -301,25 +216,39 @@ function headingTitle(el: HTMLElement): string {
 }
 
 /**
- * 某一节的内容:标题节 = 标题末尾到下一锚点开头;块节 = 块自身内容。
+ * 前置节:根起点到首个标题之前的内容。
+ * maxChars 默认 4000 兜底,与标题节同规。
+ */
+function preambleText(
+  doc: Document,
+  root: HTMLElement,
+  firstHeading: HTMLElement,
+  maxChars = 4000,
+): string {
+  const range = doc.createRange();
+  range.setStart(root, 0);
+  range.setEnd(firstHeading, 0);
+  const container = doc.createElement("div");
+  container.appendChild(range.cloneContents());
+  return truncateMarkdown(turndown.turndown(container), maxChars);
+}
+
+/**
+ * 某一标题节的内容:标题末尾到下一标题开头;最后一节延伸到根末尾
+ * (不是标题自己的父容器——它可能只是个深层包装)。
  * maxChars 默认 4000 兜底单节,避免病态大节撑爆快照。
  */
 function sectionText(
   doc: Document,
   root: HTMLElement,
-  unit: SectionUnit,
-  next: SectionUnit | null,
+  el: HTMLElement,
+  nextEl: HTMLElement | null,
   maxChars = 4000,
 ): string {
   const range = doc.createRange();
-  if (unit.kind === "block") {
-    range.selectNodeContents(unit.el);
-  } else {
-    range.setStartAfter(unit.el);
-    if (next) range.setEnd(next.el, 0);
-    // 最后一节延伸到根末尾(不是标题自己的父容器——它可能只是个深层包装)
-    else range.setEndAfter(root);
-  }
+  range.setStartAfter(el);
+  if (nextEl) range.setEnd(nextEl, 0);
+  else range.setEndAfter(root);
   const container = doc.createElement("div");
   container.appendChild(range.cloneContents());
   return truncateMarkdown(turndown.turndown(container), maxChars);

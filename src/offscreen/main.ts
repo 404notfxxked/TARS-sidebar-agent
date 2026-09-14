@@ -110,12 +110,16 @@ async function ensureSnapshot(tabId: number, refresh?: boolean): Promise<Virtual
       });
       snapshots.set(tabId, { doc, capturedAt: Date.now() });
       lruEvict();
-      // 快照重建是 page_* 工具最常见的第一跳,耗时与 HTML 体量记下来便于定位慢读页
+      // 快照重建是 page_* 工具最常见的第一跳,耗时与输入/输出体量记下来:
+      // htmlBytes 大而 mdChars 异常小 = 采集到了但解析/分节丢内容,排查入口
       log.info("doc", `快照已重建(tab ${tabId})`, {
         ms: Date.now() - startedAt,
         htmlBytes: cap.html.length,
         url: cap.url || undefined,
         refresh: refresh === true,
+        mdChars: doc.totalChars,
+        headings: doc.headings.length,
+        ...(doc.truncatedTotal ? { truncatedTotal: true } : {}),
       });
       return doc;
     } catch (e) {
