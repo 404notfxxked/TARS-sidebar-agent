@@ -484,15 +484,17 @@
 
 /* 每日一句:出处默认隐藏,悬停/聚焦整块时显形(空间常驻,布局不跳;
    opacity 0 不影响读屏 DOM 可达)。quote 排空态块尾当注脚,与上排
-   chips 拉开一档间距 */
+   chips 拉开一档间距;不限额外宽度,跟随容器 px-6 边距 —— 动辄二十多
+   字的句子在 240px 限宽下会硬折行,两侧却空着 */
 .quote-block {
   margin-top: 16px;
-  max-width: 240px;
 }
 .quote-text {
   font-size: 12.5px;
   line-height: 1.625;
   color: var(--md-sys-color-on-surface-variant);
+  /* 真折行时两行均衡(Chrome 114+,旧版忽略不影响) */
+  text-wrap: balance;
 }
 .quote-source {
   margin-top: 4px;
