@@ -248,6 +248,26 @@ export async function appendMessages(
   await settled(tx);
 }
 
+/** 截掉 seq >= fromSeq 的消息行并回拨会话 msgCount(重新生成用)。
+ *  压缩元数据与 token 基线透传不动:压缩只涉更早的 seq,基线只是估算启发 */
+export async function deleteMessagesFrom(
+  sessionId: string,
+  fromSeq: number,
+): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction([SESSIONS, MESSAGES], "readwrite");
+  const prev = await p<SessionRow | undefined>(
+    tx.objectStore(SESSIONS).get(sessionId),
+  );
+  if (prev) {
+    tx.objectStore(SESSIONS).put({ ...prev, msgCount: fromSeq });
+  }
+  tx.objectStore(MESSAGES).delete(
+    IDBKeyRange.bound([sessionId, fromSeq], [sessionId, Infinity]),
+  );
+  await settled(tx);
+}
+
 /** 按 id 取单张图片(历史气泡渲染时面板经消息协议来取) */
 export async function getImage(id: string): Promise<ImageRow | undefined> {
   const db = await openDb();

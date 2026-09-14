@@ -8,7 +8,8 @@
 // - 首次启动把旧版 chrome.storage.session 里的 history:* 一次性搬进来
 
 import type { InternalMsg } from "../provider/types";
-import type { ChatRecord, SessionMeta } from "../../shared/messages";
+import type { ChatRecord, SessionMeta, UserMessagePayload } from "../../shared/messages";
+import { bytesToBase64 } from "../../shared/imageCodec";
 import { createLogger } from "../../shared/logger";
 import * as db from "./sessionDb";
 
@@ -136,6 +137,51 @@ export async function listSessions(): Promise<SessionMeta[]> {
 
 export function deleteSession(sessionId: string): Promise<void> {
   return db.deleteSessionRows(sessionId);
+}
+
+/**
+ * 准备重新生成:找到末条真实 user 行,把「它及其后」的消息行截掉,
+ * 还原出可重跑的用户负载(原文 + 图片字节水合)。
+ * 截断含 user 行本身:重跑会作为新消息重新落盘,库里不出现重复提问;
+ * 技能调用文本带 /name 原样返回,由 agent 侧的技能解析再处理(宽容纪律同首次)。
+ * 没有可重跑的轮次返回 null。图片字节从 images store 水合,缺图的张跳过。
+ */
+export async function prepareRegenerate(
+  sessionId: string,
+): Promise<UserMessagePayload | null> {
+  if (!sessionId) return null;
+  const rows = await db.loadMessageRows(sessionId);
+  let lastUser: db.MessageRow | undefined;
+  for (const row of rows) {
+    const m = row.msg as InternalMsg;
+    if (
+      m &&
+      typeof m === "object" &&
+      (m as { role?: string }).role === "user" &&
+      !isPseudoUserMsg(m)
+    ) {
+      lastUser = row; // 顺序扫,留最后一个
+    }
+  }
+  if (!lastUser) return null;
+  const user = lastUser.msg as Extract<InternalMsg, { role: "user" }>;
+  await db.deleteMessagesFrom(sessionId, lastUser.seq);
+  const images: NonNullable<UserMessagePayload["images"]> = [];
+  for (const im of user.images ?? []) {
+    const row = await db.getImage(im.id).catch(() => undefined);
+    if (!row) continue; // 字节已被清理:该图跳过,不阻塞重答
+    images.push({
+      mime: im.mime,
+      w: im.w,
+      h: im.h,
+      base64: bytesToBase64(row.bytes),
+    });
+  }
+  return {
+    text: userRequestText(user.content ?? ""),
+    sessionId,
+    ...(images.length ? { images } : {}),
+  };
 }
 
 export function clearAllSessions(): Promise<void> {

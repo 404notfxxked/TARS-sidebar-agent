@@ -47,6 +47,7 @@ export const zhCN = {
     suggestShuffle: "换一批",
     openSessions: "历史会话",
     newChat: "开始新对话",
+    regenerate: "重新生成",
     openSettings: "打开设置",
     busySessionsHint: "当前回复结束后可查看历史会话",
     busyNewChatHint: "当前回复结束后可开始新对话",

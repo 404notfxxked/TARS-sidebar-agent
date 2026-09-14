@@ -4,7 +4,7 @@
 // - activeRuns:记录每个正在运行的 agent 会话(带 AbortController,支持取消)
 // - content script 的调用走 shared/contentTools(onMessage),不走这里
 
-import { MSG, PORT_NAME, type SideToBg } from "../shared/messages";
+import { MSG, PORT_NAME, type SideToBg, type UserMessagePayload } from "../shared/messages";
 import { bytesToBase64 } from "../shared/imageCodec";
 import {
   LOG_HELLO,
@@ -46,6 +46,7 @@ import {
   loadImage,
   loadHistory,
   migrateLegacySessionStorage,
+  prepareRegenerate,
   pruneExpiredSessions,
   toChatRecords,
 } from "./sessions/sessionHistory";
@@ -179,6 +180,54 @@ chrome.notifications.onClicked.addListener(() => {
     .catch(() => undefined);
 });
 
+/** 启动一轮 agent run:登记 RunState(可取消)、事件经 wrapPort 回面板、
+ *  收口时补 AGENT_DONE 与结束通知。USER_MESSAGE 与 REGENERATE 共用;
+ *  sessionId 缺省(面板首问)时在此生成。 */
+async function launchRun(
+  port: chrome.runtime.Port,
+  payload: UserMessagePayload,
+): Promise<void> {
+  const sessionId = payload.sessionId ?? crypto.randomUUID();
+  const run: RunState = {
+    abort: new AbortController(),
+    tabId: payload.tabId,
+  };
+  activeRuns.set(sessionId, run);
+  // run 档案首条(e2e 以此为 run 边界):sessionId/tabId + 用户原文,
+  // 复盘搜索质量时串「用户问了什么 → 模型提了什么词」用
+  log.info("agent", "run started", {
+    sessionId,
+    tabId: payload.tabId,
+    text: payload.text,
+  });
+  // 观察层:顺带记录 run 是否以错误收场,供结束通知区分文案
+  let runError = "";
+  const agentPort = wrapPort(port, sessionId);
+  const observed: AgentPort = {
+    postMessage: (event) => {
+      if (event.type === MSG.AGENT_ERROR) runError = event.error;
+      agentPort.postMessage(event);
+    },
+  };
+  try {
+    await runAgentLoop({ ...payload, sessionId }, observed, run.abort.signal);
+  } finally {
+    activeRuns.delete(sessionId);
+    log.info("agent", "run ended", { sessionId });
+    // 用原始 port 通知前端 run 结束(包括被取消的情况——wrapPort 已拒绝发送)
+    try {
+      port.postMessage({ type: MSG.AGENT_DONE });
+    } catch {
+      /* 端口已断开,前端反正也收不到 */
+    }
+    void maybeNotifyRunEnd({
+      aborted: run.abort.signal.aborted,
+      error: runError,
+      text: payload.text,
+    });
+  }
+}
+
 // MV3 事件驱动:onConnect 触发时 SW 被唤醒并分发事件
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name !== PORT_NAME) return;
@@ -201,49 +250,26 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     const msg = raw as SideToBg;
     switch (msg.type) {
       case MSG.USER_MESSAGE: {
-        const sessionId = msg.payload.sessionId ?? crypto.randomUUID();
-        const run: RunState = {
-          abort: new AbortController(),
-          tabId: msg.payload.tabId,
-        };
-        activeRuns.set(sessionId, run);
-        // run 档案首条(e2e 以此为 run 边界):sessionId/tabId + 用户原文,
-        // 复盘搜索质量时串「用户问了什么 → 模型提了什么词」用
-        log.info("agent", "run started", {
-          sessionId,
-          tabId: msg.payload.tabId,
-          text: msg.payload.text,
-        });
-        // 观察层:顺带记录 run 是否以错误收场,供结束通知区分文案
-        let runError = "";
-        const agentPort = wrapPort(port, sessionId);
-        const observed: AgentPort = {
-          postMessage: (event) => {
-            if (event.type === MSG.AGENT_ERROR) runError = event.error;
-            agentPort.postMessage(event);
-          },
-        };
-        try {
-          await runAgentLoop(
-            { ...msg.payload, sessionId },
-            observed,
-            run.abort.signal,
-          );
-        } finally {
-          activeRuns.delete(sessionId);
-          log.info("agent", "run ended", { sessionId });
-          // 用原始 port 通知前端 run 结束(包括被取消的情况——wrapPort 已拒绝发送)
-          try {
-            port.postMessage({ type: MSG.AGENT_DONE });
-          } catch {
-            /* 端口已断开,前端反正也收不到 */
-          }
-          void maybeNotifyRunEnd({
-            aborted: run.abort.signal.aborted,
-            error: runError,
-            text: msg.payload.text,
+        await launchRun(port, msg.payload);
+        break;
+      }
+      case MSG.REGENERATE: {
+        // 已有 run 在跑的会话不接受重答(面板也有 idle 门控,双保险)
+        if (activeRuns.has(msg.sessionId)) {
+          log.warn("agent", "regenerate ignored, run in progress", {
+            sessionId: msg.sessionId,
           });
+          break;
         }
+        const prep = await prepareRegenerate(msg.sessionId);
+        if (!prep) {
+          log.warn("agent", "regenerate: no user turn to replay", {
+            sessionId: msg.sessionId,
+          });
+          break;
+        }
+        // tabId 不还原:重答按当时的活动 tab 取页面上下文,与手发一致
+        await launchRun(port, prep);
         break;
       }
       case MSG.CANCEL_RUN: {

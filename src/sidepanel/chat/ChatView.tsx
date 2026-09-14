@@ -57,7 +57,7 @@ import {
   type Quote,
 } from "./greeting";
 import { skillReq } from "../clients/skillClient";
-import { ArchiveIcon, LogoMark } from "../ui/icons";
+import { ArchiveIcon, LogoMark, RefreshIcon } from "../ui/icons";
 
 // 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
 const log = createLogger({ ctx: "panel" });
@@ -439,6 +439,27 @@ export default function ChatView({
     });
   };
 
+  // 重新生成:末条答案退场,同问重答。本地乐观清场(本轮答案在 runSegs,
+  // 末条 user 之后的本地气泡 = 历史答案/错误/系统提示一并退场),后台负责
+  // 截库(自末条 user 行含)并以原内容重跑;技能 /name 原文随库重走解析
+  const regenerate = () => {
+    if (status !== "idle") return;
+    const sid = sessionRef.current;
+    if (!sid) return;
+    log.info("chat", "regenerate", { sessionId: sid });
+    run.newRound();
+    setMemorySaved(0);
+    setStatus("thinking"); // 乐观:AGENT_STARTED 马上到,思考态先亮起
+    setMessages((ms) => {
+      let lastUser = -1;
+      ms.forEach((m, i) => {
+        if (m.sessionId === sid && m.role === "user") lastUser = i;
+      });
+      return lastUser === -1 ? ms : ms.slice(0, lastUser + 1);
+    });
+    connect().postMessage({ type: MSG.REGENERATE, sessionId: sid });
+  };
+
   // 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)
   const answerConfirm = (approved: boolean) => {
     if (!confirmReq) return;
@@ -727,6 +748,21 @@ export default function ChatView({
             (acc, m, i) => (m.role === "user" ? i : acc),
             -1,
           );
+          // 重新生成的挂点:本轮答案在 RunZone(settled 收尾气泡)由它自己挂;
+          // 无本轮答案时,只有当可见消息的最后一条就是普通 assistant 气泡
+          // (历史回放/上一轮归档后)才挂——重答截到末条 user,挂中间气泡会误导
+          let lastAssistantIdx = -1;
+          if (runSegs.length === 0 && status === "idle") {
+            const last = visible[visible.length - 1];
+            if (
+              last &&
+              last.role === "assistant" &&
+              !last.error &&
+              !last.notice
+            ) {
+              lastAssistantIdx = visible.length - 1;
+            }
+          }
           // 压缩分隔条插在第一条 seq 超过压缩点的记录之前;历史消息按 seq
           // 升序,所以命中第一条之后不再重复插
           let dividerPlaced = false;
@@ -745,7 +781,12 @@ export default function ChatView({
               ) : m.notice ? (
                 <NoticeBubble key={i} />
               ) : (
-                <AssistantBubble key={i} text={m.content} />
+                <AssistantBubble
+                  key={i}
+                  text={m.content}
+                  actions={i === lastAssistantIdx ? "copy-regen" : "copy"}
+                  onRegenerate={i === lastAssistantIdx ? regenerate : undefined}
+                />
               );
             // 执行流插在最后一条 user 消息之后:按到达顺序交错渲染;
             // 历史回放时 segs 为空不渲染
@@ -760,6 +801,7 @@ export default function ChatView({
                     endedAt={runEndedAt}
                     openGroups={openGroups}
                     onToggleGroup={toggleGroup}
+                    onRegenerate={regenerate}
                   />,
                 ]
               : [...divider, node];
@@ -1133,7 +1175,7 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
           title={t("chat.suggestShuffle")}
           onClick={() => setChipKeys(shuffle(SUGGESTIONS).slice(0, 3))}
         >
-          <ShuffleIcon />
+          <RefreshIcon />
         </button>
       </div>
     </div>
@@ -1156,27 +1198,6 @@ function ArrowDownIcon() {
     >
       <path d="M8 2.8v10.4" />
       <path d="m3.6 9 4.4 4.2L12.4 9" />
-    </svg>
-  );
-}
-
-/** 换一批:双箭头循环(rotate/refresh 语义) */function ShuffleIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12.5 2.5v3h-3" />
-      <path d="M3.2 6.2a5 5 0 0 1 8.6-0.4l0.7 0.9" />
-      <path d="M3.5 13.5v-3h3" />
-      <path d="M12.8 9.8a5 5 0 0 1-8.6 0.4l-0.7-0.9" />
     </svg>
   );
 }

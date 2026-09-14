@@ -42,6 +42,70 @@ export function ArchiveIcon() {
   );
 }
 
+/** 复制(双层方片) */
+export function CopyIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="block"
+    >
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+      <path d="M10.5 3.5H4A1.5 1.5 0 0 0 2.5 5v6.5" />
+    </svg>
+  );
+}
+
+/** 对勾(复制成功反馈) */
+export function CheckIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="block"
+    >
+      <path d="m3 8.5 3.2 3L13 4.5" />
+    </svg>
+  );
+}
+
+/** 循环双箭头(重新生成/换一批,rotate 语义) */
+export function RefreshIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="block"
+    >
+      <path d="M12.5 2.5v3h-3" />
+      <path d="M3.2 6.2a5 5 0 0 1 8.6-0.4l0.7 0.9" />
+      <path d="M3.5 13.5v-3h3" />
+      <path d="M12.8 9.8a5 5 0 0 1-8.6 0.4l-0.7-0.9" />
+    </svg>
+  );
+}
+
 /** TARS 品牌标(源:public/icons/icon.svg 的黑白分段气泡):
  *  底板换 primary-container、气泡换 on-primary-container,分段镂空露底板色,
  *  跟随重点色。空态等大面积品牌位用 */

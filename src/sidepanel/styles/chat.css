@@ -481,3 +481,23 @@
 .jump-latest:active {
   background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, var(--md-sys-color-surface-container-highest));
 }
+
+/* 消息动作行(复制/重新生成):悬停气泡或键盘聚焦时显形,复制反馈期间保持。
+   行常驻文档流只做透明度过渡,布局不跳;负左缘把图标对齐气泡文字起点 */
+.msg-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+  margin-left: -6px;
+  opacity: 0;
+  transition: opacity 150ms var(--ease-emphasized);
+}
+.msg-bubble:hover .msg-actions,
+.msg-actions:focus-within,
+.msg-actions.is-copied {
+  opacity: 1;
+}
+.msg-actions .icon-btn {
+  width: 28px;
+  height: 28px;
+}

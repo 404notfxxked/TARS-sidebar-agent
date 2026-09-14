@@ -48,12 +48,15 @@ export function RunZone({
   endedAt,
   openGroups,
   onToggleGroup,
+  onRegenerate,
 }: {
   segs: RunSegment[];
   phase: "live" | "settled";
   endedAt: number | null;
   openGroups: Set<number>;
   onToggleGroup: (firstIdx: number) => void;
+  /** 重新生成:仅 settled 的最后一个答案气泡带(与业界一致的末条重答位) */
+  onRegenerate?: () => void;
 }) {
   // settled:整轮过程重排进一张卡(思考/工具/中间文案);只有收尾的连续文本段
   // (最终回答)留在卡外作气泡。文本是否「中间文案」取决于其后是否还有过程段
@@ -62,14 +65,26 @@ export function RunZone({
     segs.forEach((s, i) => {
       if (s.kind !== "text") lastProc = i;
     });
+    const bubble = (key: string, s: TextSeg, last: boolean) => (
+      <AssistantBubble
+        key={key}
+        text={s.text}
+        actions={last ? "copy-regen" : "copy"}
+        onRegenerate={onRegenerate}
+      />
+    );
     if (lastProc === -1) {
       // 纯文本轮:无过程卡,文本即答案
+      const lastText = segs.reduce(
+        (acc, s, i) => (s.kind === "text" && s.text.trim() ? i : acc),
+        -1,
+      );
       return (
         <>
           {segs.map((s, i) =>
-            s.kind === "text" && s.text.trim() ? (
-              <AssistantBubble key={`t${i}`} text={s.text} />
-            ) : null,
+            s.kind === "text" && s.text.trim()
+              ? bubble(`t${i}`, s, i === lastText)
+              : null,
           )}
         </>
       );
@@ -79,6 +94,11 @@ export function RunZone({
       .slice(0, lastProc + 1)
       .filter(({ s }) => s.kind !== "text" || s.text.trim() !== "");
     const firstIdx = entries[0].i;
+    const tail = segs.slice(lastProc + 1);
+    const lastTail = tail.reduce(
+      (acc, s, i) => (s.kind === "text" && s.text.trim() !== "" ? i : acc),
+      -1,
+    );
     return (
       <>
         <ProcessCard
@@ -89,10 +109,10 @@ export function RunZone({
           open={openGroups.has(firstIdx)}
           onToggle={() => onToggleGroup(firstIdx)}
         />
-        {segs.slice(lastProc + 1).map((s, i) =>
-          s.kind === "text" && s.text.trim() !== "" ? (
-            <AssistantBubble key={`t${lastProc + 1 + i}`} text={s.text} />
-          ) : null,
+        {tail.map((s, i) =>
+          s.kind === "text" && s.text.trim() !== ""
+            ? bubble(`t${lastProc + 1 + i}`, s, i === lastTail)
+            : null,
         )}
       </>
     );

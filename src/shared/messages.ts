@@ -9,6 +9,8 @@ import type { MemoryTag } from "./memory"
 export const MSG = {
   // Side panel → Background
   USER_MESSAGE: 'user_message',
+  // 重新生成:截掉末轮(自末条 user 行含),用原内容重跑一轮
+  REGENERATE: 'regenerate',
   CANCEL_RUN: 'cancel_run',
   LOAD_HISTORY: 'load_history',
   LIST_SESSIONS: 'list_sessions',
@@ -88,6 +90,7 @@ export interface CancelRunPayload {
 
 export type SideToBg =
   | { type: typeof MSG.USER_MESSAGE; payload: UserMessagePayload }
+  | { type: typeof MSG.REGENERATE; sessionId: string }
   | { type: typeof MSG.CANCEL_RUN; sessionId: string }
   | { type: typeof MSG.PANEL_VISIBILITY; hidden: boolean }
   | { type: typeof MSG.CONFIRM_RESPONSE; requestId: string; approved: boolean }

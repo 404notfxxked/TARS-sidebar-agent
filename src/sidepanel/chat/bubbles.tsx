@@ -34,7 +34,7 @@ import yaml from "highlight.js/lib/languages/yaml";
 import type { ImageMeta } from "../../shared/messages";
 import { t } from "../../shared/i18n";
 import { useCopyFlash, useLocale } from "../ui/hooks";
-import { ArchiveIcon } from "../ui/icons";
+import { ArchiveIcon, CheckIcon, CopyIcon, RefreshIcon } from "../ui/icons";
 import { peekImgUrl, requestImgUrl } from "./images";
 
 // markdown 渲染配置:引用保持稳定,配合 memo 让历史消息不因无关状态重渲染/重解析
@@ -95,13 +95,19 @@ export const UserBubble = memo(function UserBubble({
 
 export const AssistantBubble = memo(function AssistantBubble({
   text,
+  actions,
+  onRegenerate,
 }: {
   text: string;
+  /** 动作行:缺省不渲染(流式中);copy = 复制;copy-regen = 复制+重新生成(仅末条答案) */
+  actions?: "copy" | "copy-regen";
+  onRegenerate?: () => void;
 }) {
   // markdown 组件树含代码块容器(渲染「代码/复制」文案):同样订阅 locale
   useLocale();
+  const [copied, copy] = useCopyFlash();
   return (
-    <div className="markdown msg-in pl-3 text-[13px] leading-relaxed">
+    <div className="markdown msg-bubble msg-in pl-3 text-[13px] leading-relaxed">
       <ReactMarkdown
         remarkPlugins={MD_REMARK}
         rehypePlugins={MD_REHYPE}
@@ -109,6 +115,29 @@ export const AssistantBubble = memo(function AssistantBubble({
       >
         {text}
       </ReactMarkdown>
+      {actions && (
+        <div className={`msg-actions${copied ? " is-copied" : ""}`}>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={copied ? t("common.copied") : t("common.copy")}
+            onClick={() => copy(text)}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </button>
+          {actions === "copy-regen" && onRegenerate && (
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={t("chat.regenerate")}
+              title={t("chat.regenerate")}
+              onClick={onRegenerate}
+            >
+              <RefreshIcon />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 });
