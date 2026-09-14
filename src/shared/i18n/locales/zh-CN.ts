@@ -286,6 +286,8 @@ export const zhCN = {
     accentCoral: "珊瑚",
     accentRose: "玫红",
     accentGraphite: "石墨",
+    quoteToggle: "每日一句",
+    quoteHint: "空态展示一句短语；出处默认隐藏，悬停句子上时显形。",
     // 联网
     webSearch: "联网搜索",
     webSearchHint:

@@ -10,6 +10,7 @@ import {
 import { setLocale, t } from "../../shared/i18n";
 import { applyAccent, applyThemePreference } from "../theme";
 import { useLocale } from "../ui/hooks";
+import SwitchRow from "../ui/SwitchRow";
 import Segmented from "../ui/Segmented";
 import { SettingsSection } from "./parts";
 
@@ -41,14 +42,17 @@ const ACCENT_LABEL_KEYS: Record<AccentPref, string> = {
 export default function AppearanceSection({
   initialTheme,
   initialAccent,
+  initialQuote,
   run,
 }: {
   initialTheme: ThemePref;
   initialAccent: AccentPref;
+  initialQuote: boolean;
   run: (p: Promise<void>) => void;
 }) {
   const [theme, setTheme] = useState<ThemePref>(initialTheme);
   const [accent, setAccent] = useState<AccentPref>(initialAccent);
+  const [quote, setQuote] = useState(initialQuote);
   const locale = useLocale();
 
   // 主题选项标签渲染时现取,文案随界面语言走
@@ -128,6 +132,18 @@ export default function AppearanceSection({
           </span>
         </div>
       </div>
+
+      {/* 每日一句:空态副标展示与否;来源默认隐藏、悬停显形(交互在空态侧) */}
+      <SwitchRow
+        id="ui-quote"
+        label={t("settings.quoteToggle")}
+        hint={t("settings.quoteHint")}
+        checked={quote}
+        onChange={(next) => {
+          setQuote(next);
+          run(savePrefs({ quote: next }));
+        }}
+      />
     </SettingsSection>
   );
 }

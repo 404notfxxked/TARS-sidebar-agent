@@ -110,6 +110,8 @@ export interface AppConfig {
   confirmActions: boolean;
   /** 任务完成通知:开 = run 结束且面板不可见时发系统通知;缺省 = 开 */
   notifyDone: boolean;
+  /** 空态每日一句:开 = 空态标题下展示 quote(来源悬停显形);缺省 = 开 */
+  quote: boolean;
   /** 搜索服务配置;开关开着但当前服务 apiKey 为空时 web_search 退回免 Key 抓取 */
   search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
@@ -179,6 +181,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "skills",
     "confirmActions",
     "notifyDone",
+    "quote",
     "search",
     "historyRetention",
     "compact",
@@ -219,6 +222,8 @@ export async function loadConfig(): Promise<AppConfig> {
     confirmActions: l.confirmActions !== false,
     // 任务完成通知缺省开启(仅面板不可见时才发,不打扰正在看面板的用户)
     notifyDone: l.notifyDone !== false,
+    // 每日一句缺省开启(纯展示性内容,关 = 空态只留标题与快捷提问)
+    quote: l.quote !== false,
     search: normalizeSearch(l.search),
     // 历史保留天数:与 sessionHistory.retentionDays 的缺省保持一致(7 天)
     historyRetention:
@@ -330,6 +335,7 @@ export async function savePrefs(
       | "skills"
       | "confirmActions"
       | "notifyDone"
+      | "quote"
       | "search"
       | "historyRetention"
       | "compact"

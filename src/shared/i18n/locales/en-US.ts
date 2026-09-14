@@ -293,6 +293,8 @@ export const enUS = {
     accentCoral: "Coral",
     accentRose: "Rose",
     accentGraphite: "Graphite",
+    quoteToggle: "Daily quote",
+    quoteHint: "Show a short quote on the empty state; hover it to reveal the source.",
     // Web search
     webSearch: "Web search",
     webSearchHint:

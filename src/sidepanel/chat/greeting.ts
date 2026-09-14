@@ -47,6 +47,10 @@ export const LOCAL_QUOTES: Record<LocalePref, readonly Quote[]> = {  "zh-CN": [
     { text: "业精于勤，荒于嬉；行成于思，毁于随。", from: "韩愈" },
     { text: "博观而约取，厚积而薄发。", from: "苏轼" },
     { text: "敏而好学，不耻下问。", from: "孔子" },
+    // 歌词同款气质的流行句,混进池里换换口味
+    { text: "原谅我这一生不羁放纵爱自由。", from: "Beyond《海阔天空》" },
+    { text: "我曾经跨过山和大海，也穿过人山人海。", from: "朴树《平凡之路》" },
+    { text: "夜空中最亮的星，请照亮我前行。", from: "逃跑计划《夜空中最亮的星》" },
   ],
   "en-US": [
     { text: "The only true wisdom is in knowing you know nothing.", from: "Socrates" },
@@ -65,6 +69,11 @@ export const LOCAL_QUOTES: Record<LocalePref, readonly Quote[]> = {  "zh-CN": [
     { text: "The only way to do great work is to love what you do.", from: "Steve Jobs" },
     { text: "If you wish to make an apple pie from scratch, you must first invent the universe.", from: "Carl Sagan" },
     { text: "It is not that I am so smart, it is just that I stay with problems longer.", from: "Albert Einstein" },
+    // 短歌词条(fair-use 量级的一两句)
+    { text: "Let it be, let it be.", from: "The Beatles · Let It Be" },
+    { text: "You may say I'm a dreamer, but I'm not the only one.", from: "John Lennon · Imagine" },
+    { text: "The answer, my friend, is blowin' in the wind.", from: "Bob Dylan · Blowin' in the Wind" },
+    { text: "Don't worry about a thing, 'cause every little thing is gonna be alright.", from: "Bob Marley · Three Little Birds" },
   ],
 };
 
@@ -86,10 +95,11 @@ export function localQuote(locale: LocalePref, dayKey: string): Quote {
 const QUOTE_CACHE_KEY = "quoteOfDay";
 const QUOTE_MAX_LEN = 120; // 超长判为不合适(小标题要短),回落本地池
 
-/** 一言:文学/诗词/哲学三类,max_length 服务端截短 */
+/** 一言:文学/诗词/哲学外,混入动画/漫画/游戏类(台词向,更轻);
+ *  max_length 服务端截短 */
 async function fetchHitokoto(): Promise<Quote | undefined> {
   const res = await fetch(
-    "https://v1.hitokoto.cn/?c=d&c=i&c=k&max_length=36",
+    "https://v1.hitokoto.cn/?c=a&c=b&c=c&c=d&c=i&c=k&max_length=36",
     { signal: AbortSignal.timeout(4000) },
   );
   if (!res.ok) return undefined;

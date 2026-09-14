@@ -109,6 +109,8 @@ export default function ChatView({
   const [compaction, setCompaction] = useState<CompactionMark | null>(null);
   /** 本轮已写入的记忆条数(memory_save 成功且非重复时累计);回复尾轻提示用 */
   const [memorySaved, setMemorySaved] = useState(0);
+  /** 空态每日一句展示开关(设置 → 外观;storage 事件实时跟随) */
+  const [quoteEnabled, setQuoteEnabled] = useState(true);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<AgentStatus>("idle");
   /** 待答复的写操作确认请求:非空 = 输入区上方弹确认卡(拒绝/超时由后台兜底) */
@@ -353,12 +355,16 @@ export default function ChatView({
       if (changes.model && typeof changes.model.newValue === "string") {
         setModelId(changes.model.newValue);
       }
+      if (changes.quote && typeof changes.quote.newValue === "boolean") {
+        setQuoteEnabled(changes.quote.newValue);
+      }
     };
     chrome.storage.onChanged.addListener(onStorage);
     loadConfig().then((c) => {
       setProviders(c.providers);
       setModelProvider(c.modelProvider);
       setModelId(c.model);
+      setQuoteEnabled(c.quote);
     });
     return () => {
       chrome.storage.onChanged.removeListener(onStorage);
@@ -741,6 +747,7 @@ export default function ChatView({
                   setInput(text);
                   chatInputRef.current?.focus();
                 }}
+                showQuote={quoteEnabled}
               />
             );
           // 轨迹插在最后一条 user 消息之后:它是「当前这轮」的过程,
@@ -1124,13 +1131,12 @@ function shuffle<T>(items: readonly T[]): T[] {
 
 /** 空态:品牌标 + 随机招呼语 + 快捷提问 chips(点击即回填输入框并聚焦)。
  *  chips 从 10 条池里抽 3,「换一批」原地重抽,不必重开面板 */
-function EmptyState({ onPick }: { onPick: (text: string) => void }) {
-  // 挂载时定一次,重渲不重抽(否则流式期间招呼语会跳变)
-  const [greetKey] = useState(() => timeGreetKey(new Date().getHours()));
+/** 每日一句:窥探当日缓存,有就用、没有就本地池播种条 —— 首帧即终帧,
+ *  补抓只在后台落盘供下次挂载,挂载中文案绝不跳变(细节见 greeting.ts 头注)。
+ *  出处默认隐藏,悬停/键盘聚焦整块显形(.quote-source,空间常驻不跳布局) */
+function DailyQuote() {
   const locale = getLocale();
   const day = dayKeyOf();
-  // 首帧即终帧:窥探当日缓存,有就用、没有就本地池;异步补抓只落盘
-  // 供下次挂载,绝不替换挂载中的文案(API 延迟不可感知)
   const [quote, setQuote] = useState<Quote>(
     () => peekDailyQuote(locale, day) ?? localQuote(locale, day),
   );
@@ -1140,22 +1146,34 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
     setQuote(peekDailyQuote(locale, day) ?? localQuote(locale, day));
     void warmDailyQuote(locale, day);
   }, [locale, day]);
+  const q = quoteDisplay(quote, locale);
+  return (
+    <div className="quote-block">
+      <p className="quote-text">{q.text}</p>
+      {q.from && <p className="quote-source">{q.from}</p>}
+    </div>
+  );
+}
+
+function EmptyState({
+  onPick,
+  showQuote,
+}: {
+  onPick: (text: string) => void;
+  showQuote: boolean;
+}) {
+  // 挂载时定一次,重渲不重抽(否则流式期间招呼语会跳变)
+  const [greetKey] = useState(() => timeGreetKey(new Date().getHours()));
   const [chipKeys, setChipKeys] = useState(() =>
     shuffle(SUGGESTIONS).slice(0, 3),
   );
-  const q = quoteDisplay(quote, locale);
   return (
     <div className="flex flex-col items-center px-6 pb-10 pt-16 text-center">
       <LogoMark />
       <p className="mt-4 text-[15px] font-medium text-on-surface">
         {t(greetKey)}
       </p>
-      <p className="mt-1.5 max-w-[240px] text-[12.5px] leading-relaxed text-on-surface-variant">
-        {q.text}
-      </p>
-      {q.from && (
-        <p className="mt-1 text-[11.5px] text-on-surface-variant">{q.from}</p>
-      )}
+      {showQuote && <DailyQuote />}
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
         {chipKeys.map((key) => {
           const label = t(key);
