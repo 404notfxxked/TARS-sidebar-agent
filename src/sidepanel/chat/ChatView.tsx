@@ -19,7 +19,7 @@ import {
   type ImageMeta,
   type SkillInfo,
 } from "../../shared/messages";
-import { t } from "../../shared/i18n";
+import { t, getLocale } from "../../shared/i18n";
 import { parseSkillInvocation } from "../../shared/skills";
 import { getActiveTabId } from "../../shared/contentTools";
 import {
@@ -48,6 +48,14 @@ import {
 import ModelPicker from "./ModelPicker";
 import SkillMenu from "./SkillMenu";
 import { toolLabel } from "./toolNames";
+import {
+  dayKeyOf,
+  loadQuote,
+  localQuote,
+  quoteDisplay,
+  timeGreetKey,
+  type Quote,
+} from "./greeting";
 import { skillReq } from "../clients/skillClient";
 import { ArchiveIcon, LogoMark } from "../ui/icons";
 
@@ -1042,23 +1050,11 @@ function ImageIcon() {
   );
 }
 
-// ---- 空态文案池 ----
-// 键位表是静态字面量(check-i18n 扫描的是源码里全部键形字面量,变量持键
-// 合法、模板拼键才 FAIL);文案渲染期经 t() 现取,换语言即随渲染刷新。
-// 每次空态挂载随机抽一条招呼语 + 3 枚 chips,重开面板即换一批。
-const GREETINGS = [
-  { title: "chat.greetTitle0", sub: "chat.greetSub0" },
-  { title: "chat.greetTitle1", sub: "chat.greetSub1" },
-  { title: "chat.greetTitle2", sub: "chat.greetSub2" },
-  { title: "chat.greetTitle3", sub: "chat.greetSub3" },
-  { title: "chat.greetTitle4", sub: "chat.greetSub4" },
-  { title: "chat.greetTitle5", sub: "chat.greetSub5" },
-  { title: "chat.greetTitle6", sub: "chat.greetSub6" },
-  { title: "chat.greetTitle7", sub: "chat.greetSub7" },
-  { title: "chat.greetTitle8", sub: "chat.greetSub8" },
-  { title: "chat.greetTitle9", sub: "chat.greetSub9" },
-] as const;
-
+// ---- 空态问候 ----
+// 标题按本机时段定档(timeGreetKey,挂载时定一次,重渲不跳变);
+// 副标是每日一句:首帧先给本地池播种条,当天缓存/在线补抓到了再换。
+// quote 是内容不是产品话术,不进字典,细节见 greeting.ts 头注。
+// chips 仍从 10 条池里抽 3,「换一批」原地重抽。
 const SUGGESTIONS = [
   "chat.suggestRead",
   "chat.suggestDigest",
@@ -1086,22 +1082,36 @@ function shuffle<T>(items: readonly T[]): T[] {
  *  chips 从 10 条池里抽 3,「换一批」原地重抽,不必重开面板 */
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   // 挂载时定一次,重渲不重抽(否则流式期间招呼语会跳变)
-  const [greetIdx] = useState(() =>
-    Math.floor(Math.random() * GREETINGS.length),
+  const [greetKey] = useState(() => timeGreetKey(new Date().getHours()));
+  const locale = getLocale();
+  const [quote, setQuote] = useState<Quote>(() =>
+    localQuote(locale, dayKeyOf()),
   );
+  useEffect(() => {
+    let on = true;
+    loadQuote(locale, dayKeyOf()).then((q) => {
+      if (on) setQuote(q);
+    });
+    return () => {
+      on = false;
+    };
+  }, [locale]);
   const [chipKeys, setChipKeys] = useState(() =>
     shuffle(SUGGESTIONS).slice(0, 3),
   );
-  const greet = GREETINGS[greetIdx];
+  const q = quoteDisplay(quote, locale);
   return (
     <div className="flex flex-col items-center px-6 pb-10 pt-16 text-center">
       <LogoMark />
       <p className="mt-4 text-[15px] font-medium text-on-surface">
-        {t(greet.title)}
+        {t(greetKey)}
       </p>
       <p className="mt-1.5 max-w-[240px] text-[12.5px] leading-relaxed text-on-surface-variant">
-        {t(greet.sub)}
+        {q.text}
       </p>
+      {q.from && (
+        <p className="mt-1 text-[11.5px] text-on-surface-variant">{q.from}</p>
+      )}
       <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
         {chipKeys.map((key) => {
           const label = t(key);
