@@ -776,15 +776,6 @@ export default function ChatView({
             <ArchiveIcon /> {t("chat.memorySavedLabel", { n: memorySaved })}
           </button>
         )}
-        {/* 回合收尾标记(∎ tombstone):静止且有内容时才出现——流式中的活动
-            信号由 ticker/光标承担,空态有招呼语,都不需要它。配合底部大
-            留白给答案一个明确的「全文完」呼吸点,而非贴着输入条戛然而止 */}
-        {status === "idle" &&
-          messages.some((m) => m.sessionId === currentSession) && (
-            <div className="msg-in flex justify-center pt-1" aria-hidden="true">
-              <EndMark />
-            </div>
-          )}
         </div>
         {(() => {
           // 上翻回看后流式仍在推进/内容很长时,给一个单跳回底的入口
@@ -1135,15 +1126,6 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
         </button>
       </div>
     </div>
-  );
-}
-
-/** 回合收尾记号:细线 + 圆点(「——·——」的排版变体)。纯装饰(aria-hidden) */
-function EndMark() {
-  return (
-    <span className="end-mark" aria-hidden="true">
-      <span className="end-mark-dot" />
-    </span>
   );
 }
 
