@@ -1,31 +1,59 @@
-# CI:push / PR 到 main 时跑 lint + 类型检查 + 单测 + 构建。
-# E2E(verify-*)需 headful Chrome 驱动真实扩展流,单独放 e2e 手动工作流。
+# ── CI 入门:这个文件是怎么被 GitHub 执行的 ──────────────────────────
+# workflow(工作流)= 放在 .github/workflows/ 下的一个 YAML,GitHub 自动识别。
+# 结构:on(什么时候跑)→ jobs(干活的单元)→ steps(顺序步骤)。
+# 跑在哪:GitHub 免费提供的临时虚拟机(runner,ubuntu-latest ≈ 最新版
+# Ubuntu)。每次运行都是一台全新机器、跑完即销毁——所以开头几步永远是
+# 「从零搭环境」:拉代码、装 pnpm、装 Node,这三步几乎所有项目都一样。
+# step 的两种写法:
+#   run:  在虚拟机里执行 shell 命令,等同本地敲这条命令;
+#   uses: 复用别人发布好的动作(action,来自 github.com/<owner>/<repo>,
+#         @后面钉大版本)。
+# 失败语义:某 step 以非零退出码结束 → 整个 job 立刻红,后面的 step 不再
+# 执行。「早失败」是刻意的:lint 都过不了就没必要跑测试。
+#
+# 本工作流的定位:push / PR 到 main 时自动跑 lint + 类型检查 + 单测 +
+# 构建,是每次改代码的常驻门禁。E2E(verify-*)要起 headful Chrome 驱动
+# 真实扩展流、单次约 10 分钟,不适合挂每次 push,单独放 e2e.yml 按需
+# 手动触发。
 name: checks
 
 on:
   push:
-    branches: [main]
+    branches: [main]   # 只盯 main:日常分支不自动跑(要跑就发 PR)
   pull_request:
-    branches: [main]
+    branches: [main]   # 向 main 发 PR 时也跑;红了的 PR 不该合
 
 jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # 把仓库代码拉到虚拟机(runner 不预载你的代码,必须显式 checkout)
+      - uses: actions/checkout@v5
 
+      # 装 pnpm。版本刻意不在此写死:v4 会自动读 package.json 的
+      # "packageManager": "pnpm@10.12.0" 字段。两处都写会报
+      # ERR_PNPM_BAD_PM_VERSION 拒绝安装(2026-09-15 真 runner 首跑就栽
+      # 在这)——同一事实只声明一处:升 pnpm 只改 package.json,CI 自动跟随。
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
-      - uses: actions/setup-node@v4
+      # 装 Node 并接上 pnpm 的包缓存。node 24 = 本地开发同版本(全部验证
+      # 都在它上面跑过);checkout/setup-node 用 v5 系列是它们自身已迁到
+      # node24 运行时,消除 GitHub 的 Node 20 弃用警告。
+      # cache: pnpm = 按 pnpm-lock.yaml 的哈希做缓存键,锁文件没变时
+      # install 几乎零下载(缓存里存的是下载过的包)。
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
+      # --frozen-lockfile:严格按 pnpm-lock.yaml 安装,与 package.json
+      # 对不上直接报错——CI 不允许「即兴解析依赖」,保证任何人任何时间
+      # 装出同一棵依赖树。
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 以下四步与本地开发完全同源(见 package.json scripts)。
+      # CI 的意义:用一台干净的陌生机器重放这些检查,防「在我机器上是好的」。
       - name: Lint (biome)
         run: pnpm lint
 
@@ -35,5 +63,6 @@ jobs:
       - name: Unit tests (vitest)
         run: pnpm test
 
+      # build 串了 tsc --noEmit + check-version + check-i18n 门禁 + vite 产物
       - name: Build (含 check-version / check-i18n 门禁)
         run: pnpm build

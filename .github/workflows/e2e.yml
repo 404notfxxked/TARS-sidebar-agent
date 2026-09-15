@@ -1,6 +1,11 @@
-# E2E:verify-*/probe-* 断言套件驱动真实 Chrome + 扩展(CDP 层 mock 网络)。
-# headful 扩展流,xvfb-run 包裹;实网探针(real-search-probe)不在套件内,
-# 不会在 CI 发真实搜索请求。按需手动触发,不在 push/PR 常跑(全量约 10 分钟)。
+# E2E 工作流:verify-*/probe-* 断言套件驱动真实 Chrome + 扩展(CDP 层 mock
+# 网络)。基础概念(runner/action/step、装 pnpm/Node 的三步、失败语义)见
+# checks.yml 头注,这里只讲本文件独有的东西。
+#
+# 与 checks 的分工:e2e 要起 headful(带界面)浏览器跑真扩展流,单次约
+# 10 分钟——不适合每次 push 都跑。所以 on 里没有任何 push/PR 触发器,
+# 只留 workflow_dispatch(手动触发:仓库页 → Actions → 左侧选 e2e →
+# Run workflow),inputs 会变成页面上让你填的表单。
 name: e2e
 
 on:
@@ -14,17 +19,18 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    # 整个 job 的保险丝:哪怕浏览器僵死挂住,最多烧 45 分钟就强制终止,
+    # 不会无限吃私有仓库的按分钟计费额度
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
+      # 版本不写死,读 package.json 的 packageManager(理由见 checks.yml)
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -34,15 +40,21 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # 装 Playwright 管理的 Chromium;--with-deps 顺带补 Ubuntu 缺的系统
+      # 库(不装浏览器起不来)。本地早已装过所以无感,全新 runner 必须现装。
       - name: Install Playwright Chromium(含系统依赖)
         run: pnpm exec playwright install --with-deps chromium
 
-      # 断言多为 DOM 层不依赖字形,但截图产物里的中文需要 CJK 字体
+      # runner 默认没有中文字体。断言多在 DOM 层不依赖字形,但失败时上传
+      # 的截图里中文会变成「豆腐块」,装 Noto CJK 保证截图可读。
       - name: Install CJK fonts(截图可读)
         run: |
           sudo apt-get update
           sudo apt-get install -y fonts-noto-cjk
 
+      # runner 是无显示器的机器,headful Chrome 需要 X 服务:xvfb-run 包一层
+      # = 在虚拟帧缓冲(内存里的假显示器)里跑。本地等价命令:
+      #   xvfb-run -a node tests/run.mjs <域>
       - name: Run e2e suites
         run: |
           DOMAIN="${{ github.event.inputs.domain }}"
@@ -52,6 +64,9 @@ jobs:
             xvfb-run -a node tests/run.mjs --all
           fi
 
+      # 截图产物(/tmp/tars-m3)上传成 artifact——runner 销毁后唯一能回看
+      # 的东西,在该次运行详情页底部 Artifacts 区下载(默认留 90 天)。
+      # if: always() = 前面步骤失败也执行:失败现场的截图恰恰最有价值。
       - name: Upload screenshots(视觉留档)
         if: always()
         uses: actions/upload-artifact@v4
