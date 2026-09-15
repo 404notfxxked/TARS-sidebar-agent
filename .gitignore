@@ -15,9 +15,13 @@ dist
 package-lock.json
 yarn.lock
 
-# 以下三条必须锚定仓库根(前导 /):裸目录名会匹配任意层级同名目录,
-# 曾把 src/background/memory/、src/sidepanel/memory/ 整个忽略掉
-/tests/
+# tests/ 入库(单测底座 + e2e 断言套件 + fixtures,见 tests/README.md);
+# 仅两个真网/退役调试脚本保持本地:
+# - real-search-probe:对真搜索引擎发真实查询,公开等于提供刷引擎工具,
+#   在 CI 里跑还会把出口 IP 写进日志
+# - try-search:已退役的裸抓调试器(搜索 tab 化前的通道),仅剩本地排查价值
+/tests/real-search-probe.mjs
+/tests/try-search.mjs
 
 .vscode/
 .zcode/
@@ -25,7 +29,9 @@ yarn.lock
 # 本地导出的诊断日志(给助手分析用,不进仓库)
 .logs/
 
-# 本地项目记忆(路线图/决策笔记;README「路线图」指向它,不进仓库)
+# 本地项目记忆(路线图/决策笔记;README「路线图」指向它,不进仓库)。
+# 以下条目必须锚定仓库根(前导 /):裸目录名会匹配任意层级同名目录,
+# 曾把 src/background/memory/、src/sidepanel/memory/ 整个忽略掉
 /memory/
 /design/
 

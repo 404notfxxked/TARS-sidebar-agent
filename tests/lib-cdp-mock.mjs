@@ -1,0 +1,445 @@
+// Playwright + CDP 的扩展测试底座(verify-* 脚本共用):
+// - launchWithCdp():启动 Chromium(加载扩展),并通过 **browser 级 CDP 会话**
+//   Target.setAutoAttach(flatten) 自动附加扩展的所有上下文 target(service
+//   worker / offscreen document / 页面),在每个扩展 target 上启用 Fetch 域,
+//   提供确定性网络拦截。
+//   为什么不用 Playwright 的 context.route:实测它拦不到扩展上下文主动发起的
+//   organic fetch(尤其 SW / offscreen)。为什么要覆盖多个 target:web_search
+//   的引擎请求和 LLM 请求走 SW,web_fetch 的抓取走 offscreen document ——
+//   它们是不同 target,Fetch 域要各挂各的。
+//   实现说明:autoAttach 在 flatten 模式下,子会话的域名事件(Fetch.*)
+//   直接出现在同一条 WebSocket 上,消息带 sessionId 字段;发命令时也带
+//   sessionId。新 target(SW 重启、offscreen 懒创建)由 Chrome 主动推送,
+//   无需轮询。
+// - 路由表:setRoutes([{match(url), handle(ctx)}]),首个 match 生效;
+//   ctx 提供 fulfill({status,headers,body|bodyBase64}) / pass() / delay(ms)。
+//   未匹配的请求一律放行。注意 handler 不返回时请求会一直挂起。
+
+import { chromium } from "playwright";
+import { cpSync, rmSync, readFileSync, existsSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { resolve } from "path";
+import { createHash } from "crypto";
+import { zh } from "./lib-i18n.mjs";
+
+const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
+
+/**
+ * E2E 专用的 manifest flavor:生产 manifest 已把站点授权改为 optional
+ * (安装零警告),而 chrome.permissions.request 的授权弹窗是原生对话框,
+ * 自动化无法确认(实测:CDP userGesture 也不行;Secure Preferences 种子
+ * 会被 MAC 校验重置)。这里把 dist 拷进固定临时目录并还原「静态授权」形态:
+ * 回填 host_permissions + content_scripts。
+ * 权限门代码不含测试分叉 —— chrome.permissions.contains 对静态授权同样
+ * 返回 true,生产与测试走同一条判定路径,只差授权的「来源」。
+ * 路径必须确定性(按 extDir 哈希,非每次随机):未打包扩展 ID = 路径哈希,
+ * verify-persist 等套件跨浏览器重启对比存储,路径一变 ID 就变,存储全丢。
+ * 并行跑多个套件会共享同一 flavor 目录,请按 run.mjs 的既有约定串行执行。
+ */
+function prepareTestExtension(extDir) {
+  const hash = createHash("sha256").update(resolve(extDir)).digest("hex").slice(0, 12);
+  const dir = resolve(tmpdir(), `tars-e2e-ext-${hash}`);
+  rmSync(dir, { recursive: true, force: true });
+  cpSync(extDir, dir, { recursive: true });
+  const manifestPath = resolve(dir, "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.host_permissions = ["<all_urls>"];
+  manifest.content_scripts = [
+    { matches: ["<all_urls>"], js: ["content.js"], run_at: "document_idle", all_frames: false },
+  ];
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  return dir;
+}
+
+export async function launchWithCdp({ extDir, userDataDir, proxy } = {}) {
+  extDir = prepareTestExtension(extDir);
+  const args = [
+    `--disable-extensions-except=${extDir}`,
+    `--load-extension=${extDir}`,
+    "--remote-debugging-port=0",
+  ];
+  // 网络受限环境下可给浏览器挂代理(mock 请求在 CDP 层拦截,不受代理影响)
+  if (proxy) args.push(`--proxy-server=${proxy}`);
+
+  const browser = await chromium.launchPersistentContext(userDataDir, {
+    headless: false,
+    args,
+    viewport: { width: 1400, height: 900 },
+  });
+
+  // 等 SW 启动并取扩展 ID
+  await new Promise((r) => setTimeout(r, 3000));
+  let extId = "";
+  for (const sw of browser.serviceWorkers()) {
+    const m = sw.url().match(/chrome-extension:\/\/([^/]+)\//);
+    if (m) {
+      extId = m[1];
+      break;
+    }
+  }
+  if (!extId) throw new Error("找不到扩展 ID");
+
+  // ---- browser 级 CDP:autoAttach 所有 target,扩展 target 上启用 Fetch ----
+  const routes = [];
+
+  const portFile = resolve(userDataDir, "DevToolsActivePort");
+  if (!existsSync(portFile)) throw new Error("DevToolsActivePort 不存在");
+  const port = parseInt(readFileSync(portFile, "utf8").split("\n")[0], 10);
+  const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+
+  let msgId = 0;
+  const pending = new Map();
+  const ws = new WebSocket(version.webSocketDebuggerUrl);
+  await new Promise((resolvePromise, reject) => {
+    ws.onopen = resolvePromise;
+    ws.onerror = () => reject(new Error("CDP WebSocket 连接失败"));
+    ws.onmessage = (ev) => onMessage(ev.data);
+    ws.onclose = () => console.error("[cdp-mock] browser CDP 连接关闭");
+  });
+
+  function send(method, params = {}, sessionId) {
+    return new Promise((resolvePromise, reject) => {
+      const id = ++msgId;
+      pending.set(id, { resolvePromise, reject });
+      ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }));
+    });
+  }
+
+  function onMessage(raw) {
+    const msg = JSON.parse(raw);
+    if (msg.id !== undefined) {
+      const p = pending.get(msg.id);
+      if (p) {
+        pending.delete(msg.id);
+        if (msg.error) p.reject(new Error(msg.error.message ?? JSON.stringify(msg.error)));
+        else p.resolvePromise(msg.result);
+      }
+      return;
+    }
+    switch (msg.method) {
+      case "Target.attachedToTarget": {
+        const { sessionId, targetInfo } = msg.params;
+        if (process.env.CDP_DEBUG) {
+          console.log(`[cdp-mock] attach 事件: ${targetInfo.type} ${targetInfo.url.slice(0, 60)}`);
+        }
+        const isExt = targetInfo.url.includes(extId);
+        const isWeb = ["service_worker", "background_page", "page", "iframe", "webview"].includes(targetInfo.type);
+        if (!isExt || !isWeb) return;
+        send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] }, sessionId)
+          .then(() => console.log(`[cdp-mock] 已挂载 ${targetInfo.type} ${targetInfo.url.slice(0, 60)}`))
+          .catch((e) => console.error(`[cdp-mock] Fetch.enable 失败(${targetInfo.type}):`, e.message));
+        return;
+      }
+      case "Fetch.requestPaused":
+        void handlePaused(msg.params, (m, p) => send(m, p, msg.sessionId)).catch((e) =>
+          console.error("[cdp-mock] handler error:", e.message),
+        );
+        return;
+    }
+  }
+
+  async function handlePaused(params, sendFn) {
+    const url = params.request.url;
+    for (const route of routes) {
+      if (!route.match(url)) continue;
+      const ctx = {
+        params,
+        // body 传文本(内部转 base64);二进制内容传 bodyBase64
+        fulfill: ({ status = 200, headers = {}, body, bodyBase64 } = {}) =>
+          sendFn("Fetch.fulfillRequest", {
+            requestId: params.requestId,
+            responseCode: status,
+            responseHeaders: Object.entries(headers).map(([name, value]) => ({ name, value })),
+            ...(bodyBase64 !== undefined
+              ? { body: bodyBase64 }
+              : body !== undefined
+                ? { body: b64(body) }
+                : {}),
+          }),
+        pass: () => sendFn("Fetch.continueRequest", { requestId: params.requestId }),
+        delay: (ms) => new Promise((r) => setTimeout(r, ms)),
+      };
+      try {
+        await route.handle(ctx);
+      } catch (e) {
+        // 典型场景:delay 期间发起方 abort(取消测试),fulfill 落在已废弃的请求上
+        console.error(`[cdp-mock] route error (${url.slice(0, 80)}):`, e.message);
+        await ctx.pass().catch(() => {});
+      }
+      return;
+    }
+    await sendFn("Fetch.continueRequest", { requestId: params.requestId }).catch(() => {});
+  }
+
+  /** Playwright 路由适配:把 route.request() 包成与 CDP ctx 同形的对象,
+   *  复用同一条路由表。tab 页面的导航请求走这里(deterministic)。 */
+  async function handlePwRoute(route) {
+    const req = route.request();
+    const url = req.url();
+    if (process.env.CDP_DEBUG) console.log(`[cdp-mock] pw request: ${req.method()} ${url.slice(0, 100)}`);
+    for (const entry of routes) {
+      if (!entry.match(url)) continue;
+      const ctx = {
+        params: {
+          request: {
+            url,
+            method: req.method(),
+            headers: req.headers(),
+            postData: req.postData() ?? "",
+          },
+        },
+        fulfill: ({ status = 200, headers = {}, body, bodyBase64 } = {}) =>
+          route.fulfill({
+            status,
+            headers,
+            ...(bodyBase64 !== undefined
+              ? { body: Buffer.from(bodyBase64, "base64") }
+              : body !== undefined
+                ? { body }
+                : {}),
+          }),
+        pass: () => route.continue(),
+        delay: (ms) => new Promise((r) => setTimeout(r, ms)),
+      };
+      try {
+        await entry.handle(ctx);
+      } catch (e) {
+        // 典型场景:delay 期间发起方 abort,fulfill/continue 落在已废弃的请求上
+        console.error(`[cdp-mock] pw route error (${url.slice(0, 80)}):`, e.message);
+        await ctx.pass().catch(() => {});
+      }
+      return;
+    }
+    await route.continue().catch(() => {});
+  }
+
+  /**
+   * offscreen document(browser 级 autoAttach 不覆盖它)走 Playwright 通道:
+   * Playwright 把它暴露为 backgroundPage,可直接 newCDPSession。
+   */
+  async function attachPlaywrightPage(page) {
+    if (!page.url().includes(extId)) return;
+    try {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+      cdp.on("Fetch.requestPaused", (params) =>
+        void handlePaused(params, (m, p) => cdp.send(m, p)).catch((e) =>
+          console.error("[cdp-mock] handler error:", e.message),
+        ),
+      );
+      console.log(`[cdp-mock] 已挂载(Playwright) ${page.url().slice(0, 60)}`);
+    } catch (e) {
+      console.error(`[cdp-mock] Playwright 挂载失败 ${page.url().slice(0, 60)}:`, e.message);
+    }
+  }
+
+  await send("Target.setAutoAttach", {
+    autoAttach: true,
+    waitForDebuggerOnStart: false,
+    flatten: true,
+  });
+  // 页面请求(搜索 tab / 面板页,含未来创建的页面)走 Playwright 路由:
+  // context.route 对后建页面同样生效且无 attach 竞态——tab 搜索的首航请求
+  // 由此确定性拦截。SW / offscreen 的 organic fetch Playwright 拦不到
+  // (见头注释),仍由上面的 CDP Fetch 会话负责。只挂 http(s),
+  // chrome-extension:// 资源不受影响。
+  await browser.route(/^https?:/, (route) => {
+    void handlePwRoute(route).catch((e) =>
+      console.error("[cdp-mock] pw route error:", e.message),
+    );
+  });
+  // offscreen(document)的 Playwright 通道:初始化枚举 + 新建监听
+  for (const bp of browser.backgroundPages()) void attachPlaywrightPage(bp);
+  browser.on("backgroundpage", (bp) => void attachPlaywrightPage(bp));
+  console.log("✅ CDP Fetch 拦截已就绪(autoAttach SW + Playwright 挂载 offscreen)");
+
+  return {
+    browser,
+    extId,
+    /** 原始 browser 级 CDP 命令(Target.getTargets/closeTarget 等场景用) */
+    cdpSend: send,
+    mock: {
+      setRoutes: (r) => {
+        routes.length = 0;
+        routes.push(...r);
+      },
+    },
+  };
+}
+
+/** 注入测试配置(假 Key + 指定 baseUrl);sidepanel 页面上执行 */
+export async function injectTestConfig(page, baseUrl = "https://api.test.example.com/v1") {
+  await page.evaluate(
+    (url) =>
+      chrome.storage.local.set({
+        apiKey: "sk-test",
+        model: "gpt-test",
+        baseUrl: url,
+        models: [{ id: "gpt-test" }],
+      }),
+    baseUrl,
+  );
+}
+
+/** 读取扩展环形日志(log:bg / log:panel / log:off),只取 since 之后的条目 */
+export async function readLogs(page, since) {
+  const bag = await page.evaluate(() => chrome.storage.local.get(null));
+  const out = [];
+  for (const key of ["log:bg", "log:panel", "log:off"]) {
+    for (const e of bag[key] ?? []) {
+      if (e?.t >= since) out.push(e);
+    }
+  }
+  out.sort((a, b) => a.t - b.t || a.seq - b.seq);
+  return out;
+}
+
+/**
+ * 读取「当前 run」的日志:以最后一次 [bg/agent] run started 为界。
+ * 断言一律基于 run 窗口而不是 since 时间戳 —— run 之间可能只隔几百毫秒,
+ * 按时间戳切窗会把上一个 run 的完成日志错算进下一个 run。
+ */
+export async function readRunLogs(page) {
+  const all = await readLogs(page, 0);
+  const starts = all.filter((e) => e.ctx === "bg" && e.tag === "agent" && e.msg === "run started");
+  const last = starts[starts.length - 1];
+  if (!last) return [];
+  return all.filter((e) => e.t >= last.t);
+}
+
+/** 轮询等待「当前 run」的日志满足条件,返回当前 run 的全部日志;超时抛错并转储 */
+export async function waitForRunLog(page, predicate, label, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const runLogs = await readRunLogs(page);
+    const hits = runLogs.filter(predicate);
+    if (hits.length > 0) return runLogs;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  const runLogs = await readRunLogs(page);
+  throw new Error(
+    `等待日志超时: ${label}\n当前 run 日志:\n` +
+      runLogs.map((e) => `  [${e.ctx}/${e.tag}] ${e.msg} ${(e.data ?? "").slice(0, 120)}`).join("\n"),
+  );
+}
+
+/** 发一条用户消息并等本轮 run 结束(发送按钮恢复 = idle) */
+export async function ask(sidepanel, text) {
+  const since = Date.now() - 500;
+  const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
+  await input.waitFor({ timeout: 5000 });
+  await input.fill(text);
+  await sidepanel.locator(`button[aria-label="${zh.chat.send}"]`).click();
+  await sidepanel
+    .locator(`button[aria-label="${zh.chat.send}"]`)
+    .waitFor({ state: "visible", timeout: 60000 })
+    .catch(async () => {
+      await sidepanel
+        .locator(`button[aria-label="${zh.chat.stop}"]`)
+        .waitFor({ state: "detached", timeout: 60000 });
+    });
+  await new Promise((r) => setTimeout(r, 500));
+  return since;
+}
+
+/** SSE 编码一组 OpenAI 兼容流式帧 */
+export const sse = (...frames) =>
+  `${frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join("")}data: [DONE]\n\n`;
+
+/** 给页面切深浅色(直接改 data-theme,不走设置页) */
+export async function setTheme(page, theme) {
+  await page.evaluate((t) => {
+    document.documentElement.dataset.theme = t;
+  }, theme);
+}
+
+/**
+ * 直写 IndexedDB 种长期记忆(rows: [text, pinned] 元组数组),含建库/建
+ * memories store;先清后种,空数组即清空(视觉/边缘态探针共用)。
+ */
+export async function seedMemories(page, rows) {
+  await page.evaluate((list) => {
+    const now = Date.now();
+    return new Promise((resolvePromise, reject) => {
+      const rq = indexedDB.open("tars");
+      rq.onupgradeneeded = () => {
+        const db = rq.result;
+        for (const n of ["sessions", "memories"])
+          if (!db.objectStoreNames.contains(n))
+            db.createObjectStore(n, { keyPath: "id" });
+        if (!db.objectStoreNames.contains("messages"))
+          db.createObjectStore("messages", { keyPath: ["sessionId", "seq"] });
+      };
+      rq.onsuccess = () => {
+        const db = rq.result;
+        const tx = db.transaction("memories", "readwrite");
+        const s = tx.objectStore("memories");
+        s.clear();
+        list.forEach(([text, pinned], i) => {
+          s.put({
+            id: `m-${i}`,
+            text,
+            createdAt: now - (i + 1) * 3600e3,
+            updatedAt: now - (i + 1) * 3600e3,
+            pinned,
+            source: i % 4 === 0 ? "user" : "model",
+          });
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolvePromise();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      rq.onerror = () => reject(rq.error);
+    });
+  }, rows);
+}
+
+/**
+ * 直写 IndexedDB 种历史会话(rows: {id,title,at,user?,assistant?}),
+ * 每条会话写一问一答两条消息(user 缺省用 title);视觉/布局探针共用。
+ */
+export async function seedSessions(page, rows) {
+  await page.evaluate((list) => {
+    return new Promise((resolve, reject) => {
+      const rq = indexedDB.open("tars");
+      rq.onupgradeneeded = () => {
+        const db = rq.result;
+        db.createObjectStore("sessions", { keyPath: "id" });
+        db.createObjectStore("messages", { keyPath: ["sessionId", "seq"] });
+      };
+      rq.onsuccess = () => {
+        const db = rq.result;
+        const tx = db.transaction(["sessions", "messages"], "readwrite");
+        const sStore = tx.objectStore("sessions");
+        const mStore = tx.objectStore("messages");
+        for (const r of list) {
+          sStore.put({
+            id: r.id,
+            title: r.title,
+            createdAt: r.at,
+            updatedAt: r.at,
+            msgCount: 2,
+          });
+          mStore.put({
+            sessionId: r.id,
+            seq: 0,
+            msg: { role: "user", content: r.user ?? r.title },
+          });
+          mStore.put({
+            sessionId: r.id,
+            seq: 1,
+            msg: { role: "assistant", content: r.assistant ?? "好的,已完成。" },
+          });
+        }
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      rq.onerror = () => reject(rq.error);
+    });
+  }, rows);
+}

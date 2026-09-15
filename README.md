@@ -91,7 +91,7 @@ MV3 的 service worker 没有 DOM 且随时休眠——解析放进 offscreen do
 
 - **手写 ReAct 循环，不用框架**：裁剪、预算、取消传播、超步收尾这些框架替你做的默认值，都在自己手里，每段可讲清为什么
 - **虚拟上下文**：裁剪与压缩只改「发给模型的 prompt」，落盘永远全量——历史与记忆随时可摘除，界面回放与模型所见互不污染
-- **确定性 E2E**：CDP Fetch 层拦截扩展上下文的真实网络请求，mock LLM 按脚本驱动真循环、断言锚定日志与实库；纯逻辑另有 vitest 单测层
+- **确定性 E2E**：CDP Fetch 层拦截扩展上下文的真实网络请求，mock LLM 按脚本驱动真循环、断言锚定日志与实库；纯逻辑另有 vitest 单测层。跑法：`pnpm test`（单测）、`node tests/run.mjs <域>`（E2E 按域，明细见 [tests/README.md](tests/README.md)）
 - **无 UI 组件库**：Material 3 配色由单一源色生成，深浅色 × 8 套重点色共用一套设计令牌
 
 ## 🗺 路线
