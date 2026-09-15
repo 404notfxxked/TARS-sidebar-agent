@@ -6,7 +6,7 @@
 
 ### Added
 
-- **安装零站点授权,功能按需显式授权** — manifest 不再声明任何 host 权限与静态 content script(改为 `optional_host_permissions`),安装时不出现「读取和更改您在所有网站上的数据」强警告。设置 → 安全新增「页面与网络访问」行:读页 / 联网搜索 / 按链接读网页在此一键授权、随时撤销(Chrome 标准权限弹窗确认);模型端点在「获取模型列表」、MCP 服务器在「测试连接」时按域单独授权——只聊天的话,不授予任何站点权限也能用。联网开关开着却未授权时,设置 → 联网就地给出授权入口;工具在未授权时会把授权指引作为结果回给 AI 转告,agent 在请求模型端点前也做了预检并给可行动的错误文案。content script 相应改为按需注入(发送失败 → executeScript 注入 → 重试,成为唯一注入路径,含防重复注册护栏)。
+- **安装零站点授权,功能按需显式授权** — manifest 不再声明任何 host 权限与静态 content script(改为 `optional_host_permissions`),安装时不出现「读取和更改您在所有网站上的数据」强警告。设置 → 安全新增「页面与网络访问」行:读页 / 联网搜索 / 按链接读网页在此一键授权、随时撤销(Chrome 标准权限弹窗确认);模型端点在「获取模型列表」、MCP 服务器在「测试连接」时按域单独授权——只聊天的话,只需在获取模型列表时授权模型端点那一个域,无需授予任何网页站点权限。联网开关开着却未授权时,设置 → 联网就地给出授权入口;工具在未授权时会把授权指引作为结果回给 AI 转告,agent 在请求模型端点前也做了预检并给可行动的错误文案。content script 相应改为按需注入(发送失败 → executeScript 注入 → 重试,成为唯一注入路径,含防重复注册护栏)。
 - **License 定稿:MIT** — 根目录新增 [LICENSE](LICENSE),README 徽章与第三方依赖声明一并补齐;`package.json` 与 `manifest.json` 版本统一为 1.2.0,并新增 `scripts/check-version.mjs` 随构建校验两处不漂移。
 - **工程化:Biome lint + GitHub Actions** — 引入 Biome 2(`biome.jsonc`,formatter 与 import 排序留给独立风格提交);按 recommended 规则清理了存量真实问题(React hooks 依赖数组的数处误写、迭代回调隐式返回值、a11y 缺口与装饰性 SVG 等),有意为之的行为以 biome-ignore 注明理由。新增 CI:`.github/workflows/checks.yml` 在 push/PR 时跑 lint + 类型检查 + vitest 单测 + 构建。
 - **E2E 套件入库 + 手动 e2e 工作流** — tests/ 下的 e2e 断言套件(verify-* × 10、带断言探针 × 6、CDP mock 底座、fixtures、run.mjs 按域 runner)正式入库,README 宣传的确定性 E2E 自此可公开复现;两个真网/退役调试脚本(real-search-probe / try-search,对真实搜索引擎发查询)经 .gitignore 精确排除保持本地。新增 `.github/workflows/e2e.yml`:手动触发、支持按域参数,xvfb 驱动 headful Chromium 跑真实扩展流。
