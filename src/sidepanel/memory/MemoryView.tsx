@@ -117,7 +117,9 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
   // 入场 stagger:全局序号封顶 8,30ms/行(同历史页)
   const rowDelay = useMemo(() => {
     const m = new Map<string, number>();
-    memories?.forEach((r, i) => m.set(r.id, Math.min(i, 8) * 30));
+    memories?.forEach((r, i) => {
+      m.set(r.id, Math.min(i, 8) * 30);
+    });
     return m;
   }, [memories]);
 
@@ -129,7 +131,8 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
         backLabel={t("memory.backToSettings")}
       >
         {/* 溢出菜单:清空全部(两段确认;菜单收起即复位)。
-            Esc 在此拦下先关菜单,不冒泡到 App 层关整页 */}
+            Esc 在此拦下先关菜单,不冒泡到 App 层关整页(容器本身非交互元素,焦点在内部按钮上) */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: Esc 拦截容器,见上 */}
         <div
           className="relative ml-auto"
           onKeyDown={(e) => {
@@ -165,6 +168,8 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
           {menuOpen && (
             <>
               {/* 点菜单外任意处收起(垫层在菜单之下、页面之上) */}
+              {/* biome-ignore lint/a11y/noStaticElementInteractions: 菜单垫层(scrim),标准模式 */}
+              {/* biome-ignore lint/a11y/useKeyWithClickEvents: 垫层仅服务指针,键盘经 Esc 关闭(见上方 onKeyDown) */}
               <div
                 className="fixed inset-0 z-10"
                 onClick={() => {
@@ -329,6 +334,7 @@ function MemoryRow({
         {editing ? (
           <input
             type="text"
+            // biome-ignore lint/a11y/noAutofocus: 点「编辑」即进入行内编辑,自动聚焦是产品语义
             autoFocus
             value={editText}
             maxLength={MEMORY_MAX_CHARS}

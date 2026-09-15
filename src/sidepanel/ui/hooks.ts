@@ -23,12 +23,13 @@ export function useLocale(): LocalePref {
 export function useConfirmReset<T extends string | boolean>(ms = 3000) {
   const [value, setValue] = useState<T | null>(null);
   const timer = useRef<number | null>(null);
-  const clear = () => {
+  // 稳定引用:arm/reset 的依赖数组靠它保持恒定,不随渲染换身份
+  const clear = useCallback(() => {
     if (timer.current !== null) {
       window.clearTimeout(timer.current);
       timer.current = null;
     }
-  };
+  }, []);
   const arm = useCallback((v: T) => {
     clear();
     setValue(v);
@@ -36,12 +37,13 @@ export function useConfirmReset<T extends string | boolean>(ms = 3000) {
       timer.current = null;
       setValue(null);
     }, ms);
-  }, [ms]);
+  }, [ms, clear]);
   const reset = useCallback(() => {
     clear();
     setValue(null);
-  }, []);
-  useEffect(() => clear, []);
+  }, [clear]);
+  // 卸载时清残留定时器
+  useEffect(() => clear, [clear]);
   return [value, arm, reset] as const;
 }
 

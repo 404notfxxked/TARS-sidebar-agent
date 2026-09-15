@@ -185,9 +185,13 @@ function absolutizeLinks(rootEl: HTMLElement, baseURI: string): void {
 function pruneNoise(rootEl: HTMLElement): void {
   rootEl.querySelectorAll(
     "script, style, noscript, template, svg, canvas, iframe, object, embed",
-  ).forEach((el) => el.remove());
+  ).forEach((el) => {
+    el.remove();
+  });
   // 显式隐藏子树整段摘除(hidden 属性 / aria-hidden / 内联样式,经典 display 技巧)
-  rootEl.querySelectorAll("[hidden], [aria-hidden='true']").forEach((el) => el.remove());
+  rootEl.querySelectorAll("[hidden], [aria-hidden='true']").forEach((el) => {
+    el.remove();
+  });
   rootEl.querySelectorAll<HTMLElement>("[style]").forEach((el) => {
     const st = el.getAttribute("style") ?? "";
     if (/display\s*:\s*none/i.test(st) || /visibility\s*:\s*hidden/i.test(st)) {
@@ -383,7 +387,7 @@ function expandQueryTerms(query: string): string[] {
 function tokenize(query: string): string[] {
   return query
     .toLowerCase()
-    .split(/[\s,.;:!?()'"\[\]{}<>|~`@#$%^&*+=/\\，。；：！？、《》「」【】]+/)
+    .split(/[\s,.;:!?()'"[\]{}<>|~`@#$%^&*+=/\\，。；：！？、《》「」【】]+/)
     .map((t) => t.trim())
     .filter((t) => t.length > 0);
 }

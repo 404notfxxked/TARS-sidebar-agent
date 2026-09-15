@@ -109,6 +109,7 @@ export default function AppearanceSection({
           className="flex flex-wrap items-center gap-2.5"
         >
           {ACCENT_COLORS.map(([value, color]) => (
+            // biome-ignore lint/a11y/useSemanticElements: 色板选择的 radio 语义经 role 声明,原生 radio 无法承载视觉
             <button
               key={value}
               type="button"

@@ -1,0 +1,68 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  // 首个 lint 落地:只开正确性规则,风格/格式化不进本次变更
+  // (整仓格式化应是一次独立的 style commit,避免淹没功能 diff;
+  //  formatter 打开后可平替 Prettier)。
+  // 范围:源码 + 测试 + 脚本;dist 由 .gitignore 自动排除。
+  "files": {
+    "includes": [
+      "src/**",
+      "tests/**",
+      "scripts/**",
+      // M3 tokens.css 用了高级语法,biome 解析器吃不消;样式暂不进 lint
+      "!src/sidepanel/styles/**",
+      // fixtures 是仿搜索引擎结果页的静态夹具,还原的是「真实网页的脏」,
+      // a11y/规范类规则对它没有意义;fetch-gbk.html 是 GBK 字节文件也无法解析
+      "!tests/fixtures/**"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        // import 排序/整理是纯风格动作,留给独立的 style commit(同 formatter)
+        "organizeImports": "off"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        // 存量代码风格偏好,不在本次统一(避免全仓 diff);
+        // node: 协议导入同理,属于一次独立的 style commit
+        "useConst": "off",
+        "noNonNullAssertion": "off",
+        "useNodejsImportProtocol": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noArrayIndexKey": "off",
+        // 表达式内赋值(如 while ((m = ...))) 是既有写法,后续按需治理
+        "noAssignInExpressions": "off"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "off"
+      }
+    }
+  },
+  "javascript": {
+    "globals": ["chrome"]
+  },
+  "overrides": [
+    {
+      // 测试脚本按 mjs 直跑,console 是主要输出通道
+      "includes": ["tests/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
+}

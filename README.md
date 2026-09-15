@@ -11,9 +11,9 @@
 
 [![version](https://img.shields.io/github/v/tag/404notfxxked/TARS-sidebar-agent?style=flat-square&label=version)](https://github.com/404notfxxked/TARS-sidebar-agent/releases)
 [![chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/develop/mv3/mv3-migration)
-[![license](https://img.shields.io/badge/license-TODO-red?style=flat-square)](#-license)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-<!-- TODO(release-plan 阶段 1)：补演示 GIF / 截图；Releases 挂 dist zip 后在快速开始加下载入口；License 定稿后换动态 badge -->
+<!-- TODO(release-plan 阶段 1)：补演示 GIF / 截图；Releases 挂 dist zip 后在快速开始加下载入口 -->
 
 </div>
 
@@ -39,6 +39,7 @@
 
 TARS 没有后端，谈不上「上传」：
 
+- **安装零站点授权**：manifest 不声明任何 host 权限。读取页面、联网搜索、按链接读网页，需要你在 设置 → 安全 里用 Chrome 标准弹窗显式授权「页面与网络访问」（可随时撤销）；模型端点在添加服务时按域单独授权
 - 对话、记忆、技能、设置与 API Key **只存在你的浏览器里**（IndexedDB + `chrome.storage.local`），卸载扩展即消失
 - 模型请求从你的浏览器**直连你配置的端点**，途中没有第三台服务器；日志在导出前自动脱敏 Key
 - 打开联网搜索后，搜索词会发给搜索引擎（或你配置的搜索服务）；启用 MCP 工具后，相关请求内容会发给对应服务器——两类能力都默认关闭、开启时界面明示
@@ -58,11 +59,13 @@ pnpm build        # 产物输出到 dist/
 1. 打开 `chrome://extensions`，开启右上角「开发者模式」
 2. 点「加载已解压的扩展程序」，选择本项目的 `dist/`
 3. 点工具栏图标打开侧栏，在设置里填入 Base URL 与 API Key（例如 `https://api.deepseek.com/v1`）
+4. 想让它读页面 / 联网 / 操作网页：到 设置 → 安全 点「授权页面与网络访问」；不需要读页问答的话，跳过这步也能正常聊天
 
 「联网搜索」默认关闭：开启后默认走免 Key 抓取通道（质量随网络出口浮动），也可在设置里改选搜索服务并填入对应的 API Key。关闭状态下 TARS 只读当前页面，不发出任何联网请求。
 
 ## 💡 使用须知
 
+- **安装后默认不读任何页面**：站点授权是显式的——读页 / 搜索 / 读网页前到 设置 → 安全 授权一次即可，撤销立即生效；模型端点在添加服务时单独按域授权
 - **首条回复偏慢**：MV3 的 service worker 按需冷启动 + 首次连接模型端点，属预期；同会话后续请求正常速度
 - **搜索时会看到一闪而过的标签页**：免 Key 通道靠真实搜索引擎标签页拿完整结果页，读完即自动关闭、不留痕迹；引擎健康表会记住哪些引擎在你当前网络下好用，不可达的自动沉底
 - **清除浏览数据会连带清掉会话历史**：会话按 7 天短命数据设计（可调或关闭），重要内容别指望它长期保存
@@ -79,7 +82,7 @@ sidepanel (React) ⇄ port（消息协议）⇄ Service Worker
                                       ├─ sessions/  会话持久化（IndexedDB）
                                       ├─ memory/    长期记忆
 ├─ offscreen doc   HTML → markdown 解析（SW 无 DOM）
-└─ content script  页面感知与操作（只碰页面）
+└─ content script  页面感知与操作（按需注入,只碰被授权的页面）
 ```
 
 MV3 的 service worker 没有 DOM 且随时休眠——解析放进 offscreen document，状态即时落盘，网络全部收归 SW，面板只管渲染。设计取舍写在各模块的文件头注释里。
@@ -100,7 +103,6 @@ MV3 的 service worker 没有 DOM 且随时休眠——解析放进 offscreen do
 
 ## 📄 License
 
-> ⚠️ **TODO — License 待定**：MIT / Apache-2.0 / 保留所有权利尚未选型，正式发布前补充于此；
-> 第三方依赖声明（React / highlight.js / markdown 渲染栈）随 License 一并补全。
+[MIT](LICENSE)。第三方依赖：React（MIT）、turndown（BSD-3-Clause）、highlight.js（BSD-3-Clause）、tailwindcss（MIT）——完整清单见 [package.json](package.json) 与 `pnpm-lock.yaml`。
 
 版本变更见 [CHANGELOG](CHANGELOG.md)。

@@ -119,8 +119,9 @@ export default function SessionsView({
     () => sessions?.filter((s) => !kw || s.title.toLowerCase().includes(kw)),
     [sessions, kw],
   );
-  // 依赖带 locale:分组标签来自 t(),换语言后要重算
+  // 依赖带 locale:分组标签来自 t(),换语言后要重算(locale 仅作重算信号)
   const locale = useLocale();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: locale 仅作重算信号,分组文案经 t() 间接消费
   const groups = useMemo(
     () => (filtered ? groupSessions(filtered) : []),
     [filtered, locale],
@@ -128,7 +129,9 @@ export default function SessionsView({
   // 入场 stagger:全局序号封顶 8,30ms/行
   const rowDelay = useMemo(() => {
     const m = new Map<string, number>();
-    filtered?.forEach((s, i) => m.set(s.id, Math.min(i, 8) * 30));
+    filtered?.forEach((s, i) => {
+      m.set(s.id, Math.min(i, 8) * 30);
+    });
     return m;
   }, [filtered]);
 
@@ -181,6 +184,7 @@ export default function SessionsView({
           </svg>
           <input
             type="text"
+            // biome-ignore lint/a11y/noAutofocus: 打开历史列表即检索是产品语义(见 CHANGELOG)
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}

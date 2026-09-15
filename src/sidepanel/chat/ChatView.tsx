@@ -316,6 +316,7 @@ export default function ChatView({
 
   // 历史列表选中 → 打开;消费完立刻回调置空,保证下次选同一会话仍能触发
   // (空串也是有效选择 = 新对话,因此判 null 而非判真值)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只随 resumeSessionId 触发,回调非稳定引用
   useEffect(() => {
     if (resumeSessionId !== null) {
       openSession(resumeSessionId);
@@ -326,9 +327,10 @@ export default function ChatView({
   // 当前会话回传给 App,历史列表据此高亮「当前」
   useEffect(() => {
     onActiveSessionChange?.(currentSession);
-  }, [currentSession]);
+  }, [currentSession, onActiveSessionChange]);
 
   // 挂载:建 port、读配置。面板打开即新会话,不拉任何历史。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅挂载执行;connect 每渲染换身份,入依赖会反复断连 port,其闭包经 ref 读最新状态
   useEffect(() => {
     connect();
     // 历史图片取字节的发送通道(ChatImage 组件经模块级 requestImgUrl 调用)
@@ -408,6 +410,7 @@ export default function ChatView({
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 随内容增长重跑,实现近底跟随
   useEffect(() => {
     const el = listRef.current;
     if (!el || !pinnedRef.current) return;
@@ -535,6 +538,8 @@ export default function ChatView({
       (s) => s.name.includes(q) || s.description.toLowerCase().includes(q),
     );
   }, [enabledSkills, slashQuery]);
+  // 输入变化 → 高亮回到首项(菜单开着时每次改词都重置选择)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setSkillIdx 是稳定 setState
   useEffect(() => setSkillIdx(0), [slashQuery]);
   const slashMenuOpen = !!slashMatch && !slashClosed;
 
@@ -556,6 +561,7 @@ export default function ChatView({
   };
 
   // ---- 输入区:textarea 随内容自增高(封顶约 5 行,超出内部滚动) ----
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ref 稳定,input 变化触发重测高
   useLayoutEffect(() => {
     const el = chatInputRef.current;
     if (!el) return;
@@ -908,6 +914,7 @@ export default function ChatView({
           <textarea
             ref={chatInputRef}
             rows={1}
+            // biome-ignore lint/a11y/noAutofocus: 面板即输入的产品语义(见 CHANGELOG「输入区焦点」),非表单页
             autoFocus
             value={input}
             onChange={(e) => {
@@ -1011,6 +1018,7 @@ export default function ChatView({
                 height="10"
                 viewBox="0 0 10 10"
                 fill="currentColor"
+                aria-hidden="true"
               >
                 <rect x="1.5" y="1.5" width="7" height="7" rx="1.2" />
               </svg>

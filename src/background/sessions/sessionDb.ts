@@ -242,7 +242,9 @@ export async function appendMessages(
   const tx = db.transaction([SESSIONS, MESSAGES, IMAGES], "readwrite");
   tx.objectStore(SESSIONS).put(meta);
   const store = tx.objectStore(MESSAGES);
-  msgs.forEach((msg, i) => store.put({ sessionId, seq: baseSeq + i, msg }));
+  msgs.forEach((msg, i) => {
+    store.put({ sessionId, seq: baseSeq + i, msg });
+  });
   const imageStore = tx.objectStore(IMAGES);
   for (const row of images) imageStore.put(row);
   await settled(tx);

@@ -8,7 +8,7 @@
 //   长回答避免「每 delta 全量重解析 markdown」的 O(n²) 重复解析
 
 import { useEffect, useRef, useState } from "react";
-import { MSG, type AgentEvent } from "../../shared/messages";
+import type { MSG, AgentEvent } from "../../shared/messages";
 import type {
   ProcessSeg,
   ReasoningSeg,
@@ -244,14 +244,16 @@ export function useRunSegments(
       return next;
     });
 
-  // 卸载兜底:清节拍定时器与缓冲,避免卸载后 setState
+  // 卸载兜底:清节拍定时器与缓冲,避免卸载后 setState。
+  // 刻意空依赖(仅卸载执行):drop* 每次渲染都是新身份,若入依赖,cleanup
+  // 会在每次渲染重跑、把流式中的缓冲清掉丢 delta;闭包只引用 ref,无过期问题
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅卸载执行,见上
   useEffect(
     () => () => {
       streamingRef.current = false;
       dropReasoningBuf();
       dropTextBuf();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 

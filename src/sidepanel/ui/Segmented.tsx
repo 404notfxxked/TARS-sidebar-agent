@@ -16,6 +16,7 @@ export default function Segmented<T extends string>({
   return (
     <div role="radiogroup" aria-label={ariaLabel} className="segmented">
       {options.map((o) => (
+        // biome-ignore lint/a11y/useSemanticElements: 分段控件的 radio 语义经 role 声明,原生 radio 无法承载视觉
         <button
           key={o.value}
           type="button"

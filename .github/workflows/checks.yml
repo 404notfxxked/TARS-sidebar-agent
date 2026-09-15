@@ -1,0 +1,39 @@
+# CI:push / PR 到 main 时跑 lint + 类型检查 + 单测 + 构建。
+# E2E(verify-*)需 headful Chrome 驱动真实扩展流,单独放 e2e 手动工作流。
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (biome)
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests (vitest)
+        run: pnpm test
+
+      - name: Build (含 check-version / check-i18n 门禁)
+        run: pnpm build

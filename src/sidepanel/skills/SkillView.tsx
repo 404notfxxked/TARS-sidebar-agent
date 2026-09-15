@@ -161,13 +161,14 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
         ) : (
           <div className="settings-card">
             <textarea
-              autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={t("skills.placeholder")}
               aria-label={t("skills.add")}
               spellCheck={false}
               rows={8}
+              // biome-ignore lint/a11y/noAutofocus: 点「添加技能」即展开即写,自动聚焦是产品语义
+              autoFocus
               className="field-input block w-full resize-y font-mono text-[12px] leading-5"
             />
             {addError && <p className="field-hint text-error">{addError}</p>}
@@ -331,12 +332,13 @@ function SkillRow({
       {editing && (
         <div className="settings-card mt-1">
           <textarea
-            autoFocus
             value={editDraft}
             onChange={(e) => onEditDraft(e.target.value)}
             aria-label={t("skills.edit")}
             spellCheck={false}
             rows={10}
+            // biome-ignore lint/a11y/noAutofocus: 点「编辑」即展开即改,自动聚焦是产品语义
+            autoFocus
             className="field-input block w-full resize-y font-mono text-[12px] leading-5"
           />
           {editError && <p className="field-hint text-error">{editError}</p>}

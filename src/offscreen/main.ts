@@ -70,7 +70,7 @@ function requestCaptureDoc(tabId: number): Promise<unknown> {
           return;
         }
         const resp = raw as { type?: string; ok?: boolean; result?: unknown; error?: string };
-        if (!resp || resp.type !== "CAPTURE_DOC_RESPONSE") {
+        if (resp?.type !== "CAPTURE_DOC_RESPONSE") {
           reject(new Error("invalid capture response"));
           return;
         }

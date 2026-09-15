@@ -40,6 +40,7 @@ export default function DataSection({
       )
       .catch(() => setUsage(null));
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅挂载取一次用量;refreshUsage 非稳定引用,入依赖会每次渲染重拉
   useEffect(() => {
     refreshUsage();
   }, []);

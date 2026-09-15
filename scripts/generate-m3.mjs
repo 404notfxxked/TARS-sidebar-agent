@@ -39,7 +39,7 @@ const ACCENTS = [
   { id: "graphite", label: "石墨", source: "#5f6368", mono: true },
 ];
 
-const DEFAULT = ACCENTS[0];
+const _DEFAULT = ACCENTS[0];
 
 /** scheme 里直接存在的角色 → CSS 名(M3 官方 sys token 命名:--md-sys-color-*) */
 const SCHEME_ROLES = {

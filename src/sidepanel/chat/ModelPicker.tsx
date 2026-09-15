@@ -154,9 +154,12 @@ export default function ModelPicker({
           role="listbox"
           aria-label={t("chat.modelOptions")}
           aria-activedescendant={`mp-opt-${activeIdx}`}
+          // tabindex:aria-activedescendant 的容器必须可聚焦(ARIA 规范要求)
+          tabIndex={0}
           className="combo-pop combo-pop--up"
         >
           {groups.map(({ provider: p, start }) => (
+            // biome-ignore lint/a11y/useSemanticElements: listbox 内的 option 分组无语义等价元素,fieldset 会破坏结构
             <div key={p.id} role="group" aria-label={p.name}>
               <div
                 aria-hidden="true"
