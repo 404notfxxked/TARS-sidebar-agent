@@ -4,8 +4,7 @@
 import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
 import { MSG, PORT_NAME } from "../../shared/messages";
-import { t } from "../../shared/i18n";
-import { useConfirmReset } from "../ui/hooks";
+import { useConfirmReset, useT } from "../ui/hooks";
 import Segmented from "../ui/Segmented";
 import { SettingsSection } from "./parts";
 
@@ -22,6 +21,7 @@ export default function DataSection({
   initialRetentionDays: number;
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [retention, setRetention] = useState<"7" | "30" | "0">(
     initialRetentionDays === 0 || initialRetentionDays === 30
       ? (String(initialRetentionDays) as "0" | "30")

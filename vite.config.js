@@ -12,7 +12,14 @@ import tailwindcss from "@tailwindcss/vite";
 // public/ 下的 manifest.json 原样拷贝
 export default defineConfig({
   plugins: [
-    react(),
+    // React Compiler 1.0:构建期自动记忆化(useMemo/useCallback/memo 手写件
+    // 在 chat 视图已删,行为耦合的 memo 保留,编译器对其按依赖提示尊重)。
+    // 违反 Rules of React 的组件编译器会保守跳过(bail out),不影响语义
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", {}]],
+      },
+    }),
     tailwindcss(),
     // content script 以经典脚本执行(manifest 注入与 executeScript 兜底皆然),
     // 顶层 import/export 直接 SyntaxError、listener 注册不上。

@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderEntry } from "../../shared/configStore";
-import { t } from "../../shared/i18n";
+import { useT } from "../ui/hooks";
 
 export default function ModelPicker({
   providers,
@@ -20,6 +20,7 @@ export default function ModelPicker({
   modelId: string;
   onPick: (providerId: string, modelId: string) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   /** 键盘/悬停共用的当前高亮项(扁平序);打开时落在当前选中模型上 */
   const [activeIdx, setActiveIdx] = useState(0);

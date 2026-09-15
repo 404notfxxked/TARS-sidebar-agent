@@ -337,6 +337,35 @@ export async function runAgentLoop(
     // 对 [system, 记忆?, 摘要?, ...保留历史, user] 的形状依然成立
     const persistedInCtx = messages.length - 2;
 
+    // 增量落盘:每 turn 收口即追加保存,中途关面板(端口断开取消)或 SW 被
+    // 杀最多丢进行中的 turn,不再丢整轮对话(含用户提问)。savedUpTo = 领域
+    // 消息里已落盘到的下标;baseSeq = 库里已有条数 = 初始历史 + 已落盘的新增。
+    // appendMessages 按 [sessionId, seq] put,保存失败不推进游标、下次重写
+    // 同一批 seq,天然幂等。取消在 turn 中段打断时不追加保存 —— 历史不能停在
+    // 未答完的 toolCalls 上(严格端点拒收),已收口的边界已在库里
+    let savedUpTo = persistedInCtx;
+    const persistNewMessages = async (): Promise<void> => {
+      if (!payload.sessionId) return;
+      const domain = messages.slice(1);
+      if (domain.length <= savedUpTo) return;
+      try {
+        await saveHistory(
+          payload.sessionId,
+          domain,
+          savedUpTo,
+          persistedSeqs + (savedUpTo - persistedInCtx),
+        );
+        savedUpTo = domain.length;
+      } catch (err) {
+        // 落盘失败不打断 run:边界留在原地,下个收口点把这一批连同新内容重写
+        log.warn("agent", "save history failed", {
+          stack: err instanceof Error ? err.stack : String(err),
+        });
+      }
+    };
+    // 首保存即落用户提问:第一轮请求挂起期间关面板/杀 SW,问题也不丢
+    await persistNewMessages();
+
     // 工具分发:注册表里的工具统一在这里执行。
     // 每次执行前注入 run 作用域上下文(提交时捕获的 tabId + 取消信号),
     // 让内容工具读对页面、联网工具感知取消;执行后立即清理,避免上下文泄漏。
@@ -597,6 +626,9 @@ export async function runAgentLoop(
             enforceToolResultBudget(messages, toolResultBudgetChars);
           }
         }
+        // 本 turn 收口:assistant(toolCalls) 与全部工具结果已成对,是合法的
+        // 停止边界,立即落盘
+        await persistNewMessages();
         continue;
       }
 
@@ -638,24 +670,12 @@ export async function runAgentLoop(
       });
     }
 
-    // 本轮结束:把新增消息追加进持久化历史,下一条消息续接
-    // (tools 消息一并保存,保证下次提问时 LLM 有完整上下文)
+    // 本轮结束:把尚未落盘的尾部消息(最终回答 / 收尾总结)追加进持久化历史。
+    // 前面每个 turn 收口已增量保存过,这里通常只剩最后一条 assistant
     // 只追加旧历史之后的新增部分:中途发生的溢出裁剪改掉了老消息的内容,
     // 不写回 —— 库里保持全量历史,每轮 prompt 在内存里重新裁
-    // 写盘失败不打断本轮回答:这次回复仍然送达,只是没存进历史
     if (payload.sessionId) {
-      try {
-        await saveHistory(
-          payload.sessionId,
-          messages.slice(1),
-          persistedInCtx,
-          persistedSeqs,
-        );
-      } catch (err) {
-        log.warn("agent", "save history failed", {
-          stack: err instanceof Error ? err.stack : String(err),
-        });
-      }
+      await persistNewMessages();
       // 实测基线:最终轮请求的 prompt tokens + 当时的消息条数。下次 run 用
       // 它叠加新增部分算压缩触发基线,比纯估算准;失败不影响本次回答
       if (lastUsage) {

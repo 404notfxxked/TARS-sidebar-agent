@@ -4,11 +4,10 @@
 // 与记忆页的差异:技能正文较大,编辑走「展开行 → textarea」而非行内单行输入。
 
 import { useEffect, useRef, useState } from "react";
-import { t } from "../../shared/i18n";
 import { createLogger } from "../../shared/logger";
 import { skillReq, skillRawReq } from "../clients/skillClient";
 import { MSG, type SkillInfo } from "../../shared/messages";
-import { useConfirmReset } from "../ui/hooks";
+import { useConfirmReset, useT } from "../ui/hooks";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { TrashIcon } from "../ui/icons";
@@ -16,6 +15,7 @@ import { TrashIcon } from "../ui/icons";
 const log = createLogger({ ctx: "panel" });
 
 export default function SkillView({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
   // 添加区:收起态只显示按钮;展开后是 SKILL.md 粘贴编辑器(导入文件同入口)
   const [adding, setAdding] = useState(false);
@@ -273,6 +273,7 @@ function SkillRow({
   onToggle: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   return (
     <li className="skill-row-in">
       <div className="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors duration-150 hover:bg-on-surface/8">
@@ -364,6 +365,7 @@ function SkillRow({
 // ---- 空态 ----
 
 function EmptyState() {
+  const t = useT();
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
       <svg

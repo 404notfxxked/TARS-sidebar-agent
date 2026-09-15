@@ -3,11 +3,11 @@
 
 import { useEffect, useState } from "react";
 import { clearAllLogs, readAllLogEntries, toJsonl } from "../../shared/logger";
-import { t } from "../../shared/i18n";
-import { useConfirmReset, useCopyFlash } from "../ui/hooks";
+import { useConfirmReset, useCopyFlash, useT } from "../ui/hooks";
 import { SettingsSection } from "./parts";
 
 export default function DiagnosticsSection() {
+  const t = useT();
   const [logCount, setLogCount] = useState<number | null>(null);
   const [copied, copyLogs] = useCopyFlash();
   const [confirmClearLogs, armConfirmClearLogs, resetConfirmClearLogs] =

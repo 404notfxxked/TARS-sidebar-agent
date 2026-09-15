@@ -9,8 +9,7 @@ import {
   type ProviderEntry,
 } from "../../shared/configStore";
 import { fetchModels } from "../../background/provider";
-import { t } from "../../shared/i18n";
-import { useConfirmReset } from "../ui/hooks";
+import { useConfirmReset, useT } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
 import { ensureOriginAuthorized } from "../permissions";
 import { ExpandCard, SettingsSection, hostOf } from "./parts";
@@ -38,6 +37,7 @@ export default function ModelSection({
   /** 统一保存出口:成功闪「已保存」,失败亮红(见 SettingsView) */
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const { providers, modelProvider, model } = domain;
   const [expandedPid, setExpandedPid] = useState<string | null>(null);
   // 两段确认删除:首点进入待确认,3 秒未跟进自动复位
@@ -178,6 +178,7 @@ function ModelRow({
   onSetDefault: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   return (
     <ExpandCard
       open={open}
@@ -329,6 +330,7 @@ function ProviderCard({
   onRemove: () => void;
   onSelectModel: (modelId: string) => void;
 }) {
+  const t = useT();
   const [newId, setNewId] = useState("");
   const [openModelId, setOpenModelId] = useState<string | null>(null);
   const [confirmModelId, armConfirmModel, resetConfirmModel] =

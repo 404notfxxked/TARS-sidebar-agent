@@ -3,8 +3,8 @@
 // 必须在它上面拦截);本组件只渲染 浮层 + 选项 + 空态引导。
 // 浮层语言复用 combo-pop(M3 menu),选项为双行(名 + 描述截断)。
 
-import { t } from "../../shared/i18n";
 import type { SkillInfo } from "../../shared/messages";
+import { useT } from "../ui/hooks";
 
 export default function SkillMenu({
   skills,
@@ -29,6 +29,7 @@ export default function SkillMenu({
   onHover: (index: number) => void;
   onManage: () => void;
 }) {
+  const t = useT();
   if (loading) {
     return (
       <div role="listbox" aria-label={t("skills.menuLabel")} className="combo-pop skill-pop">

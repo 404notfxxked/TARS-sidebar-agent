@@ -1,3 +1,4 @@
+import type { TFn } from "../../shared/i18n";
 // 记忆管理整页:列表独占一页(平铺在设置页时一节就超过一屏,且列表只增不减),
 // 设置页只留 开关 + 摘要入口行,聊天流的「已写入 N 条」轻提示也直通本页。
 // 结构沿用历史会话页的范式:吸顶头部 + 顶部添加条 + 行悬停操作 + 两段确认删除。
@@ -5,7 +6,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MSG, type MemoryItem } from "../../shared/messages";
-import { t } from "../../shared/i18n";
 import {
   type MemoryTag,
   type MemoryTextLike,
@@ -17,7 +17,7 @@ import {
 import { loadConfig, selectedContextTokens } from "../../shared/configStore";
 import { createLogger } from "../../shared/logger";
 import { memReq } from "../clients/memoryClient";
-import { useConfirmReset } from "../ui/hooks";
+import { useConfirmReset, useT } from "../ui/hooks";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { TrashIcon } from "../ui/icons";
@@ -25,6 +25,7 @@ import { TrashIcon } from "../ui/icons";
 const log = createLogger({ ctx: "panel" });
 
 export default function MemoryView({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const [memories, setMemories] = useState<MemoryItem[] | null>(null);
   // 当前模型的上下文窗口:注入预算按它动态缩放(与后台注入同源)
   const [contextTokens, setContextTokens] = useState<number | undefined>();
@@ -290,7 +291,10 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
 // ---- 行 ----
 
 /** tag 徽标文案:渲染时现取 t()(模块级求值会停在默认语言,契约 6) */
-function memoryTagLabel(tag: MemoryTag): string {
+function memoryTagLabel(
+  t: TFn,
+  tag: MemoryTag,
+): string {
   switch (tag) {
     case "identity":
       return t("memory.tagIdentity");
@@ -328,6 +332,7 @@ function MemoryRow({
   onPin: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   return (
     <li className="memory-row-in" style={{ animationDelay: `${delay}ms` }}>
       <div className="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors duration-150 hover:bg-on-surface/8">
@@ -358,7 +363,7 @@ function MemoryRow({
                 {[m.subject, m.key].filter(Boolean).join("·")}
               </span>
             )}
-            {m.tag && <span className="memory-src">{memoryTagLabel(m.tag)}</span>}
+            {m.tag && <span className="memory-src">{memoryTagLabel(t, m.tag)}</span>}
             {m.source === "model" && (
               <span className="memory-src">AI</span>
             )}
@@ -425,6 +430,7 @@ function StarIcon({ filled }: { filled: boolean }) {
 // ---- 空态 ----
 
 function EmptyState() {
+  const t = useT();
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
       <svg

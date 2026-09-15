@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
 import { memoryUsedTokens } from "../../shared/memory";
 import { MSG, type MemoryItem } from "../../shared/messages";
-import { t } from "../../shared/i18n";
+import { useT } from "../ui/hooks";
 import { memReq } from "../clients/memoryClient";
 import SwitchRow from "../ui/SwitchRow";
 import { EntryRow, HintMore, SettingsSection } from "./parts";
@@ -23,6 +23,7 @@ export default function MemorySection({
   onOpenMemory: () => void;
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [memoryOn, setMemoryOn] = useState(initialOn);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
 

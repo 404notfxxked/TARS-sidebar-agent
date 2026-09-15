@@ -1,10 +1,10 @@
 // 对话气泡与 markdown 渲染:用户/助手/错误/系统提示四类气泡、压缩分隔条、
-// 气泡内图片、代码块容器。markdown 配置(插件引用、语言子集)收在本文件,
-// 配合 memo 让历史消息不因无关状态重渲染/重解析。
+// 气泡内图片、代码块容器。markdown 配置(插件引用、语言子集)收在本文件;
+// React Compiler 自动记忆化取代了手写 memo:props 不变的气泡元素由编译器
+// 缓存,历史消息不因无关状态重渲染/重解析。
 
 import {
   isValidElement,
-  memo,
   useEffect,
   useState,
   type ComponentPropsWithoutRef,
@@ -32,8 +32,7 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import type { ImageMeta } from "../../shared/messages";
-import { t } from "../../shared/i18n";
-import { useCopyFlash, useLocale } from "../ui/hooks";
+import { useCopyFlash, useT } from "../ui/hooks";
 import { ArchiveIcon, CheckIcon, CopyIcon, RefreshIcon } from "../ui/icons";
 import { peekImgUrl, requestImgUrl } from "./images";
 
@@ -66,15 +65,13 @@ const MD_COMPONENTS: NonNullable<MarkdownOptions["components"]> = {
   pre: CodeBlock,
 };
 
-export const UserBubble = memo(function UserBubble({
+export function UserBubble({
   text,
   images,
 }: {
   text: string;
   images?: ImageMeta[];
 }) {
-  // 子树里的 ChatImage 渲染字典文案:订阅 locale,切换语言时穿透 memo 重渲染
-  useLocale();
   return (
     <div className="msg-in ml-auto flex w-fit max-w-[86%] flex-col items-end gap-1.5">
       {images && images.length > 0 && (
@@ -91,9 +88,9 @@ export const UserBubble = memo(function UserBubble({
       )}
     </div>
   );
-});
+}
 
-export const AssistantBubble = memo(function AssistantBubble({
+export function AssistantBubble({
   text,
   actions,
   onRegenerate,
@@ -103,8 +100,8 @@ export const AssistantBubble = memo(function AssistantBubble({
   actions?: "copy" | "copy-regen";
   onRegenerate?: () => void;
 }) {
-  // markdown 组件树含代码块容器(渲染「代码/复制」文案):同样订阅 locale
-  useLocale();
+  // 动作行文案走字典:useT 订阅 locale,语言切换即重算(编译器把 t 身份当依赖)
+  const t = useT();
   const [copied, copy] = useCopyFlash();
   return (
     <div className="markdown msg-bubble msg-in pl-3 text-[13px] leading-relaxed">
@@ -140,9 +137,9 @@ export const AssistantBubble = memo(function AssistantBubble({
       )}
     </div>
   );
-});
+}
 
-export const ErrorBubble = memo(function ErrorBubble({ text }: { text: string }) {
+export function ErrorBubble({ text }: { text: string }) {
   return (
     <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-error-container px-3.5 py-2.5 text-[13px] leading-relaxed text-on-error-container">
       <WarnIcon />
@@ -151,24 +148,23 @@ export const ErrorBubble = memo(function ErrorBubble({ text }: { text: string })
       </span>
     </div>
   );
-});
+}
 
 /** 系统运行提示条(非错误):步数耗尽等状态说明,视觉层级低于错误 */
-export const NoticeBubble = memo(function NoticeBubble() {
-  // 无 prop 的 memo 组件:订阅 locale 才能在切换语言时重渲染
-  useLocale();
+export function NoticeBubble() {
+  const t = useT();
   return (
     <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
       <InfoIcon />
       <span className="min-w-0 flex-1">{t("chat.maxTurnsNotice")}</span>
     </div>
   );
-});
+}
 
 /** 压缩分隔条:标记「此处之前的历史已压成摘要」(原文仍在库里,模型只看摘要)。
  *  解释 AI 为何可能不记得很早的细节 —— 静默压缩会显得像无故失忆 */
-export const CompactionDivider = memo(function CompactionDivider() {
-  useLocale();
+export function CompactionDivider() {
+  const t = useT();
   return (
     <div className="ctx-divider" role="note" aria-label={t("chat.compactionNote")}>
       <span className="ctx-divider-line" />
@@ -178,11 +174,12 @@ export const CompactionDivider = memo(function CompactionDivider() {
       <span className="ctx-divider-line" />
     </div>
   );
-});
+}
 
 /** 气泡里的图片:优先 objectURL 缓存(刚发送的已在),缺失时向后台取字节;
  *  取不到(随会话被清理)显示失效占位。点击原图新开查看 */
 export function ChatImage({ meta }: { meta: ImageMeta }) {
+  const t = useT();
   const [url, setUrl] = useState<string | null>(() => peekImgUrl(meta.id));
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -227,6 +224,7 @@ function CodeBlock({
   children,
   ...rest
 }: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) {
+  const t = useT();
   const first = Array.isArray(children) ? children[0] : children;
   const lang = isValidElement(first)
     ? (/language-([\w+-]+)/.exec(

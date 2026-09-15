@@ -49,13 +49,28 @@ function resolve(dict: unknown, path: string): string | undefined {
 /** 字典路径查值,如 t("settings.title") / t("sessions.msgCount", { n: 3 })。
  *  当前语言缺键回落中文,新增键漏译时也不会把裸键名亮给用户 */
 export function t(path: string, vars?: Record<string, string | number>): string {
-  const raw = resolve(DICTS[current], path) ?? resolve(zhCN, path);
-  if (raw === undefined) {
-    console.warn(`[i18n] 缺少文案键: ${path}`);
-    return path;
-  }
-  if (!vars) return raw;
-  return raw.replace(/\{(\w+)\}/g, (_, name) =>
-    vars[name] != null ? String(vars[name]) : `{${name}}`,
-  );
+  return createT(current)(path, vars);
 }
+
+/** 绑定语言的 t 工厂:useT()(ui/hooks)按当前 locale 记忆化产出,React
+ *  Compiler 把返回的函数身份当依赖 —— 语言切换时组件里的 t("…") 调用随之
+ *  重算。模块级 t() 读的是可变模块状态,编译器视为零依赖缓存,静态键位
+ *  收集(check-i18n)仍以 t("…") 调用形态为准,两者共存 */
+export function createT(locale: LocalePref) {
+  const dict = DICTS[locale];
+  return (path: string, vars?: Record<string, string | number>): string => {
+    const raw = resolve(dict, path) ?? resolve(zhCN, path);
+    if (raw === undefined) {
+      console.warn(`[i18n] 缺少文案键: ${path}`);
+      return path;
+    }
+    if (!vars) return raw;
+    return raw.replace(/\{(\w+)\}/g, (_, name) =>
+      vars[name] != null ? String(vars[name]) : `{${name}}`,
+    );
+  };
+}
+
+/** 绑定语言的 t 函数类型:render 期辅助函数(toolLabel/truncate 等)以此
+ *  收参,由调用方传 useT() 产物进来 */
+export type TFn = ReturnType<typeof createT>;

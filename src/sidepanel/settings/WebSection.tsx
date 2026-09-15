@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
-import { t } from "../../shared/i18n";
+import { useT } from "../ui/hooks";
 import SwitchRow from "../ui/SwitchRow";
 import {
   hasPageAccess,
@@ -22,6 +22,7 @@ export default function WebSection({
   initialWebSearch: boolean;
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [webSearch, setWebSearch] = useState(initialWebSearch);
   const [pageAccess, setPageAccess] = useState<boolean | null>(null);
   useEffect(() => {

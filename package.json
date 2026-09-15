@@ -38,6 +38,7 @@
     "@types/react-dom": "^19.2.0",
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^4.3.0",
+    "babel-plugin-react-compiler": "^1.0.0",
     "esbuild": "0.25.12",
     "jsdom": "^30.0.1",
     "playwright": "^1.62.1",

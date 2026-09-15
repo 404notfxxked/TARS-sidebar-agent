@@ -7,9 +7,9 @@ import {
   type LocalePref,
   type ThemePref,
 } from "../../shared/configStore";
-import { setLocale, t } from "../../shared/i18n";
+import { setLocale } from "../../shared/i18n";
 import { applyAccent, applyThemePreference } from "../theme";
-import { useLocale } from "../ui/hooks";
+import { useLocale, useT } from "../ui/hooks";
 import SwitchRow from "../ui/SwitchRow";
 import Segmented from "../ui/Segmented";
 import { SettingsSection } from "./parts";
@@ -50,6 +50,7 @@ export default function AppearanceSection({
   initialQuote: boolean;
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [theme, setTheme] = useState<ThemePref>(initialTheme);
   const [accent, setAccent] = useState<AccentPref>(initialAccent);
   const [quote, setQuote] = useState(initialQuote);

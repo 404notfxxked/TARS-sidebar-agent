@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
 import { MSG, type SkillInfo } from "../../shared/messages";
-import { t } from "../../shared/i18n";
+import { useT } from "../ui/hooks";
 import { skillReq } from "../clients/skillClient";
 import SwitchRow from "../ui/SwitchRow";
 import { EntryRow, SettingsSection } from "./parts";
@@ -19,6 +19,7 @@ export default function SkillSection({
   onOpenSkills: () => void;
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [skillsOn, setSkillsOn] = useState(initialOn);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
 

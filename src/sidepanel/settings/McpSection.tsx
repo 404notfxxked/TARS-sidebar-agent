@@ -7,10 +7,9 @@ import { savePrefs } from "../../shared/configStore";
 import type { McpConfig, McpServerEntry } from "../../shared/mcp";
 import { estimateTokens } from "../../shared/memory";
 import type { McpToolInfo } from "../../shared/messages";
-import { t } from "../../shared/i18n";
 import { mcpListTools, mcpTest } from "../clients/mcpClient";
 import { ensureOriginAuthorized } from "../permissions";
-import { useConfirmReset } from "../ui/hooks";
+import { useConfirmReset, useT } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
 import SwitchRow from "../ui/SwitchRow";
 import { ExpandCard, HintMore, SettingsSection, hostOf } from "./parts";
@@ -39,6 +38,7 @@ export default function McpSection({
   initial: McpConfig;
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [mcp, setMcp] = useState<McpConfig>(initial);
   const [expandedSid, setExpandedSid] = useState<string | null>(null);
   const [confirmDelSid, armConfirmDel, resetConfirmDel] =
@@ -162,6 +162,7 @@ function McpServerCard({
   onCommit: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   const [testState, setTestState] = useState<"idle" | "loading" | "done">("idle");
   const [testMsg, setTestMsg] = useState("");
   const [testOk, setTestOk] = useState(false);

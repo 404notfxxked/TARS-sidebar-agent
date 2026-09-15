@@ -10,7 +10,7 @@ import {
   selectedContextTokens,
   type AppConfig,
 } from "../../shared/configStore";
-import { t } from "../../shared/i18n";
+import { useT } from "../ui/hooks";
 import SubPageHeader from "../ui/SubPageHeader";
 import ModelSection, { type ModelDomain } from "./ModelSection";
 import AppearanceSection from "./AppearanceSection";
@@ -34,6 +34,7 @@ export default function SettingsView({
   /** 技能管理入口行 → 技能整页(安装/编辑在整页做) */
   onOpenSkills: () => void;
 }) {
+  const t = useT();
   // 配置读齐才渲染分节:避免「默认空态闪一帧」;模型服务域(providers +
   // 当前引用)提升到这里,压缩用模型下拉要与它保持同源
   const [config, setConfig] = useState<AppConfig | null>(null);

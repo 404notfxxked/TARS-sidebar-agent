@@ -8,7 +8,7 @@ import {
   type CompactLevel,
   type ProviderEntry,
 } from "../../shared/configStore";
-import { t } from "../../shared/i18n";
+import { useT } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
 import Segmented from "../ui/Segmented";
 import { SettingsSection, hostOf } from "./parts";
@@ -33,6 +33,7 @@ export default function CompactionSection({
   providers: ProviderEntry[];
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [compact, setCompact] = useState<CompactLevel>(initialCompact);
   const [compactRef, setCompactRef] = useState(initialRef);
 

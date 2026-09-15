@@ -3,9 +3,10 @@
 // settings/parts 的 HintMore 折叠,警示类保持明面可见 —— 三层分工见 roadmap。
 
 import { useId, useState } from "react";
-import { t } from "../../shared/i18n";
+import { useT } from "./hooks";
 
 export default function InfoTip({ text }: { text: string }) {
+  const t = useT();
   const id = useId();
   const [open, setOpen] = useState(false);
   return (

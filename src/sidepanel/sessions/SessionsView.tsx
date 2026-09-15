@@ -1,11 +1,11 @@
+import type { TFn } from "../../shared/i18n";
 // 历史会话视图:日期分组(今天/昨天/7 天内/更早)+ 搜索 + 当前会话高亮,
 // 点击切回,单条删除。数据经 port 向后台要(SW 是 IndexedDB 唯一读写方),本视图不碰 IDB。
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MSG, PORT_NAME, type SessionMeta } from "../../shared/messages";
-import { t } from "../../shared/i18n";
 import { createLogger } from "../../shared/logger";
-import { useConfirmReset, useLocale } from "../ui/hooks";
+import { useConfirmReset, useT } from "../ui/hooks";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { TrashIcon } from "../ui/icons";
@@ -23,11 +23,14 @@ const WEEKDAY_KEYS = [
   "sessions.weekday.fr",
   "sessions.weekday.sa",
 ] as const;
-const weekdayShort = (day: number): string => t(WEEKDAY_KEYS[day]);
+const weekdayShort = (
+  t: TFn,
+  day: number,
+): string => t(WEEKDAY_KEYS[day]);
 
 /** 行内短时间:组头已表达大粒度(今天/昨天/7 天内),行内只留细粒度 ——
  *  今天 → HH:mm;昨天 → 「昨天」;7 天内 → 「周三」;更早 → M/D(跨年带年份) */
-function shortTime(ts: number): string {
+function shortTime(t: TFn, ts: number): string {
   const d = new Date(ts);
   const now = new Date();
   const startOfToday = new Date(now);
@@ -39,7 +42,7 @@ function shortTime(ts: number): string {
       hour12: false,
     });
   if (ts >= startOfToday.getTime() - DAY) return t("sessions.yesterday");
-  if (ts >= startOfToday.getTime() - 7 * DAY) return weekdayShort(d.getDay());
+  if (ts >= startOfToday.getTime() - 7 * DAY) return weekdayShort(t, d.getDay());
   const sameYear = d.getFullYear() === now.getFullYear();
   return sameYear
     ? `${d.getMonth() + 1}/${d.getDate()}`
@@ -47,7 +50,7 @@ function shortTime(ts: number): string {
 }
 
 /** 按本地日界分四组,空组丢弃;调用方保证列表已按 updatedAt 降序 */
-function groupSessions(list: SessionMeta[]) {
+function groupSessions(t: (path: string) => string, list: SessionMeta[]) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const t0 = startOfToday.getTime();
@@ -79,6 +82,7 @@ export default function SessionsView({
   /** 对话区当前所在会话,列表中高亮「当前」 */
   activeId: string;
 }) {
+  const t = useT();
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   // 两段确认删除:第一次点变「确认删除」,3s 不跟进而自动复位
   const [confirmId, armConfirm, resetConfirm] = useConfirmReset<string>();
@@ -119,12 +123,10 @@ export default function SessionsView({
     () => sessions?.filter((s) => !kw || s.title.toLowerCase().includes(kw)),
     [sessions, kw],
   );
-  // 依赖带 locale:分组标签来自 t(),换语言后要重算(locale 仅作重算信号)
-  const locale = useLocale();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: locale 仅作重算信号,分组文案经 t() 间接消费
+  // 分组标签经 t() 现取:t 的函数身份随语言切换变化,useMemo 据此重算
   const groups = useMemo(
-    () => (filtered ? groupSessions(filtered) : []),
-    [filtered, locale],
+    () => (filtered ? groupSessions(t, filtered) : []),
+    [filtered, t],
   );
   // 入场 stagger:全局序号封顶 8,30ms/行
   const rowDelay = useMemo(() => {
@@ -255,6 +257,7 @@ function SessionRow({
   onPick: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
+  const t = useT();
   return (
     <li className="sessions-row-in" style={{ animationDelay: `${delay}ms` }}>
       <div
@@ -278,7 +281,7 @@ function SessionRow({
             )}
           </span>
           <span className="mt-0.5 block text-[11px] text-on-surface-variant">
-            {shortTime(s.updatedAt)} · {t("sessions.msgCount", { n: s.msgCount })}
+            {shortTime(t, s.updatedAt)} · {t("sessions.msgCount", { n: s.msgCount })}
           </span>
         </button>
         <button
@@ -305,6 +308,7 @@ function SessionRow({
 // ---- 空态 ----
 
 function EmptyState({ onNew }: { onNew: () => void }) {
+  const t = useT();
   return (
     <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
       <svg

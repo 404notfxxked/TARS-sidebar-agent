@@ -4,17 +4,27 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import type { LocalePref } from "../../shared/configStore";
-import { getLocale, subscribeLocale } from "../../shared/i18n";
+import { createT, getLocale, subscribeLocale } from "../../shared/i18n";
 
 /** 订阅面板语言:t() 是普通函数,组件须调用本 hook 才会在切换语言时重渲染。
- *  memo 组件里渲染文案的也必须各自调用 —— 父级重渲染穿不透 memo */
+ *  React Compiler 下所有组件都被自动记忆化,渲染 t() 文案的组件必须各自调用
+ *  useT() 拿绑定语言的 t —— 编译器把 t 的函数身份当依赖,语言切换即重算文案;
+ *  模块级 t() 与「父级重渲染」都穿不透自动记忆化 */
 export function useLocale(): LocalePref {
   return useSyncExternalStore(subscribeLocale, getLocale);
+}
+
+/** 绑定当前语言的 t:按 locale 记忆化 createT 产物,身份稳定、切换语言才换。
+ *  渲染 t() 文案的组件一律用它代替模块级 t(理由见 useLocale 注) */
+export function useT() {
+  const locale = useLocale();
+  return useMemo(() => createT(locale), [locale]);
 }
 
 /** 两段确认状态:arm(v) 进入待确认态,ms 内未跟进自动复位(危险动作不单击直发)。

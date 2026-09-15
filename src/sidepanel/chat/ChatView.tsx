@@ -1,27 +1,18 @@
-// 对话视图:经 port 连 SW,ReAct agent 的流式回复渲染。
-// 本文件只保留「接线与布局」:port 事件分发、消息列表/输入区渲染、附件入口;
-// 执行流状态机在 chat/useRunSegments,过程卡渲染在 chat/trace,
-// 气泡与 markdown 在 chat/bubbles,图片管线与缓存在 chat/images。
+// 对话视图:渲染与输入区。agent 状态(port 事件、消息、会话游标、本轮
+// 执行流)在 chat/useAgentChannel;执行流状态机在 chat/useRunSegments,
+// 过程卡渲染在 chat/trace,气泡与 markdown 在 chat/bubbles,图片管线与
+// 缓存在 chat/images,空态(问候/chips/每日一句)在 chat/EmptyState,
+// 写操作确认卡在 chat/ConfirmCard。
 
 import {
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type RefObject,
 } from "react";
-import {
-  MSG,
-  PORT_NAME,
-  type AgentEvent,
-  type CompactionMark,
-  type ImageMeta,
-  type SkillInfo,
-} from "../../shared/messages";
-import { t, getLocale } from "../../shared/i18n";
+import { MSG, type SkillInfo } from "../../shared/messages";
 import { parseSkillInvocation } from "../../shared/skills";
-import { getActiveTabId } from "../../shared/contentTools";
 import {
   loadConfig,
   savePrefs,
@@ -32,11 +23,8 @@ import {
   MAX_ATTACHMENTS,
   cacheImgUrl,
   compressImage,
-  resolveImageData,
-  setImageSender,
   type PendingImage,
 } from "./images";
-import { useRunSegments } from "./useRunSegments";
 import { RunZone } from "./trace";
 import {
   AssistantBubble,
@@ -47,38 +35,15 @@ import {
 } from "./bubbles";
 import ModelPicker from "./ModelPicker";
 import SkillMenu from "./SkillMenu";
-import { toolLabel } from "./toolNames";
-import {
-  dayKeyOf,
-  localQuote,
-  peekDailyQuote,
-  quoteDisplay,
-  timeGreetKey,
-  warmDailyQuote,
-  type Quote,
-} from "./greeting";
+import { ConfirmCard } from "./ConfirmCard";
+import { EmptyState } from "./EmptyState";
+import { useAgentChannel } from "./useAgentChannel";
 import { skillReq } from "../clients/skillClient";
-import { ArchiveIcon, LogoMark, RefreshIcon } from "../ui/icons";
+import { useT } from "../ui/hooks";
+import { ArchiveIcon } from "../ui/icons";
 
-// 面板侧只记时间线锚点(port 断开/取消/提交),事件细节以后台日志为准
+// 面板侧只记时间线锚点(取消/提交),事件细节以后台日志为准
 const log = createLogger({ ctx: "panel" });
-
-interface ChatMsg {
-  role: "user" | "assistant";
-  content: string;
-  /** 所属会话:多会话各自隔离,同屏只渲染 currentSession 的消息 */
-  sessionId: string;
-  /** 随消息发送的图片(元数据;字节经 GET_IMAGE/IMAGE_DATA 单独取) */
-  images?: ImageMeta[];
-  /** 后台报错:以 ErrorBubble 呈现,不走 markdown */
-  error?: boolean;
-  /** 系统运行提示(如步数耗尽):以 NoticeBubble 呈现 */
-  notice?: boolean;
-  /** 该消息在库里的 seq(仅历史回放有;压缩分隔条据此定位) */
-  seq?: number;
-}
-
-type AgentStatus = "idle" | "thinking" | "streaming";
 
 export default function ChatView({
   onOpenSettings,
@@ -104,46 +69,33 @@ export default function ChatView({
   /** 输入框 ref:App 持有,悬浮层关闭/一轮收口后把焦点还给输入框 */
   chatInputRef: RefObject<HTMLTextAreaElement | null>;
 }) {
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  // 当前会话的压缩点(存在 = 更早的历史已压成摘要,列表里渲染分隔条)
-  const [compaction, setCompaction] = useState<CompactionMark | null>(null);
-  /** 本轮已写入的记忆条数(memory_save 成功且非重复时累计);回复尾轻提示用 */
-  const [memorySaved, setMemorySaved] = useState(0);
-  /** 空态每日一句展示开关(设置 → 外观;storage 事件实时跟随) */
-  const [quoteEnabled, setQuoteEnabled] = useState(true);
-  const [input, setInput] = useState("");
-  const [status, setStatus] = useState<AgentStatus>("idle");
-  /** 待答复的写操作确认请求:非空 = 输入区上方弹确认卡(拒绝/超时由后台兜底) */
-  const [confirmReq, setConfirmReq] = useState<
-    Extract<AgentEvent, { type: typeof MSG.AGENT_CONFIRM_REQUEST }> | null
-  >(null);
-  const [currentSession, setCurrentSession] = useState("");
-  const portRef = useRef<chrome.runtime.Port | null>(null);
-  const sessionRef = useRef("");
-  const historyReqRef = useRef("");
-  const listRef = useRef<HTMLDivElement | null>(null);
-  // 最近一次已加载历史的会话,防重复请求
-  const lastLoadedSessionRef = useRef("");
-
-  // ---- 本轮执行流:状态机(hook)+ 归档出口(文本段 → messages) ----
-  const run = useRunSegments((texts) => {
-    const sid = sessionRef.current;
-    setMessages((ms) => [
-      ...ms,
-      ...texts.map((s) => ({
-        role: "assistant" as const,
-        content: s,
-        sessionId: sid,
-      })),
-    ]);
-  });
+  const t = useT();
+  const chat = useAgentChannel({ resumeSessionId, onResumeDone });
   const {
+    messages,
+    compaction,
+    memorySaved,
+    status,
+    confirmReq,
+    currentSession,
     runSegs,
     runPhase,
     runEndedAt,
     openGroups,
     toggleGroup,
-  } = run;
+  } = chat;
+
+  /** 空态每日一句展示开关(设置 → 外观;storage 事件实时跟随) */
+  const [quoteEnabled, setQuoteEnabled] = useState(true);
+  const [input, setInput] = useState("");
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // 切会话时清空输入草稿:历史列表选中的会话(含空串 = 新对话)经
+  // resumeSessionId 进来,channel 内 openSession 已清消息流,这里跟随清输入;
+  // 头部「新对话」按钮的清空在调用点自理
+  useEffect(() => {
+    if (resumeSessionId !== null) setInput("");
+  }, [resumeSessionId]);
 
   // ---- 模型选择:按供应商分组展示,切换即写回 modelProvider + model 两字段 ----
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
@@ -162,180 +114,13 @@ export default function ChatView({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hintTimer = useRef<number | null>(null);
 
-  /** 打开面板 = 一律新会话(历史去列表找):会话 id 在首次提交时才生成,
-   *  没发过消息就不会在后台产生空会话记录 */
-  const resolveContext = async (): Promise<{
-    tabId: number | undefined;
-    sessionId: string;
-  }> => {
-    const tabId = await getActiveTabId();
-    if (!sessionRef.current) sessionRef.current = crypto.randomUUID();
-    return { tabId: tabId ?? undefined, sessionId: sessionRef.current };
-  };
-
-  const connect = (): chrome.runtime.Port => {
-    // 复用已有连接(没断开就不新建)
-    if (portRef.current) return portRef.current;
-
-    const port = chrome.runtime.connect({ name: PORT_NAME });
-    portRef.current = port;
-
-    // delta 顺序有保证:后台 readSSE 按序处理事件,port 单通道 FIFO 送达。
-    // run.* 操作内部走 ref 读最新状态,此监听器只注册一次也安全
-    port.onMessage.addListener((evt: AgentEvent) => {
-      switch (evt.type) {
-        case MSG.AGENT_STARTED:
-          sessionRef.current = evt.sessionId;
-          setStatus("thinking");
-          setMemorySaved(0); // 新一轮,轻提示重新累计
-          run.onStarted();
-          break;
-        case MSG.AGENT_THINKING:
-          run.onThinking();
-          setStatus("thinking");
-          break;
-        case MSG.AGENT_REASONING:
-          run.onReasoningDelta(evt.delta);
-          break;
-        case MSG.AGENT_MESSAGE:
-          setStatus("streaming");
-          run.onMessageDelta(evt.delta);
-          break;
-        case MSG.AGENT_TOOL_CALL:
-          run.onToolCall(evt);
-          setStatus("thinking");
-          break;
-        case MSG.AGENT_CONFIRM_REQUEST:
-          setConfirmReq(evt);
-          break;
-        case MSG.AGENT_TOOL_RESULT:
-          run.onToolResult(evt);
-          // 记忆落库轻提示:成功的非重复保存累计,回复尾渲染「已写入 N 条」
-          if (evt.name === "memory_save" && evt.ok) {
-            const r = evt.result as { duplicate?: boolean } | null;
-            if (!r?.duplicate) setMemorySaved((n) => n + 1);
-          }
-          break;
-        case MSG.AGENT_DONE:
-          run.onSettled();
-          setStatus("idle");
-          setConfirmReq(null); // 确认卡随 run 收口清掉(超时拒绝后台已兜底)
-          // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示
-          if (evt.reason === "max-turns") {
-            setMessages((ms) => [
-              ...ms,
-              {
-                role: "assistant",
-                content: "",
-                sessionId: sessionRef.current,
-                notice: true,
-              },
-            ]);
-          }
-          break;
-        case MSG.AGENT_ERROR:
-          // 错误详情由后台日志记录,面板只负责呈现(独立错误样式,不走 markdown)
-          run.onSettled();
-          setStatus("idle");
-          setConfirmReq(null);
-          setMessages((ms) => [
-            ...ms,
-            {
-              role: "assistant",
-              content: evt.error,
-              sessionId: sessionRef.current,
-              error: true,
-            },
-          ]);
-          break;
-        case MSG.HISTORY:
-          // 后端回的历史 → 填入该会话。
-          // 仅当该会话在本地面板尚无记录时才填(本地有记录 = 本地更新过/正在用,保留本地);
-          // 否则 idempotent,避免覆盖面板里已有的新消息。
-          // 发起请求后会话已变(用户切走/抢先提交)则不切换 currentSession。
-          if (historyReqRef.current === sessionRef.current) {
-            setMessages((ms) => {
-              const sid = historyReqRef.current;
-              if (ms.some((m) => m.sessionId === sid)) return ms;
-              return evt.messages.map((m) => ({ ...m, sessionId: sid }));
-            });
-            setCompaction(evt.compaction ?? null);
-            setCurrentSession(historyReqRef.current);
-          }
-          break;
-        case MSG.IMAGE_DATA:
-          // 历史图片字节回填 → 换成 objectURL 交给气泡
-          resolveImageData(evt);
-          break;
-      }
-    });
-
-    port.onDisconnect.addListener(() => {
-      log.warn("chat", "port disconnected");
-      portRef.current = null;
-      run.onPortDisconnected();
-      setStatus("idle");
-      setConfirmReq(null);
-    });
-
-    return port;
-  };
-
-  // 加载某会话历史到面板(去重:同一会话不重复请求)
-  const loadSessionHistory = (sessionId: string) => {
-    if (sessionId === lastLoadedSessionRef.current) return;
-    historyReqRef.current = sessionId;
-    lastLoadedSessionRef.current = sessionId;
-    connect().postMessage({ type: MSG.LOAD_HISTORY, sessionId });
-  };
-
-  // 从历史列表切回某会话:清空本地视图后向后端拉消息。
-  // 空串 = 「新对话」入口:回到空白会话态,不发 LOAD_HISTORY,游标一并重置
-  const openSession = (sessionId: string) => {
-    if (status !== "idle") {
-      log.warn("chat", "switch session ignored, run in progress", { sessionId });
-      return;
-    }
-    if (sessionId === sessionRef.current) return; // 已是当前会话
-    log.info("chat", "open session", { sessionId });
-    setMessages([]);
-    setCompaction(null);
-    setMemorySaved(0);
-    setInput("");
-    run.newRound();
-    setCurrentSession(sessionId);
-    sessionRef.current = sessionId;
-    if (sessionId) {
-      historyReqRef.current = sessionId;
-      loadSessionHistory(sessionId);
-    } else {
-      historyReqRef.current = "";
-      lastLoadedSessionRef.current = "";
-    }
-  };
-
-  // 历史列表选中 → 打开;消费完立刻回调置空,保证下次选同一会话仍能触发
-  // (空串也是有效选择 = 新对话,因此判 null 而非判真值)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 只随 resumeSessionId 触发,回调非稳定引用
-  useEffect(() => {
-    if (resumeSessionId !== null) {
-      openSession(resumeSessionId);
-      onResumeDone();
-    }
-  }, [resumeSessionId]);
-
   // 当前会话回传给 App,历史列表据此高亮「当前」
   useEffect(() => {
     onActiveSessionChange?.(currentSession);
   }, [currentSession, onActiveSessionChange]);
 
-  // 挂载:建 port、读配置。面板打开即新会话,不拉任何历史。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 仅挂载执行;connect 每渲染换身份,入依赖会反复断连 port,其闭包经 ref 读最新状态
+  // 挂载:读配置。设置页悬浮关闭后不重挂,配置变更靠 storage 事件同步模型列表
   useEffect(() => {
-    connect();
-    // 历史图片取字节的发送通道(ChatImage 组件经模块级 requestImgUrl 调用)
-    setImageSender((id) => connect().postMessage({ type: MSG.GET_IMAGE, id }));
-    // 设置页悬浮关闭后不重挂,配置变更靠 storage 事件同步模型列表
     const onStorage = (
       changes: Record<string, chrome.storage.StorageChange>,
       area: string,
@@ -370,8 +155,6 @@ export default function ChatView({
     });
     return () => {
       chrome.storage.onChanged.removeListener(onStorage);
-      portRef.current?.disconnect();
-      portRef.current = null;
       if (hintTimer.current) window.clearTimeout(hintTimer.current);
     };
   }, []);
@@ -440,83 +223,6 @@ export default function ChatView({
     }
   }, [status, chatInputRef]);
 
-  const cancel = () => {
-    log.info("chat", "cancel clicked", { sessionId: sessionRef.current });
-    if (!sessionRef.current) return;
-    connect().postMessage({
-      type: MSG.CANCEL_RUN,
-      sessionId: sessionRef.current,
-    });
-  };
-
-  // 重新生成:末条答案退场,同问重答。本地乐观清场(本轮答案在 runSegs,
-  // 末条 user 之后的本地气泡 = 历史答案/错误/系统提示一并退场),后台负责
-  // 截库(自末条 user 行含)并以原内容重跑;技能 /name 原文随库重走解析
-  const regenerate = () => {
-    if (status !== "idle") return;
-    const sid = sessionRef.current;
-    if (!sid) return;
-    log.info("chat", "regenerate", { sessionId: sid });
-    run.newRound();
-    setMemorySaved(0);
-    setStatus("thinking"); // 乐观:AGENT_STARTED 马上到,思考态先亮起
-    setMessages((ms) => {
-      let lastUser = -1;
-      ms.forEach((m, i) => {
-        if (m.sessionId === sid && m.role === "user") lastUser = i;
-      });
-      return lastUser === -1 ? ms : ms.slice(0, lastUser + 1);
-    });
-    connect().postMessage({ type: MSG.REGENERATE, sessionId: sid });
-  };
-
-  // 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)
-  const answerConfirm = (approved: boolean) => {
-    if (!confirmReq) return;
-    log.info("chat", "confirm answered", { approved, name: confirmReq.name });
-    connect().postMessage({
-      type: MSG.CONFIRM_RESPONSE,
-      requestId: confirmReq.requestId,
-      approved,
-    });
-    setConfirmReq(null);
-  };
-
-  // 面板可见性上报:任务完成通知以「面板是否不可见」为是否打扰的判据。
-  // 走 ref 读端口(重连后仍指向最新),监听只注册一次
-  useEffect(() => {
-    const report = () => {
-      try {
-        portRef.current?.postMessage({
-          type: MSG.PANEL_VISIBILITY,
-          hidden: document.visibilityState === "hidden",
-        });
-      } catch {
-        /* 端口已断开,无需上报 */
-      }
-    };
-    report();
-    document.addEventListener("visibilitychange", report);
-    return () => document.removeEventListener("visibilitychange", report);
-  }, []);
-
-  // 开始新对话:只清本地视图。旧会话原样留在历史列表(多会话语义,
-  // 不再通知后台删除);下次提交才会生成新的会话 id
-  const resetConversation = () => {
-    if (status !== "idle") return; // 运行中不允许打断
-    log.debug("chat", "new conversation", { old: sessionRef.current });
-    setMessages([]);
-    setCompaction(null);
-    setMemorySaved(0);
-    setInput("");
-    run.newRound(); // 对话清空,本轮执行流也不保留
-    setCurrentSession("");
-    // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
-    sessionRef.current = "";
-    historyReqRef.current = "";
-    lastLoadedSessionRef.current = "";
-  };
-
   // ---- / 技能菜单:输入以 / 开头(仅起始位置)时触发 ----
   // 触发判定走 input 值而非 keydown:避开中文组词中间态;全角 ／ 不触发。
   // 清单带 3s TTL 缓存,菜单开着才取(SW 全量列表,轻请求;技能页改动后
@@ -527,17 +233,14 @@ export default function ChatView({
   const [skillIdx, setSkillIdx] = useState(0);
   const slashMatch = /^\/([A-Za-z0-9_-]*)$/.exec(input);
   const slashQuery = slashMatch?.[1] ?? "";
-  const enabledSkills = useMemo(
-    () => (skillList ?? []).filter((s) => s.enabled),
-    [skillList],
-  );
-  const skillMatches = useMemo(() => {
+  const enabledSkills = (skillList ?? []).filter((s) => s.enabled);
+  const skillMatches = (() => {
     const q = slashQuery.toLowerCase();
     if (!q) return enabledSkills;
     return enabledSkills.filter(
       (s) => s.name.includes(q) || s.description.toLowerCase().includes(q),
     );
-  }, [enabledSkills, slashQuery]);
+  })();
   // 输入变化 → 高亮回到首项(菜单开着时每次改词都重置选择)
   // biome-ignore lint/correctness/useExhaustiveDependencies: setSkillIdx 是稳定 setState
   useEffect(() => setSkillIdx(0), [slashQuery]);
@@ -650,47 +353,23 @@ export default function ChatView({
       );
     }
     // 会话全局唯一;tabId 记录本次提问的页面上下文(工具去该 tab 执行)
-    const { tabId, sessionId } = await resolveContext();
-    sessionRef.current = sessionId;
-    setCurrentSession(sessionId);
+    const { tabId, sessionId } = await chat.resolveContext();
     log.info("chat", "submit", {
       text,
       sessionId,
       tabId,
       images: pendingImages.length,
     });
-    // 先归档上一轮文本段(保证它排在本条 user 消息之前),再清空执行流开新一轮
-    run.archiveTexts();
-    // 本地回显:预览 url 直接转入气泡缓存,渲染无需再向后台取字节
-    const metas = pendingImages.map(({ id, mime, w, h }) => ({ id, mime, w, h }));
+    // 本地回显:预览 url 先入气泡缓存,渲染无需再向后台取字节
     for (const p of pendingImages) cacheImgUrl(p.id, p.url);
-    setMessages((ms) => [
-      ...ms,
-      {
-        role: "user",
-        content: text,
-        sessionId,
-        ...(metas.length ? { images: metas } : {}),
-      },
-    ]);
-    setInput("");
-    const uploads = pendingImages.map(({ mime, base64, w, h }) => ({
-      mime,
-      base64,
-      w,
-      h,
-    }));
-    setPendingImages([]);
-    run.newRound(); // AGENT_STARTED 会再兜一次
-    connect().postMessage({
-      type: MSG.USER_MESSAGE,
-      payload: {
-        text,
-        sessionId,
-        tabId,
-        ...(uploads.length ? { images: uploads } : {}),
-      },
+    chat.submitUserMessage({
+      sessionId,
+      tabId,
+      text,
+      ...(pendingImages.length ? { images: pendingImages } : {}),
     });
+    setInput("");
+    setPendingImages([]);
   };
 
   return (
@@ -715,7 +394,10 @@ export default function ChatView({
               </button>
               <button
                 type="button"
-                onClick={resetConversation}
+                onClick={() => {
+                  chat.resetConversation();
+                  setInput("");
+                }}
                 disabled={busy}
                 aria-label={t("chat.newChat")}
                 title={busy ? t("chat.busyNewChatHint") : undefined}
@@ -799,7 +481,7 @@ export default function ChatView({
                   key={i}
                   text={m.content}
                   actions={i === lastAssistantIdx ? "copy-regen" : "copy"}
-                  onRegenerate={i === lastAssistantIdx ? regenerate : undefined}
+                  onRegenerate={i === lastAssistantIdx ? chat.regenerate : undefined}
                 />
               );
             // 执行流插在最后一条 user 消息之后:按到达顺序交错渲染;
@@ -815,7 +497,7 @@ export default function ChatView({
                     endedAt={runEndedAt}
                     openGroups={openGroups}
                     onToggleGroup={toggleGroup}
-                    onRegenerate={regenerate}
+                    onRegenerate={chat.regenerate}
                   />,
                 ]
               : [...divider, node];
@@ -863,7 +545,9 @@ export default function ChatView({
       </div>
 
       {/* 写操作确认卡:后台在执行点击/填写前停下等答复;展示目标页与写入内容 */}
-      {confirmReq && <ConfirmCard req={confirmReq} onAnswer={answerConfirm} />}
+      {confirmReq && (
+        <ConfirmCard req={confirmReq} onAnswer={chat.answerConfirm} />
+      )}
 
       <form
         onSubmit={(e) => {
@@ -1009,7 +693,7 @@ export default function ChatView({
           ) : (
             <button
               type="button"
-              onClick={cancel}
+              onClick={chat.cancel}
               aria-label={t("chat.stop")}
               className="icon-btn-filled error ml-auto h-8 w-8"
             >
@@ -1108,110 +792,6 @@ function ImageIcon() {
   );
 }
 
-// ---- 空态问候 ----
-// 标题按本机时段定档(timeGreetKey,挂载时定一次,重渲不跳变);
-// 副标是每日一句:窥探当日缓存,有就用、没有就用本地池播种条 ——
-// 首帧即终帧,补抓只在后台落盘供下次挂载,挂载中文案绝不跳变。
-// quote 是内容不是产品话术,不进字典,细节见 greeting.ts 头注。
-// chips 仍从 10 条池里抽 3,「换一批」原地重抽。
-const SUGGESTIONS = [
-  "chat.suggestRead",
-  "chat.suggestDigest",
-  "chat.suggestSearch",
-  "chat.suggestForm",
-  "chat.suggestTable",
-  "chat.suggestExplore",
-  "chat.suggestTranslate",
-  "chat.suggestSources",
-  "chat.suggestRemember",
-  "chat.suggestCompare",
-] as const;
-
-/** Fisher-Yates 洗牌(纯函数) */
-function shuffle<T>(items: readonly T[]): T[] {
-  const out = [...items];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
-/** 空态:品牌标 + 随机招呼语 + 快捷提问 chips(点击即回填输入框并聚焦)。
- *  chips 从 10 条池里抽 3,「换一批」原地重抽,不必重开面板 */
-/** 每日一句:窥探当日缓存,有就用、没有就本地池播种条 —— 首帧即终帧,
- *  补抓只在后台落盘供下次挂载,挂载中文案绝不跳变(细节见 greeting.ts 头注)。
- *  出处默认隐藏,悬停/键盘聚焦整块显形(.quote-source,空间常驻不跳布局) */
-function DailyQuote() {
-  const locale = getLocale();
-  const day = dayKeyOf();
-  const [quote, setQuote] = useState<Quote>(
-    () => peekDailyQuote(locale, day) ?? localQuote(locale, day),
-  );
-  useEffect(() => {
-    // 同步重选(挂载时窥探若尚未成熟,这里补一次;此后不再动):
-    // 语言切换/跨天时按当前语言与日期换一条,依旧不做任何异步替换
-    setQuote(peekDailyQuote(locale, day) ?? localQuote(locale, day));
-    void warmDailyQuote(locale, day);
-  }, [locale, day]);
-  const q = quoteDisplay(quote, locale);
-  return (
-    <div className="quote-block">
-      <p className="quote-text">{q.text}</p>
-      {q.from && <p className="quote-source">{q.from}</p>}
-    </div>
-  );
-}
-
-function EmptyState({
-  onPick,
-  showQuote,
-}: {
-  onPick: (text: string) => void;
-  showQuote: boolean;
-}) {
-  // 挂载时定一次,重渲不重抽(否则流式期间招呼语会跳变)
-  const [greetKey] = useState(() => timeGreetKey(new Date().getHours()));
-  const [chipKeys, setChipKeys] = useState(() =>
-    shuffle(SUGGESTIONS).slice(0, 3),
-  );
-  return (
-    <div className="flex flex-col items-center px-6 pb-10 pt-16 text-center">
-      <LogoMark />
-      <p className="mt-4 text-[15px] font-medium text-on-surface">
-        {t(greetKey)}
-      </p>
-      {/* 排序 = Momentum 结构:Hero(标+问候)→ 行动(chips)→ 注脚(quote)。
-          quote 是氛围性注脚(出处悬停显形),垫在块尾,空槽溶进块尾留白 */}
-      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-        {chipKeys.map((key) => {
-          const label = t(key);
-          return (
-            <button
-              key={key}
-              type="button"
-              className="empty-chip"
-              onClick={() => onPick(label)}
-            >
-              {label}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label={t("chat.suggestShuffle")}
-          title={t("chat.suggestShuffle")}
-          onClick={() => setChipKeys(shuffle(SUGGESTIONS).slice(0, 3))}
-        >
-          <RefreshIcon />
-        </button>
-      </div>
-      {showQuote && <DailyQuote />}
-    </div>
-  );
-}
-
 /** 回到最新:实心下箭头(滚回列表底部) */
 function ArrowDownIcon() {
   return (
@@ -1228,107 +808,6 @@ function ArrowDownIcon() {
     >
       <path d="M8 2.8v10.4" />
       <path d="m3.6 9 4.4 4.2L12.4 9" />
-    </svg>
-  );
-}
-
-/** 写操作确认卡:工具名 + 目标页 + 参数摘要(写入内容/定位/是否回车提交),
- *  给用户足够信息做「允许 / 拒绝」决定;视觉沿用 combo-pop 浮层语言 */
-function ConfirmCard({
-  req,
-  onAnswer,
-}: {
-  req: Extract<AgentEvent, { type: typeof MSG.AGENT_CONFIRM_REQUEST }>;
-  onAnswer: (approved: boolean) => void;
-}) {
-  const args = (req.args ?? {}) as {
-    selector?: string;
-    text?: string;
-    pressEnterAfter?: boolean;
-  };
-  const host = (() => {
-    try {
-      return req.tabUrl ? new URL(req.tabUrl).hostname : "";
-    } catch {
-      return "";
-    }
-  })();
-  const targetLabel = req.tabTitle
-    ? host
-      ? `${req.tabTitle}（${host}）`
-      : req.tabTitle
-    : host;
-  const isFill = req.name === "fill_input";
-  const fillText =
-    isFill && typeof args.text === "string" ? args.text.slice(0, 80) : "";
-  return (
-    <div
-      role="alertdialog"
-      aria-label={t("chat.confirmTitle")}
-      className="mx-3 mb-2 rounded-xl bg-surface-container-high p-3 shadow-2"
-    >
-      <p className="flex items-center gap-1.5 text-[13px] font-medium text-on-surface">
-        <ConfirmIcon />
-        {toolLabel(req.name, req.displayName)} · {t("chat.confirmTitle")}
-      </p>
-      {targetLabel && (
-        <p className="mt-1 truncate text-[11.5px] text-on-surface-variant">
-          {t("chat.confirmTarget", { title: targetLabel })}
-        </p>
-      )}
-      {fillText && (
-        <p className="mt-1 break-all text-[11.5px] text-on-surface-variant">
-          {t("chat.confirmFillText", { text: fillText })}
-          {args.text && args.text.length > 80 ? "…" : ""}
-        </p>
-      )}
-      {isFill && args.pressEnterAfter && (
-        <p className="mt-1 text-[11.5px] text-error">
-          {t("chat.confirmSubmitHint")}
-        </p>
-      )}
-      {typeof args.selector === "string" && args.selector && (
-        <p className="mt-1 truncate font-mono text-[11px] text-on-surface-variant">
-          {t("chat.confirmSelectorLabel", { selector: args.selector })}
-        </p>
-      )}
-      <div className="mt-2.5 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => onAnswer(false)}
-          aria-label={t("chat.confirmDeny")}
-          className="btn-text"
-        >
-          {t("chat.confirmDeny")}
-        </button>
-        <button
-          type="button"
-          onClick={() => onAnswer(true)}
-          aria-label={t("chat.confirmAllow")}
-          className="icon-btn-filled ml-2 h-8 px-3 text-[12px] font-medium leading-none"
-        >
-          {t("chat.confirmAllow")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ConfirmIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path d="M8 1.8 13.5 4v4.2c0 3.1-2.3 5.3-5.5 6.2-3.2-.9-5.5-3.1-5.5-6.2V4L8 1.8Z" />
-      <path d="m5.6 8 1.7 1.7 3.1-3.3" strokeLinecap="round" />
     </svg>
   );
 }

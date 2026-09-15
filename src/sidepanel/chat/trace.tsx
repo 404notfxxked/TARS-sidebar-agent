@@ -5,8 +5,9 @@
 // 序列,不持有任何执行流状态。
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { t, getLocale } from "../../shared/i18n";
-import { useCopyFlash } from "../ui/hooks";
+import type { LocalePref } from "../../shared/configStore";
+import type { TFn } from "../../shared/i18n";
+import { useCopyFlash, useLocale, useT } from "../ui/hooks";
 import { toolLabel } from "./toolNames";
 import { AssistantBubble } from "./bubbles";
 
@@ -175,6 +176,8 @@ function ProcessCard({
   // live→settled 的收拢动画:翻转瞬间先以展开态渲染一帧(无过渡),下一帧放行
   // 默认的 0fr 过渡,让「过程收成摘要 chip」是一次可见的高度收拢而非硬切。
   // settled 单卡复用 live 首卡的 key(g{firstIdx}),实例跨相位保留,ref 才有意义
+  const t = useT();
+  const locale = useLocale();
   const prevPhase = useRef(phase);
   const [collapsing, setCollapsing] = useState(false);
   useEffect(() => {
@@ -223,8 +226,8 @@ function ProcessCard({
   // 折叠摘要只报一个总时长 + 步数(业界惯例 "Thought for 5s"/"Worked for 2m"
   // 一律单一时长);思考耗时明细在展开区的各行里,不进摘要
   const meta = tools.length
-    ? t("chat.trace.stepsMeta", { dur: fmtDur(totalMs) })
-    : t("chat.trace.thoughtMeta", { dur: fmtDur(totalMs) });
+    ? t("chat.trace.stepsMeta", { dur: fmtDur(totalMs, locale) })
+    : t("chat.trace.thoughtMeta", { dur: fmtDur(totalMs, locale) });
   return (
     <div className="trace msg-in" data-open={open}>
       <button
@@ -273,6 +276,8 @@ function ProcessCard({
 /** 思考中 ticker:恒定行高的「思考窗」——标题行(shimmer + 计时)下方固定 3 行、
  *  底部锚定、顶部渐隐,流式期间不推挤布局;每秒重渲驱动行尾计时 */
 function TickerRow({ item }: { item: ReasoningSeg }) {
+  const t = useT();
+  const locale = useLocale();
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((v) => v + 1), 1000);
@@ -286,7 +291,7 @@ function TickerRow({ item }: { item: ReasoningSeg }) {
         </span>
         <span className="trace-label trace-shimmer">{t("chat.trace.thinking")}</span>
         <span className="trace-tail">
-          <span className="trace-status">{fmtDur(Date.now() - item.t)}</span>
+          <span className="trace-status">{fmtDur(Date.now() - item.t, locale)}</span>
         </span>
       </div>
       {item.text !== "" && (
@@ -302,6 +307,8 @@ function TickerRow({ item }: { item: ReasoningSeg }) {
  *  展开态是行内局部状态 —— 与 ToolRow 一致,不进 runSegs,
  *  否则会触发近底跟随的段更新 effect(旧版正是这样被拽底的) */
 function ReasoningRow({ item, durMs }: { item: ReasoningSeg; durMs: number }) {
+  const t = useT();
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   return (
     <div className="trace-row" data-kind="reasoning" data-open={open}>
@@ -317,7 +324,7 @@ function ReasoningRow({ item, durMs }: { item: ReasoningSeg; durMs: number }) {
         <span className="trace-label">{t("chat.trace.reasoning")}</span>
         <span className="trace-tail">
           <span className="trace-status">
-            {t("chat.trace.reasoningMeta", { dur: fmtDur(durMs), n: item.text.length })}
+            {t("chat.trace.reasoningMeta", { dur: fmtDur(durMs, locale), n: item.text.length })}
           </span>
           <ChevronIcon />
         </span>
@@ -328,7 +335,7 @@ function ReasoningRow({ item, durMs }: { item: ReasoningSeg; durMs: number }) {
             <CopyButton text={item.text} />
           </div>
           <div className="reasoning-text">
-            {truncate(item.text, REASONING_MAX_CHARS)}
+            {truncate(t, item.text, REASONING_MAX_CHARS)}
           </div>
         </div>
       </div>
@@ -338,6 +345,7 @@ function ReasoningRow({ item, durMs }: { item: ReasoningSeg; durMs: number }) {
 
 /** 中间文案行(轮内思考/工具之间的叙述文本):摘要为单行首行预览,展开回看全文 */
 function TextRow({ item }: { item: TextSeg }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   return (
     <div className="trace-row" data-kind="text" data-open={open}>
@@ -362,7 +370,7 @@ function TextRow({ item }: { item: TextSeg }) {
             <CopyButton text={item.text} />
           </div>
           <div className="reasoning-text">
-            {truncate(item.text, REASONING_MAX_CHARS)}
+            {truncate(t, item.text, REASONING_MAX_CHARS)}
           </div>
         </div>
       </div>
@@ -374,13 +382,15 @@ function TextRow({ item }: { item: TextSeg }) {
  *  完成的尾部直接给耗时(✓ 图标已表达完成,不再重复「完成」二字,与
  *  Manus/Cursor 的每步计时一致);运行中/失败仍用文字 */
 function ToolRow({ item, durMs }: { item: ToolSeg; durMs: number }) {
+  const t = useT();
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const statusText =
     item.status === "running"
       ? t("chat.trace.running")
       : item.status === "error"
         ? t("chat.trace.failed")
-        : fmtDur(durMs);
+        : fmtDur(durMs, locale);
   return (
     <div
       className="trace-row"
@@ -403,7 +413,7 @@ function ToolRow({ item, durMs }: { item: ToolSeg; durMs: number }) {
             <MarkOk />
           )}
         </span>
-        <span className="trace-label">{toolLabel(item.name, item.displayName)}</span>
+        <span className="trace-label">{toolLabel(t, item.name, item.displayName)}</span>
         <span className="trace-tail">
           <span className="trace-status">{statusText}</span>
           <ChevronIcon />
@@ -431,19 +441,21 @@ function ToolRow({ item, durMs }: { item: ToolSeg; durMs: number }) {
 
 /** 参数/结果小节:标题行带「复制」(取完整内容);预览截断展示 */
 function CopyableSection({ label, text }: { label: string; text: string }) {
+  const t = useT();
   return (
     <>
       <div className="trace-sec-row">
         <span className="trace-sec">{label}</span>
         <CopyButton text={text} />
       </div>
-      <pre className="trace-pre">{truncate(text, PREVIEW_CHARS)}</pre>
+      <pre className="trace-pre">{truncate(t, text, PREVIEW_CHARS)}</pre>
     </>
   );
 }
 
 /** 「复制」按钮:复制完整内容,点击后短暂闪烁「已复制」 */
 function CopyButton({ text }: { text: string }) {
+  const t = useT();
   const [copied, copy] = useCopyFlash();
   return (
     <button type="button" onClick={() => copy(text)} className="trace-copy-btn">
@@ -481,10 +493,11 @@ function MarkError() {
 }
 
 /** 毫秒 → 时长短文案(下限 1s,避免闪 0s):zh「5 秒 / 3 分 21 秒」,
- *  en「5s / 3m 21s」。语言经 getLocale() 渲染时现取,切语言随树重渲刷新 */
-function fmtDur(ms: number): string {
+ *  en「5s / 3m 21s」。locale 由调用方传入(useLocale 产物)——render 期
+ *  辅助函数自读模块态会被 React Compiler 按参数缓存,语言切换后不刷新 */
+function fmtDur(ms: number, locale: LocalePref): string {
   const s = Math.max(1, Math.round(ms / 1000));
-  const zh = getLocale() === "zh-CN";
+  const zh = locale === "zh-CN";
   if (s < 60) return zh ? `${s} 秒` : `${s}s`;
   const m = Math.floor(s / 60);
   const sec = s % 60;
@@ -552,7 +565,11 @@ function firstLine(s: string): string {
   return line.trim();
 }
 
-/** 超长文本截断,尾部标注总字数 */
-function truncate(s: string, max: number): string {
+/** 超长文本截断,尾部标注总字数(t 由调用方传入,理由同 fmtDur) */
+function truncate(
+  t: TFn,
+  s: string,
+  max: number,
+): string {
   return s.length > max ? `${s.slice(0, max)}${t("chat.truncatedChars", { n: s.length })}` : s;
 }

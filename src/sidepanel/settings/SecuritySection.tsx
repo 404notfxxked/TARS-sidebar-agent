@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
-import { t } from "../../shared/i18n";
+import { useT } from "../ui/hooks";
 import SwitchRow from "../ui/SwitchRow";
 import {
   hasPageAccess,
@@ -24,6 +24,7 @@ export default function SecuritySection({
   initialNotifyDone: boolean;
   run: (p: Promise<void>) => void;
 }) {
+  const t = useT();
   const [confirmActions, setConfirmActions] = useState(initialConfirmActions);
   const [notifyDone, setNotifyDone] = useState(initialNotifyDone);
   // null = 授权态查询中(避免首帧误闪「未授权」)

@@ -113,6 +113,9 @@ interface RunState {
   abort: AbortController;
   /** 提交时激活的 tab(可观测性,暂未消费) */
   tabId?: number;
+  /** 归属面板的 port:每个浏览器窗口各有一个侧栏实例,断开/取消只处理
+   *  自己名下的 run,不殃及其他窗口正在进行的对话 */
+  port: chrome.runtime.Port;
 }
 
 // 每个运行中的 agent 会话 → 取消句柄(以 sessionId 为 key)
@@ -120,9 +123,9 @@ interface RunState {
 // 需跨唤醒存活的数据(会话历史)走 chrome.storage.session,不在这里。
 const activeRuns = new Map<string, RunState>();
 
-// 面板可见性(单面板实例,模块级标记即可):任务完成通知据此判断
-// 「用户是否正看着」。面板不可见 = 收到通知才有意义
-let panelHidden = false;
+// 面板可见性(每个窗口的侧栏实例各一份):任务完成通知据此判断
+// 「这个 run 的主人是否正看着」。面板不可见 = 收到通知才有意义
+const panels = new Map<chrome.runtime.Port, { hidden: boolean }>();
 
 /** 通知正文里的任务名:用户首条消息截断 */
 function taskLabel(text: string): string {
@@ -138,12 +141,14 @@ async function maybeNotifyRunEnd(opts: {
   aborted: boolean;
   error: string;
   text: string;
+  /** 归属面板自报的可见性(port 已断开时按隐藏处理) */
+  hidden: boolean;
 }): Promise<void> {
   try {
     if (opts.aborted) return;
     const config = await loadConfig();
     if (!config.notifyDone) return;
-    if (!panelHidden) {
+    if (!opts.hidden) {
       // 面板自报可见,再核对窗口焦点:面板文档在窗口失焦时仍算 visible
       const win = await chrome.windows.getLastFocused().catch(() => null);
       if (win?.focused) return;
@@ -191,6 +196,7 @@ async function launchRun(
   const run: RunState = {
     abort: new AbortController(),
     tabId: payload.tabId,
+    port,
   };
   activeRuns.set(sessionId, run);
   // run 档案首条(e2e 以此为 run 边界):sessionId/tabId + 用户原文,
@@ -224,6 +230,8 @@ async function launchRun(
       aborted: run.abort.signal.aborted,
       error: runError,
       text: payload.text,
+      // port 已断开时 run 早已被 abort,这里取不到只是兜底
+      hidden: panels.get(port)?.hidden ?? true,
     });
   }
 }
@@ -232,15 +240,21 @@ async function launchRun(
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name !== PORT_NAME) return;
   log.info("port", "connected");
+  panels.set(port, { hidden: false });
 
-  // 侧栏关闭 / 刷新 → 端口断开 → 取消并清理所有运行中的 agent
+  // 侧栏关闭 / 刷新 → 端口断开 → 只取消该面板名下的 run;
+  // 其他窗口侧栏的运行中对话不受影响
   port.onDisconnect.addListener(() => {
-    log.warn("port", "disconnected, cleaning up runs", {
-      runs: activeRuns.size,
-    });
+    panels.delete(port);
+    let killed = 0;
     for (const [sessionId, run] of activeRuns) {
+      if (run.port !== port) continue;
       run.abort.abort();
       activeRuns.delete(sessionId);
+      killed++;
+    }
+    if (killed > 0) {
+      log.warn("port", "disconnected, cleaning up runs", { runs: killed });
     }
   });
 
@@ -276,14 +290,17 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         const run = activeRuns.get(msg.sessionId);
         log.warn("agent", "cancel requested", {
           sessionId: msg.sessionId,
-          found: run !== undefined,
+          found: run !== undefined && run.port === port,
         });
-        run?.abort.abort();
+        // 只响应归属面板的取消:历史列表是跨窗口共享的,别的窗口
+        // 正在运行的会话不该被这里误杀
+        if (run && run.port === port) run.abort.abort();
         break;
       }
       case MSG.PANEL_VISIBILITY: {
-        // 面板可见性:任务完成通知的「是否打扰」判据(单面板,全局标记)
-        panelHidden = msg.hidden;
+        // 面板可见性:任务完成通知的「是否打扰」判据(按面板实例记账)
+        const panel = panels.get(port);
+        if (panel) panel.hidden = msg.hidden;
         break;
       }
       case MSG.CONFIRM_RESPONSE: {
