@@ -11,6 +11,7 @@ import {
   callOffscreenParser,
   ensureOffscreenDocument,
 } from "../../shared/docBridge";
+import { hasPageAccess } from "../../shared/hostAccess";
 import { getToolExecutionContext } from "../tools/toolContext";
 import { createLogger } from "../../shared/logger";
 import type { WebSearchResult } from "./webSearch";
@@ -88,6 +89,13 @@ async function pace(engineId: string): Promise<void> {
 export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult> {
   const { query, limit, allowed, blocked } = args;
   const cancelSignal = getToolExecutionContext()?.signal;
+  // 页面访问授权是 tab 通道的前提(extractTabHtml 靠 executeScript 读结果页):
+  // 未授权时所有引擎都会死在同一个坑,快速失败,不逐个引擎烧 15s 加载超时
+  if (!(await hasPageAccess())) {
+    throw new Error(
+      "Web search is unavailable: site access has not been granted. Tell the user to enable \"页面与网络访问\" in TARS Settings → Security, then retry",
+    );
+  }
   await ensureOffscreenDocument();
 
   const startedAt = Date.now();

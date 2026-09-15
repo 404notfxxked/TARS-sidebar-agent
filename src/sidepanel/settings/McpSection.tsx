@@ -9,6 +9,7 @@ import { estimateTokens } from "../../shared/memory";
 import type { McpToolInfo } from "../../shared/messages";
 import { t } from "../../shared/i18n";
 import { mcpListTools, mcpTest } from "../clients/mcpClient";
+import { ensureOriginAuthorized } from "../permissions";
 import { useConfirmReset } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
 import SwitchRow from "../ui/SwitchRow";
@@ -170,10 +171,12 @@ function McpServerCard({
   const [headersText, setHeadersText] = useState(headersToText(entry.headers));
 
   const displayName = entry.name || hostOf(entry.url) || t("settings.serverUnnamed");
-  /** headers 逐行编辑、失焦整包提交,序列化后作依赖:提交才触发重拉 */
+  /** headers 逐行编辑、失焦整包提交,序列化后作依赖:提交才触发重拉
+   *  (不能直接依赖 entry —— 每次按键 onChange 都换对象身份) */
   const headersKey = JSON.stringify(entry.headers);
 
   // 端点或鉴权头变了,上一次的连接测试结果就不再成立,静默复位
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖即触发条件本身(url + 序列化后的 headers)
   useEffect(() => {
     setTestState("idle");
     setTestMsg("");
@@ -181,6 +184,7 @@ function McpServerCard({
 
   // 展开时拉工具清单(与「测试连接」同一条后台缓存,成功即预热下次 run);
   // url 或请求头变了就重拉。失败只标注在工具清单区,不挡其他字段的编辑
+  // biome-ignore lint/correctness/useExhaustiveDependencies: headersKey(JSON 串)代替 entry 引用 —— 仅当提交过的鉴权头真变了才重拉,勿让自动修复改写此数组
   useEffect(() => {
     if (!open || !entry.url.trim()) {
       setToolsLoading(false);
@@ -207,12 +211,19 @@ function McpServerCard({
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, entry.url, headersKey]);
 
   const runTest = async () => {
     if (testState === "loading") return;
     setTestState("loading");
+    // 按域授权:借本次点击为服务器 origin 发起授权请求(与聊天调用共用
+    // 同一授权);拒绝时直接以失败呈现在测试结果里,不白连一次
+    if (!(await ensureOriginAuthorized(entry.url))) {
+      setTestState("done");
+      setTestOk(false);
+      setTestMsg(t("settings.accessDenied"));
+      return;
+    }
     const r = await mcpTest(entry).catch(
       (e): { ok: boolean; toolCount?: number; era?: string; error?: string } => ({
         ok: false,

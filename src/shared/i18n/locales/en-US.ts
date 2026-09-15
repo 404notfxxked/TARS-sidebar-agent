@@ -204,6 +204,14 @@ export const enUS = {
   // Security section: page-action confirmation gate + completion notifications.
   // (Notification copy lives here too; the service worker picks the dict by locale.)
   security: {
+    hostAccess: "Page & network access",
+    hostAccessHint:
+      "Reading pages, web search and reading URLs all require this grant. Nothing is granted at install time; the record lives in your browser and can be revoked anytime.",
+    hostAccessDetail:
+      "This grant covers: reading and acting on pages (page tools), web search (reading search engine result pages in a background tab), and reading a URL directly. Chats and model requests are separate — the model endpoint is authorized individually when you add a provider. The grant is confirmed via Chrome's standard permission prompt; revoking disables the related features immediately.",
+    hostAccessGrant: "Grant page & network access",
+    hostAccessRevoke: "Revoke",
+    hostAccessOn: "Granted",
     confirmActions: "Confirm page actions",
     confirmActionsHint:
       "Before clicking or typing on a web page, TARS shows a confirmation card and waits for your decision. This is the recommended default.",
@@ -253,6 +261,7 @@ export const enUS = {
     fetching: "Fetching…",
     fetchFailed: "Failed to fetch: {error}",
     fetchNeedKey: "Enter an API key first",
+    accessDenied: "Site access was not granted; this endpoint is unreachable",
     modelEmptyHint:
       'No models yet. Click "Fetch list" to retrieve the model list automatically, or add models manually below.',
     modelRowHint:
@@ -301,6 +310,8 @@ export const enUS = {
       "Off by default. When enabled, the AI can search the web: each search opens a real search engine page in a background tab and closes it right after reading. No API key required.",
     searchHow:
       "Engines are selected automatically among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks cool down for a few minutes while the next one takes over. Search queries are sent to the corresponding search engine. The Tavily / Bocha / Brave API channels remain in the code and can be enabled via manual configuration, but no UI is provided.",
+    webNeedAccess:
+      "Web search also requires the \"Page & network access\" grant (Settings → Security); without it the search results page cannot be read.",
     // MCP
     mcpEnable: "Enable MCP tools",
     mcpHint:

@@ -10,6 +10,7 @@
 // 全部引擎失败时立即重新探测(覆盖「刚开代理」的网络翻转场景)。
 
 import { createLogger } from "../../shared/logger";
+import { hasPageAccess } from "../../shared/hostAccess";
 
 const log = createLogger({ ctx: "bg" });
 
@@ -93,6 +94,13 @@ let probeInFlight: Promise<void> | null = null;
 export function probeEngines(): Promise<void> {
   if (probeInFlight) return probeInFlight;
   probeInFlight = (async () => {
+    // 探测靠 SW fetch 直连引擎首页,依赖 host 授权:未授权时探测必然全
+    // dead,白写健康表还会把所有引擎永久沉底 —— 直接跳过(用户授权后,
+    // 下一次搜索失败的兜底重探会补上真实结果)
+    if (!(await hasPageAccess())) {
+      log.debug("search", "未授予页面访问,跳过引擎可达性探测");
+      return;
+    }
     const entries = await Promise.all(
       Object.entries(PROBE_URLS).map(async ([id, url]) => {
         const controller = new AbortController();

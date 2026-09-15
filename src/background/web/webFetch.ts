@@ -10,6 +10,7 @@
 // 不受影响,结果会被丢弃)。
 
 import { callOffscreenParser, ensureOffscreenDocument } from "../../shared/docBridge";
+import { hasOriginAccess } from "../../shared/hostAccess";
 import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext";
 import { createLogger } from "../../shared/logger";
 
@@ -61,6 +62,13 @@ export async function runWebFetch(args: WebFetchArgs): Promise<WebFetchResult> {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(
       `web_fetch: 只支持 http/https 链接,收到 ${parsed.protocol}(浏览器内部页无法由 TARS 代读)`,
+    );
+  }
+  // 抓取由 SW fetch 直连,依赖目标站点的 host 授权(否则 CORS 拦截);
+  // 未授权时快速失败并给出授权指引,不烧 20s 抓取超时
+  if (!(await hasOriginAccess(url))) {
+    throw new Error(
+      `web_fetch 需要访问 ${parsed.origin} 的授权。请让用户在 TARS 设置 → 安全 中开启「页面与网络访问」,授权后重试`,
     );
   }
   const readArgs = { url, offset: args?.offset, chars: args?.chars };

@@ -12,6 +12,7 @@ import { fetchModels } from "../../background/provider";
 import { t } from "../../shared/i18n";
 import { useConfirmReset } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
+import { ensureOriginAuthorized } from "../permissions";
 import { ExpandCard, SettingsSection, hostOf } from "./parts";
 
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
@@ -377,6 +378,14 @@ function ProviderCard({
       setFetchError(t("settings.fetchNeedKey"));
       return;
     }
+    // 按域授权:端点 origin 未授权时借本次点击发起授权请求;拒绝则不白打
+    // 一次注定 CORS 失败的请求(聊天用的同一授权,点击即生效)
+    const endpoint = entry.baseUrl.trim() || DEFAULT_BASE_URL;
+    if (!(await ensureOriginAuthorized(endpoint))) {
+      setFetchState("error");
+      setFetchError(t("settings.accessDenied"));
+      return;
+    }
     abortRef.current?.abort();
     const ctl = new AbortController();
     abortRef.current = ctl;
@@ -384,7 +393,7 @@ function ProviderCard({
     setFetchError("");
     try {
       const list = await fetchModels(
-        entry.baseUrl.trim() || DEFAULT_BASE_URL,
+        endpoint,
         entry.apiKey.trim(),
         ctl.signal,
       );

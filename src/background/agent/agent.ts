@@ -9,6 +9,7 @@ import {
 import { getTool, toProviderToolSchemas } from "../tools/tools";
 import {
   OpenAIAdapter,
+  DEFAULT_BASE_URL,
   type ChatProvider,
   type ChatResult,
   type InternalMsg,
@@ -25,6 +26,10 @@ import {
   type CompactionOutcome,
 } from "./compaction";
 import { loadConfig, inferMaxTokensField } from "../../shared/configStore";
+import {
+  grantableOriginOf,
+  hasOriginAccess,
+} from "../../shared/hostAccess";
 import type { ToolSchema } from "../../shared/toolTypes";
 import { getMcpToolSchemas } from "../mcp/mcpManager";
 import { createLogger } from "../../shared/logger";
@@ -134,6 +139,18 @@ export async function runAgentLoop(
       });
       return;
     }
+    // 端点访问授权预检:SW 直连模型端点依赖 host 授权(添加服务时按域授权,
+    // 或设置 → 安全的总开关)。缺失时给可行动的指引,而不是让 CORS 裸报错
+    const endpointOrigin = grantableOriginOf(cur.baseUrl || DEFAULT_BASE_URL);
+    if (endpointOrigin && !(await hasOriginAccess(endpointOrigin))) {
+      port.postMessage({
+        type: MSG.AGENT_ERROR,
+        error:
+          `无法访问模型端点 ${endpointOrigin}:尚未获得站点授权。` +
+          "请在 设置 → 安全 开启「页面与网络访问」,或在 设置 → 模型服务 里点「获取模型列表」重新授权",
+      });
+      return;
+    }
     // 当前默认模型对应的列表条目:提供每模型配置(最大输出 / 上下文窗口)
     const modelEntry = cur.models.find((m) => m.id === config.model);
     // 工具结果字符预算:配了 contextTokens 就按窗口 1/4 缩放(混排内容约
@@ -173,7 +190,7 @@ export async function runAgentLoop(
           compactModel: config.compactModel,
           foundProvider: !!cp,
           foundModel: !!cm,
-          hasKey: !!(cp && cp.apiKey),
+          hasKey: !!(cp?.apiKey),
         });
       }
     }

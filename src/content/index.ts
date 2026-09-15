@@ -27,44 +27,52 @@ import {
   normalizeRole,
 } from "./interact";
 
-chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
-  const msg = raw as ContentToolCall;
-  if (msg?.type !== CONTENT_TOOL_MESSAGE) return false;
+// 防重复注入:本脚本经 chrome.scripting.executeScript 按需注入(manifest 无
+// 静态注入),同一次 run 里多个工具并发首调都会走「发送失败 → 注入 → 重试」,
+// 可能对同一文档注入多次;重复注册 listener 会让一次调用产生多份响应。
+// ISOLATED world 的 window 按扩展隔离,标记互不污染。
+const WIN = window as { __tarsContentReady?: boolean };
+if (!WIN.__tarsContentReady) {
+  WIN.__tarsContentReady = true;
+  chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
+    const msg = raw as ContentToolCall;
+    if (msg?.type !== CONTENT_TOOL_MESSAGE) return false;
 
-  const { callId, name, args } = msg;
+    const { callId, name, args } = msg;
 
-  // 异步执行工具后 sendResponse;耗时与结果摘要进日志(capture_doc 等大对象只记体量)
-  const startedAt = Date.now();
-  runTool(name, args)
-    .then((result) => {
-      log.info("tool", `${name} 完成`, {
-        ms: Date.now() - startedAt,
-        result: summarizeResult(name, result),
+    // 异步执行工具后 sendResponse;耗时与结果摘要进日志(capture_doc 等大对象只记体量)
+    const startedAt = Date.now();
+    runTool(name, args)
+      .then((result) => {
+        log.info("tool", `${name} 完成`, {
+          ms: Date.now() - startedAt,
+          result: summarizeResult(name, result),
+        });
+        const response: ContentToolResultMsg = {
+          type: CONTENT_TOOL_RESULT,
+          callId,
+          result,
+        };
+        sendResponse(response);
+      })
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err.message : String(err);
+        log.error("tool", `${name} 失败`, {
+          ms: Date.now() - startedAt,
+          error,
+        });
+        const response: ContentToolResultMsg = {
+          type: CONTENT_TOOL_RESULT,
+          callId,
+          error,
+        };
+        sendResponse(response);
       });
-      const response: ContentToolResultMsg = {
-        type: CONTENT_TOOL_RESULT,
-        callId,
-        result,
-      };
-      sendResponse(response);
-    })
-    .catch((err: unknown) => {
-      const error = err instanceof Error ? err.message : String(err);
-      log.error("tool", `${name} 失败`, {
-        ms: Date.now() - startedAt,
-        error,
-      });
-      const response: ContentToolResultMsg = {
-        type: CONTENT_TOOL_RESULT,
-        callId,
-        error,
-      };
-      sendResponse(response);
-    });
 
-  // 返回 true 表示会异步调用 sendResponse
-  return true;
-});
+    // 返回 true 表示会异步调用 sendResponse
+    return true;
+  });
+}
 
 // 工具结果进日志前先摘要:capture_doc 的 html、find_elements 的元素数组只记体量,
 // 避免把整页快照写进日志缓冲

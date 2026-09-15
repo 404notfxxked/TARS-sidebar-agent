@@ -19,10 +19,11 @@
 // - 服务器主动发来的 JSON-RPC 请求(sampling 等):现代规范已禁止;旧版
 //   服务器若发,不响应让它自己超时 —— V1 明确不支持采样/追问
 //
-// CORS:host_permissions 为 <all_urls>,扩展 SW 的跨域 fetch 不受 CORS 限制,
-// 这是扩展平台相对网页客户端的结构性优势(网页客户端接远程 MCP 普遍被卡)。
-// 注意 fetch 会带 Origin: chrome-extension://<id>,个别严格校验 Origin 的
-// 服务器可能 403 —— 属于服务器侧策略,客户端无解(Origin 是禁止改写的头)。
+// CORS:目标域获 host 授权后(添加服务器时按域请求,或设置 → 安全的总开关),
+// 扩展 SW 的跨域 fetch 不受 CORS 限制,这是扩展平台相对网页客户端的结构性优势
+// (网页客户端接远程 MCP 普遍被卡)。注意 fetch 会带 Origin:
+// chrome-extension://<id>,个别严格校验 Origin 的服务器可能 403 ——
+// 属于服务器侧策略,客户端无解(Origin 是禁止改写的头)。
 
 import { createLogger } from "../../shared/logger";
 
@@ -251,8 +252,7 @@ export class McpClient {
     return { result, headers: res.headers };
   }
 
-  /** 超时 + 外部取消的二合一:任一触发即 abort。
-   *  手动接listener 而不用 AbortSignal.any(它要 Chrome 116,manifest 最低 109) */
+  /** 超时 + 外部取消的二合一:任一触发即 abort */
   private async timedFetch(url: string, init: RequestInit & { signal?: AbortSignal }) {
     const ctl = new AbortController();
     const outer = init.signal;
@@ -261,6 +261,23 @@ export class McpClient {
     const timer = setTimeout(() => ctl.abort(new Error(`MCP 请求超时(${REQUEST_TIMEOUT_MS / 1000}s)`)), REQUEST_TIMEOUT_MS);
     try {
       return await fetch(url, { ...init, signal: ctl.signal });
+    } catch (e) {
+      // 网络层失败:缺目标域授权时 SW fetch 表现为 CORS 的 TypeError
+      // ("Failed to fetch"),与服务器宕机不可辨,给方向性指引而非裸报错。
+      // 超时/取消走 abort(reason) 路径,不是 TypeError,不受影响
+      if (e instanceof TypeError) {
+        const origin = (() => {
+          try {
+            return new URL(url).origin;
+          } catch {
+            return url;
+          }
+        })();
+        throw new Error(
+          `无法连接 MCP 服务器(${origin}):网络不可达,或尚未获得该域的访问授权(设置 → 安全 →「页面与网络访问」)`,
+        );
+      }
+      throw e;
     } finally {
       clearTimeout(timer);
       outer?.removeEventListener("abort", onOuter);
@@ -360,7 +377,8 @@ async function readSseResponse(
  * 规范的 base64 哨兵格式传输(=?base64?...?=),纯 ASCII 原样
  */
 export function encodeHeaderValue(v: string): string {
-  // eslint-disable-next-line no-control-regex
+  // \x20/\x09 是 RFC 5322 允许的裸字符,刻意保留
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: 编码前探测,控制字符是允许集的一部分
   if (/^[\x21-\x7e\x20\x09]*$/.test(v) && v === v.trim()) return v;
   const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(v)));
   return `=?base64?${b64}?=`;

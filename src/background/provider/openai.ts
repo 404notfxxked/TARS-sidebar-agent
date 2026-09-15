@@ -14,7 +14,8 @@ import type {
   ToolCall,
 } from "./types";
 
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+/** Base URL 缺省时的官方地址(设置页与 agent 预检共用同一兜底口径) */
+export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 // SSE 流式事件的局部类型(只取我们关心的字段)
 type SSEChunk = {
@@ -136,6 +137,7 @@ export class OpenAIAdapter implements ChatProvider {
 // ---- 内部格式 → OpenAI wire ----
 
 function toWireMessages(msgs: InternalMsg[]): unknown[] {
+  // biome-ignore lint/suspicious/useIterableCallbackReturn: InternalMsg 的 role 已穷尽,switch 不存在漏 return
   return msgs.map((message) => {
     switch (message.role) {
       case "system":

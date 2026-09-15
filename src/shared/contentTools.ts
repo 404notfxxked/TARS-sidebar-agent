@@ -2,6 +2,11 @@
 // background（agent loop 用）和 side panel（UI 直接调用）都通过这里
 
 import { createLogger } from "./logger";
+import {
+  grantableOriginOf,
+  hasOriginAccess,
+  pageAccessHint,
+} from "./hostAccess";
 
 // 本模块在 SW(无 window)与 offscreen 页面(有 window)里都会执行,
 // 日志按宿主上下文归档,便于导出合并时分清来源
@@ -43,7 +48,8 @@ export async function getActiveTabId(): Promise<number | null> {
 /**
  * 直接向指定 tab 的 content script 发起一次工具调用
  * 用 chrome.tabs.sendMessage 实现 request/response 模式
- * 兜底:content script 未注入(如 reload 扩展前就打开的旧 tab)时,executeScript 注入后重试一次
+ * content script 不静态注入(manifest 已移除):发送因「无接收者」失败时,
+ * 按需 executeScript 注入后重试一次 —— 这是注入的唯一路径
  */
 export function callContentTool(
   tabId: number,
@@ -88,17 +94,12 @@ export function callContentTool(
       });
     });
 
-  // 先直接发;若因 content script 未注入失败,动态注入后重试一次
+  // 先直接发;若因 content script 未注入失败,按需注入后重试一次。
+  // injectContentScript 的失败均已语义化(授权缺失/内置页/tab 消失),原样上抛
   return sendOnce().catch(async (err) => {
     if (!isNoReceiverError(err)) throw err;
-    log.info("cstool", `content script 未注入,兜底注入后重试(tab ${tabId})`);
-    try {
-      await injectContentScript(tabId);
-    } catch {
-      throw new Error(
-        `目标页面(tabId=${tabId})无法注入内容脚本,可能是浏览器内置页(chrome://)或受限页面`,
-      );
-    }
+    log.info("cstool", `content script 未注入,按需注入后重试(tab ${tabId})`);
+    await injectContentScript(tabId);
     return sendOnce();
   });
 }
@@ -118,8 +119,30 @@ function isNoReceiverError(err: unknown): boolean {
   );
 }
 
-/** 动态注入 content.js 到目标 tab(兜底旧 tab 未注入 content script) */
+/**
+ * 动态注入 content.js 到目标 tab。
+ * 按需注入是 content script 的唯一入口(manifest 无静态 content_scripts):
+ * 先核对目标站点已获 host 授权(executeScript 的前提),再注入。
+ * 授权缺失、浏览器内置页、tab 已关三种失败分开说清,模型才知道怎么转告。
+ */
 async function injectContentScript(tabId: number): Promise<void> {
+  let url = "";
+  try {
+    url = (await chrome.tabs.get(tabId))?.url ?? "";
+  } catch {
+    throw new Error(
+      `目标 tab(${tabId})不存在或已关闭,<context> 清单可能已过期;用 get_tabs 获取最新清单重新选择`,
+    );
+  }
+  const origin = grantableOriginOf(url);
+  if (!origin) {
+    throw new Error(
+      `目标页面(tabId=${tabId})是浏览器内置页或非网页(${url || "未知地址"}),无法注入内容脚本`,
+    );
+  }
+  if (!(await hasOriginAccess(url))) {
+    throw new Error(pageAccessHint(origin));
+  }
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["content.js"],

@@ -43,5 +43,13 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).chrome = {
     storage: { local: makeStorageArea(), session: makeStorageArea() },
     runtime: { lastError: null },
+    // hostAccess 的权限查询桩:默认视为已授权(生产 manifest 走
+    // optional_host_permissions,contains 由运行时授予态决定;单测里
+    // 需要验证「未授权」路径的用例自行覆写此桩)
+    permissions: {
+      contains: () => Promise.resolve(true),
+      request: () => Promise.resolve(true),
+      remove: () => Promise.resolve(),
+    },
   };
 });

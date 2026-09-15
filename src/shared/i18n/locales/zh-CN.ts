@@ -196,8 +196,16 @@ export const zhCN = {
     menuHint: "↑↓ 选择 · 回车插入 · Esc 关闭",
     disabledHint: "技能 /{name} 已停用，可在设置 → 技能中开启",
   },
-  // 安全分节:写操作确认门 + 任务完成通知(通知文案后台按 locale 现取)
+  // 安全分节:站点访问授权 + 写操作确认门 + 任务完成通知(通知文案后台按 locale 现取)
   security: {
+    hostAccess: "页面与网络访问",
+    hostAccessHint:
+      "读取页面、联网搜索、读取网页都需要此授权；安装时默认不授予，授权记录保存在浏览器本地，可随时撤销。",
+    hostAccessDetail:
+      "此授权覆盖：读取与操作网页（页面工具）、联网搜索（后台读取搜索引擎结果页）、按链接读取网页。对话与模型请求不经此授权——模型端点在添加服务时单独授权。授权以 Chrome 标准权限弹窗确认，撤销后相关功能立即停用。",
+    hostAccessGrant: "授权页面与网络访问",
+    hostAccessRevoke: "撤销授权",
+    hostAccessOn: "已授权",
     confirmActions: "页面操作需确认",
     confirmActionsHint: "AI 点击、填写网页前先弹出确认卡，由你决定是否执行；这是默认推荐的安全设置。",
     confirmActionsDetail:
@@ -246,6 +254,7 @@ export const zhCN = {
     fetching: "拉取中…",
     fetchFailed: "获取失败：{error}",
     fetchNeedKey: "请先填写 API Key",
+    accessDenied: "未获得站点授权，无法访问该端点",
     modelEmptyHint:
       "暂无模型。点击「获取列表」自动拉取模型列表，或在下方手动添加模型。",
     modelRowHint:
@@ -294,6 +303,8 @@ export const zhCN = {
       "默认关闭。开启后 AI 可联网搜索：后台新开真实搜索引擎页面，读完即关，无需配置 API Key。",
     searchHow:
       "引擎在 DuckDuckGo / Bing / Google / 百度 之间自动选择：连续失败或触发风控的引擎会进入几分钟冷却，自动换下一家；搜索词会发送至对应搜索引擎。Tavily / 博查 / Brave 的 API 通道代码仍保留，可手动写入配置启用，界面不再提供。",
+    webNeedAccess:
+      "联网搜索还需要「页面与网络访问」授权（设置 → 安全），未授权时无法读取搜索引擎结果页。",
     // MCP
     mcpEnable: "启用 MCP 工具",
     mcpHint:
