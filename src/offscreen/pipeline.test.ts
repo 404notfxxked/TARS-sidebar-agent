@@ -108,3 +108,31 @@ describe("buildVirtualDoc 分节策略", () => {
     expect(doc.totalChars).toBe(0);
   });
 });
+
+describe("空壳页 hint(管线自报,京东/淘宝壳页案)", () => {
+  it("有标题但正文近零:outline 仍出条目,连同 page_read 都带逃生 hint", () => {
+    const doc = buildVirtualDoc(capture(`<body><h1>登录</h1><p>请先登录后查看</p></body>`));
+    expect(doc.headings.length).toBe(1);
+    const outline = runPageOutline(doc);
+    expect(outline.items.length).toBe(1);
+    expect(outline.hint).toContain("壳页");
+    const read = runPageRead(doc, 0, 6000);
+    expect(read.done).toBe(true);
+    expect(read.hint).toContain("壳页");
+  });
+
+  it("零标题的极小页:hint 走空壳指引而不是 page_find 定位(没有内容可定位)", () => {
+    const doc = buildVirtualDoc(capture(`<body><div><span>Access Denied</span></div></body>`));
+    expect(doc.headings.length).toBe(0);
+    expect(doc.totalChars).toBeLessThan(200);
+    expect(runPageOutline(doc).hint).toContain("壳页");
+  });
+
+  it("正文充足的有标题页:不带 hint 字段", () => {
+    const html = `<body><h1>标题</h1><p>${"正文内容".repeat(60)}</p></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    expect(doc.totalChars).toBeGreaterThanOrEqual(200);
+    expect(runPageOutline(doc).hint).toBeUndefined();
+    expect(runPageRead(doc, 0, 6000).hint).toBeUndefined();
+  });
+});

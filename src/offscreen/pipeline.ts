@@ -64,6 +64,13 @@ const READ_WINDOW_MAX = 20000;
 const OUTLINE_FULL_MAX = 60;
 /** 折叠模式下最多返回的大纲条数 */
 const OUTLINE_RETURN_MAX = 80;
+/** 空壳页判定:正文低于该阈值(无论有无标题)大概率是 JS 渲染壳页或登录墙
+ *  (京东壳页案 total_chars=1),outline/read 给模型逃生 hint,别再空耗 turn */
+const SHELL_HINT_MAX_CHARS = 200;
+const SHELL_HINT =
+  "页面正文极少,大概率是 JS 渲染的壳页或登录墙:page_find 难有命中," +
+  "page_read 也只有这些内容;可传 refresh=true 重试一次,仍为空则改用 " +
+  "web_search 查信息,并如实告知用户该页读不到";
 /** page_find 单次最多返回命中区域数 */
 const SEARCH_LIMIT_MAX = 10;
 const SEARCH_LIMIT_DEFAULT = 5;
@@ -340,6 +347,7 @@ export function runPageRead(doc: VirtualDoc, offset: unknown, chars: unknown) {
     next_offset: done ? null : end,
     done,
     ...(doc.truncatedTotal ? { truncated_total: true } : {}),
+    ...(doc.totalChars < SHELL_HINT_MAX_CHARS ? { hint: SHELL_HINT } : {}),
     headings: headingChainAt(doc, off),
     text: doc.md.slice(off, end),
   };
@@ -526,14 +534,20 @@ export function runPageOutline(doc: VirtualDoc) {
       ...base(),
       collapsed: false,
       items: [],
-      hint: "页面没有标题结构,用 page_find 关键词定位内容,或 page_read 从头读",
+      hint:
+        doc.totalChars < SHELL_HINT_MAX_CHARS
+          ? SHELL_HINT
+          : "页面没有标题结构,用 page_find 关键词定位内容,或 page_read 从头读",
     };
   }
+
+  const shellHint = doc.totalChars < SHELL_HINT_MAX_CHARS ? { hint: SHELL_HINT } : {};
 
   if (doc.headings.length <= OUTLINE_FULL_MAX) {
     return {
       ...base(),
       collapsed: false,
+      ...shellHint,
       // 全量模式才带 preview;折叠模式条目已经很多,省掉控制 token 开销
       items: doc.headings.map(({ offset, level, title }) => ({
         offset,
@@ -567,5 +581,5 @@ export function runPageOutline(doc: VirtualDoc) {
     };
   });
 
-  return { ...base(), collapsed: true, cutoff_level: cutoff, items };
+  return { ...base(), collapsed: true, cutoff_level: cutoff, ...shellHint, items };
 }
