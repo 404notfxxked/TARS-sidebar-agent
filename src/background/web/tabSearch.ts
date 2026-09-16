@@ -167,14 +167,14 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
         failures.push(`${engine.id}: no results`);
         log.info("search", "引擎无结果,切换下一个", {
           engine: engine.id,
-          query,
+          query: clipLog(query, 40),
         });
         continue;
       }
       clearEngineCooldown(engine.id);
       void recordEngineReachability(engine.id, "ok");
       log.info("search", "web_search 完成", {
-        query,
+        query: clipLog(query, 40),
         engine: engine.id,
         mode: "tab",
         count: filtered.length,
@@ -368,7 +368,8 @@ function passesDomainFilter(
   return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
 }
 
-/** 日志预览字段截断(标题/摘要用),压平空白 */
+/** 日志预览字段截断(标题/摘要/query 用),压平空白。query 在日志里只留
+ *  前 40 字符:完整原文已在工具结果与轨迹卡里,导出诊断日志时不必带走长 query */
 function clipLog(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;

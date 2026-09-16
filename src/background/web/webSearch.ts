@@ -352,7 +352,7 @@ async function runApiSearch(
     ) {
       // 域名过滤把结果全滤掉了:重试大概率也一样,直接说明
       log.info("search", "结果全被域名过滤排除", {
-        query,
+        query: clipLog(query, 40),
         provider: mode.provider,
         allowed,
         blocked,
@@ -368,7 +368,7 @@ async function runApiSearch(
     const finalResults = filtered.slice(0, limit);
     // 搜索质量复盘档案:一次搜索的完整链路(词/过滤参数/服务/结果预览)一条记全
     log.info("search", "web_search 完成", {
-      query,
+      query: clipLog(query, 40),
       ...(market ? { market } : {}),
       ...(recency ? { recency } : {}),
       ...(allowed.length ? { allowed } : {}),
@@ -385,7 +385,7 @@ async function runApiSearch(
     });
     if (finalResults.length === 0) {
       log.info("search", "搜索无结果", {
-        query,
+        query: clipLog(query, 40),
         ...(market ? { market } : {}),
         engine: mode.provider,
         ms: Date.now() - startedAt,
@@ -501,7 +501,8 @@ function passesDomainFilter(
   return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
 }
 
-/** 日志预览字段截断(标题/摘要用),压平空白 */
+/** 日志预览字段截断(标题/摘要/query 用),压平空白。query 在日志里只留
+ *  前 40 字符:完整原文已在工具结果与轨迹卡里,导出诊断日志时不必带走长 query */
 function clipLog(text: string, max: number): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
