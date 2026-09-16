@@ -320,7 +320,18 @@ registerTool<WebFetchArgs, WebFetchResult>({
 // 观察:定位可交互元素(selector 供 click_element / fill_input 使用)
 registerTool<
   { text?: string; role?: string; limit?: number; tabId?: number },
-  { count?: number; returned?: number; truncated?: boolean; elements?: unknown[] }
+  {
+    count?: number;
+    returned?: number;
+    truncated?: boolean;
+    elements?: unknown[];
+    page?: {
+      scroll_y: number;
+      scroll_height: number;
+      viewport_height: number;
+      at_bottom: boolean;
+    };
+  }
 >({
   type: "function",
   name: "find_elements",
@@ -346,6 +357,12 @@ registerTool<
       returned?: number;
       truncated?: boolean;
       elements?: unknown[];
+      page?: {
+        scroll_y: number;
+        scroll_height: number;
+        viewport_height: number;
+        at_bottom: boolean;
+      };
     };
   },
 });
@@ -378,6 +395,46 @@ registerTool<
     },
   },
   execute: (args) => runPageScreenshot(args),
+});
+
+// 观察/导航:滚动。价值 = 喂惰性加载 + 与 screenshot 组成视觉循环(SoM 只标
+// 视口内,scroll 后重截);读页不受滚动影响(page_read 读完整文档)——这条
+// 反向纪律写在描述里,防止模型「为读而滚」。返回落点几何供模型判断还有没有下文
+registerTool<
+  { direction?: "up" | "down" | "top" | "bottom"; pages?: number; selector?: string; tabId?: number },
+  {
+    scroll_y?: number;
+    scroll_height?: number;
+    viewport_height?: number;
+    at_bottom?: boolean;
+  }
+>({
+  type: "function",
+  name: "scroll_page",
+  description:
+    "Scroll the page, or bring an element into view. Without selector: scrolls the window by `pages` viewport-heights in `direction` (down/up, or top/bottom to jump to the very start/end). With `selector`: scrolls that element into view instead.\nWhen to use: (1) triggering lazy-loaded / infinite-feed content, then re-reading or re-shooting; (2) bringing a below-the-fold element into the viewport right before page_screenshot — screenshot marks only cover the visible viewport; (3) checking whether more content remains (at_bottom in the result).\nWhen NOT to use: reading content — page_read / page_find work on the fully extracted document and are NOT affected by scrolling; acting on an off-screen element is also fine — click_element / fill_input scroll it into view automatically. Do not scroll just to \"look around\": page_outline maps the whole page without scrolling.\nReturns the resulting geometry: scroll_y / scroll_height / viewport_height / at_bottom.",
+  parameters: {
+    type: "object",
+    properties: {
+      direction: {
+        type: "string",
+        enum: ["up", "down", "top", "bottom"],
+        description: "Scroll direction; default down. top/bottom jump to the very start/end",
+      },
+      pages: { type: "number", description: "Scroll amount in viewport-heights; default 1, cap 10 (ignored with selector / top / bottom)" },
+      selector: { type: "string", description: "Scroll this element into view instead of window scrolling (from find_elements output)" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
+    },
+  },
+  execute: async (args) => {
+    const tabId = await resolveTargetTabId(args);
+    return (await callContentTool(tabId, "scroll_page", args)) as {
+      scroll_y?: number;
+      scroll_height?: number;
+      viewport_height?: number;
+      at_bottom?: boolean;
+    };
+  },
 });
 
 // 动作:点击(完整指针事件序列,等价真实鼠标点击)

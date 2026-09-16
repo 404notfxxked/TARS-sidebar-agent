@@ -36,6 +36,13 @@ export interface ScreenshotMark {
 export interface PageScreenshotResult {
   url: string;
   viewport: { w: number; h: number };
+  /** 捕获时的页面几何:模型据此知道「截到的是哪一段、还有没有下文」 */
+  page: {
+    scroll_y: number;
+    scroll_height: number;
+    viewport_height: number;
+    at_bottom: boolean;
+  };
   /** 空数组 = 视口内没有可交互元素(纯内容页),图照常给(「它长什么样」) */
   marks: ScreenshotMark[];
   screenshot: ToolScreenshot;
@@ -68,12 +75,18 @@ export async function runPageScreenshot(
   }
 
   try {
-    const marks = (await callContentTool(tabId, "screenshot_mark", {
+    const marked = (await callContentTool(tabId, "screenshot_mark", {
       limit: MARK_LIMIT,
-    })) as ScreenshotMark[];
+    })) as { marks: ScreenshotMark[]; page: PageScreenshotResult["page"] };
 
     const shot = await captureAndEncode(tab.windowId);
-    return { url: tab.url ?? "", viewport: shot.viewport, marks, screenshot: shot.attachment };
+    return {
+      url: tab.url ?? "",
+      viewport: shot.viewport,
+      page: marked.page,
+      marks: marked.marks,
+      screenshot: shot.attachment,
+    };
   } finally {
     // 摘标记兜底:捕获或编码抛错也不能把标记框留在用户页面上
     await callContentTool(tabId, "screenshot_cleanup").catch(() => {});
@@ -92,9 +105,23 @@ async function captureAndEncode(windowId: number): Promise<{
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `page_screenshot: 截图失败(${msg})。页面可能是浏览器内置页不可截,或所在窗口已最小化`,
-    );
+    // Chrome 限每秒 2 次 captureVisibleTab(MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND):
+    // 「截图 → 滚动 → 再截」的视觉循环一秒内就能撞上,退避一秒重试一次
+    if (/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/i.test(msg)) {
+      await new Promise((r) => setTimeout(r, 1100));
+      try {
+        dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+          format: "jpeg",
+          quality: 85,
+        });
+      } catch (retryErr) {
+        throw new Error(`page_screenshot: 截图失败(${retryErr instanceof Error ? retryErr.message : String(retryErr)})`);
+      }
+    } else {
+      throw new Error(
+        `page_screenshot: 截图失败(${msg})。页面可能是浏览器内置页不可截,或所在窗口已最小化`,
+      );
+    }
   }
 
   const blob = await (await fetch(dataUrl)).blob();

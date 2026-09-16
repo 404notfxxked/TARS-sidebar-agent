@@ -25,6 +25,9 @@ import {
   fillElement,
   findInteractive,
   normalizeRole,
+  pageGeometry,
+  scrollPage,
+  type ScrollOptions,
 } from "./interact";
 import { clearMarks, drawMarks } from "./screenshot";
 
@@ -129,7 +132,17 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
         typeof a.limit === "number" && Number.isFinite(a.limit)
           ? a.limit
           : undefined;
-      return findInteractive(document, { text, role: role ?? undefined, limit });
+      return {
+        ...findInteractive(document, { text, role: role ?? undefined, limit }),
+        // 页面几何随观察一并返回:模型据此判断是否需要滚动/截图拍到哪段
+        page: pageGeometry(),
+      };
+    }
+
+    // 滚动:窗口按视口倍数滚,或把元素滚入视口。返回落点几何
+    case "scroll_page": {
+      const a = (args ?? {}) as ScrollOptions;
+      return scrollPage(a);
     }
 
     // 动作:点击(完整指针事件序列,等价真实鼠标点击)
@@ -169,7 +182,7 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
     // SW 据此组装工具结果;图像捕获发生在 SW(captureVisibleTab),
     // 标记必须在捕获前画上、捕获后立即摘除(SW 侧负责时序)
     case "screenshot_mark":
-      return { marks: drawMarks() };
+      return { marks: drawMarks(), page: pageGeometry() };
 
     case "screenshot_cleanup":
       return clearMarks();

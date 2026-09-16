@@ -14,6 +14,7 @@ const TOOL_KEYS: Record<string, string> = {
   web_search: "chat.tool.webSearch",
   web_fetch: "chat.tool.webFetch",
   find_elements: "chat.tool.findElements",
+  scroll_page: "chat.tool.scrollPage",
   page_screenshot: "chat.tool.pageScreenshot",
   click_element: "chat.tool.clickElement",
   fill_input: "chat.tool.fillInput",

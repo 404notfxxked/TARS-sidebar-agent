@@ -101,6 +101,7 @@ export const zhCN = {
       webSearch: "网络搜索",
       webFetch: "网页读取",
       findElements: "查找元素",
+      scrollPage: "滚动页面",
       pageScreenshot: "网页截图",
       clickElement: "点击元素",
       fillInput: "填写输入",
