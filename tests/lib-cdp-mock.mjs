@@ -67,23 +67,26 @@ export async function launchWithCdp({ extDir, userDataDir, proxy } = {}) {
     viewport: { width: 1400, height: 900 },
   });
 
-  // 等 SW 启动并取扩展 ID
-  await new Promise((r) => setTimeout(r, 3000));
-  let extId = "";
-  for (const sw of browser.serviceWorkers()) {
-    const m = sw.url().match(/chrome-extension:\/\/([^/]+)\//);
-    if (m) {
-      extId = m[1];
-      break;
-    }
-  }
+  // 等 SW 启动并取扩展 ID:先查已起的,没有则事件驱动等待。固定 sleep 在
+  // 慢机 / CI xvfb 下会竞态抛「找不到扩展 ID」(2026-09 评审定位的单点 flake)
+  const known = browser
+    .serviceWorkers()
+    .find((sw) => /chrome-extension:\/\//.test(sw.url()));
+  const sw = known ?? (await browser.waitForEvent("serviceworker", { timeout: 15_000 }));
+  const extId = sw.url().match(/chrome-extension:\/\/([^/]+)\//)?.[1];
   if (!extId) throw new Error("找不到扩展 ID");
 
   // ---- browser 级 CDP:autoAttach 所有 target,扩展 target 上启用 Fetch ----
   const routes = [];
 
+  // DevToolsActivePort 由 Chrome 在调试端口就绪时写出,launch 返回后通常
+  // 已在,慢机上偶发晚写 → 轮询等它,不盲抛也不固定 sleep
   const portFile = resolve(userDataDir, "DevToolsActivePort");
-  if (!existsSync(portFile)) throw new Error("DevToolsActivePort 不存在");
+  const portDeadline = Date.now() + 10_000;
+  while (!existsSync(portFile)) {
+    if (Date.now() > portDeadline) throw new Error("DevToolsActivePort 不存在");
+    await new Promise((r) => setTimeout(r, 100));
+  }
   const port = parseInt(readFileSync(portFile, "utf8").split("\n")[0], 10);
   const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
 
@@ -329,16 +332,13 @@ export async function ask(sidepanel, text) {
   const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
   await input.waitFor({ timeout: 5000 });
   await input.fill(text);
-  await sidepanel.locator(`button[aria-label="${zh.chat.send}"]`).click();
-  await sidepanel
-    .locator(`button[aria-label="${zh.chat.send}"]`)
-    .waitFor({ state: "visible", timeout: 60000 })
-    .catch(async () => {
-      await sidepanel
-        .locator(`button[aria-label="${zh.chat.stop}"]`)
-        .waitFor({ state: "detached", timeout: 60000 });
-    });
-  await new Promise((r) => setTimeout(r, 500));
+  const sendBtn = sidepanel.locator(`button[aria-label="${zh.chat.send}"]`);
+  await sendBtn.click();
+  // 两段式 idle 判定,不能直接等 send visible:点击瞬间它就是 visible,
+  // 会赶在按钮翻转成 stop 之前通过。先等 send 消失(翻转发生);极快跑完
+  // 的 run 可能被 React 渲染批次吞掉翻转,超时吞掉即可,下面的可见等待照常通过
+  await sendBtn.waitFor({ state: "hidden", timeout: 10000 }).catch(() => {});
+  await sendBtn.waitFor({ state: "visible", timeout: 60000 });
   return since;
 }
 
