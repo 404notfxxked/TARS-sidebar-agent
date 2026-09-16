@@ -21,20 +21,23 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   真实扩展窗口,headful 跑,CI 里经 `xvfb-run` 包裹;Chromium 用
   `playwright install --with-deps` 安装,另装 `fonts-noto-cjk` 保证
   截图里的中文不是豆腐块
-- 保持本地的两个脚本(`real-search-probe.mjs` / `try-search.mjs`,
-  经根 .gitignore 精确排除):前者对真搜索引擎发真实查询,公开等于
-  提供刷引擎工具且会把出口 IP 写进 CI 日志;后者是搜索 tab 化前
-  裸抓通道的退役调试器。二者仍被 check-test-strings 与 biome 本地扫描
+- 保持本地的脚本(`real-search-probe.mjs`,经根 .gitignore 精确排除):
+  对真搜索引擎发真实查询,公开等于提供刷引擎工具且会把出口 IP 写进
+  CI 日志。仍被 check-test-strings 与 biome 本地扫描
 
 ## 单元测试(vitest)
 
-- `pnpm test` / `pnpm test:watch`;用例 `src/**/*.test.ts` 与被测模块
-  同目录,配置在根目录 `vitest.config.ts` + `vitest.setup.ts`(内存版
-  chrome.storage 桩,供 logger/loadConfig 使用;vitest 优先读
-  vitest.config.ts,与扩展构建的 vite.config.js 互不干扰)
-- 现有八篇:src/background/agent/compaction.test.ts(窗口公式/档位/切分/
+- `pnpm test` / `pnpm test:watch` / `pnpm test:coverage`;用例
+  `src/**/*.test.ts` 与被测模块同目录,配置在根目录 `vitest.config.ts` +
+  `vitest.setup.ts`(内存版 chrome.storage 桩,供 logger/loadConfig 使用;
+  vitest 优先读 vitest.config.ts,与扩展构建的 vite.config.js 互不干扰)。
+  coverage 口径是 all:true 全量文件(默认只报被 import 的文件,数字虚高);
+  thresholds 只钉已强区域防倒退,零覆盖区先出报告不设门槛
+- 现有九篇:src/background/agent/compaction.test.ts(窗口公式/档位/切分/
   滚动合并/撞窗文案)、src/background/agent/toolBatch.test.ts(读写分组
-  并行批次)、src/background/tools/toolContext.test.ts(tabId 回退链)、
+  并行批次)、src/background/provider/openai.test.ts(SSE 脏形态/看门狗 +
+  adapter 流式聚合:arguments 分片/多工具交错/name 分片/length 截断)、
+  src/background/tools/toolContext.test.ts(tabId 回退链)、
   src/background/web/engineHealth.test.ts(健康表排序)、
   src/shared/memory.test.ts(注入规划/预算不变式)、
   src/shared/configStore.test.ts(读时迁移:旧版供应商合成、搜索单槽
@@ -88,24 +91,25 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 
 ## 视觉/诊断探针(人看截图/DOM,不判 PASS/FAIL)
 
-- `shot-m3.mjs` — 视觉主工具(2026-09 并入 probe-memory-ui/probe-mcp-ui):
-  一条命令留档全部页面 —— mock 对话驱动 深浅色 × 对话/设置/历史/模型弹层/
-  记忆页(12 条/空态/超预算)/ MCP 设置卡与过程卡 + console error 收集;
-  `--accents` 只跑 8 套重点色试色
-- `probe-hints.mjs` — 设置提示分层留档:瘦身后的设置页/「了解详情」折叠
-  展开/ⓘ 气泡悬停态,中英各一组
+- `shot-m3.mjs` — 视觉主工具(2026-09 并入 probe-memory-ui/probe-mcp-ui/
+  probe-hints):一条命令留档全部页面 —— mock 对话驱动 深浅色 × 对话/设置/
+  历史/模型弹层/记忆页(12 条/空态/超预算)/ MCP 设置卡与过程卡 +
+  console error 收集;`--accents` 只跑 8 套重点色试色;`--hints` 只跑
+  设置提示分层留档(ⓘ 悬停/「了解详情」折叠展开,中英各一组,带 ok
+  健康检查)
 
 ## 保持本地(.gitignore 精确排除,不入库)
 
 - `real-search-probe.mjs` — 真网探针(不进 run.mjs):只 mock 模型,
   搜索引擎走真网,验证当前网络下 tab 通道各引擎的真实可达性与解析结果。
   对引擎发真实自动化查询,不宜公开分发,也勿在 CI 跑(出口 IP 入日志)
-- `try-search.mjs` — 【已退役】复刻的 scrape 抓取通道随搜索 tab 化删除,
-  不再与扩展路径同形;保留作裸查引擎返回的调试器,扩展真实链路用
-  real-search-probe.mjs
 
-## 已删除 / 并入(2026-09 二次清理)
+## 已删除 / 并入(2026-09 二次清理;2026-09-17 三次清理补两行)
 
+- `try-search.mjs` → 删(2026-09-17:退役调试器,扩展链路早已不同形,
+  本地排查改用 real-search-probe.mjs)
+- `probe-hints.mjs` → 并入 shot-m3 --hints(2026-09-17:视觉家族归一,
+  顺修 en 未导入的 ReferenceError)
 - `probe-memory-flow.mjs` → 删(与 verify-memory T5-5/6/7 完全重合)
 - `probe-search-key-slot.mjs` → 并入 verify-web-search G9(串 key 回归归搜索域)
 - `probe-memory-ui.mjs` / `probe-mcp-ui.mjs` → 并入 shot-m3(同 profile 同产出的视觉家族)
