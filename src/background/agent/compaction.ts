@@ -75,29 +75,59 @@ function pickSplit(
 
 const SUMMARY_SYSTEM = `You compress the history of an AI assistant conversation into a context summary that later turns will rely on. Output only the summary — no preamble, no explanation. Requirements:
 - Write in the conversation's language, at most 900 words
-- Must keep: the user's task and goal, actions taken and conclusions so far, key sources (URLs and key points), open items and next steps, preferences and constraints the user expressed
+- Must keep: the user's task and goal, actions taken and conclusions so far, key sources (URLs and key points), open items and next steps, preferences and constraints the user expressed, failed attempts and what went wrong (so they are not retried)
 - May drop: pleasantries, repetition, details unrelated to the task
 - Use section headings and bullet items; favor information density`;
 
+/** 转写预算:tool 结果是转写里唯一无上界的部分(一次 page_read 窗口最大
+ *  2 万字符,长研究会话轻松堆出几十万字符)。转写本身超出 summarizer 的
+ *  窗口会让压缩请求整体 400,压缩静默回落 trim —— 「长会话不失忆」失明。
+ *  超预算从最旧的 tool 正文开始打桩:丢的是陈旧页面原文(结论已在
+ *  assistant 行里),user/assistant 行承载任务语义,保留全文 */
+export const TRANSCRIPT_BUDGET_CHARS = 120_000;
+
 /** wire 转写:user 消息解掉 <context>/<user-request> 包裹(tab 快照是噪音,
  *  用户输入的原文才是要记的),工具调用带上参数摘要 */
-function toTranscript(prefix: InternalMsg[]): string {
-  return prefix
-    .map((m) => {
-      if (m.role === "user") {
-        const inner = m.content.match(/<user-request>([\s\S]*?)<\/user-request>/);
-        return `[user] ${inner ? inner[1] : m.content}`;
-      }
-      if (m.role === "assistant") {
-        const calls =
-          m.toolCalls
-            ?.map((tc) => `[call ${tc.name} ${JSON.stringify(tc.args)}]`)
-            .join(" ") ?? "";
-        return `[assistant] ${m.content ?? ""} ${calls}`.trim();
-      }
-      if (m.role === "tool") return `[tool result] ${m.content}`;
-      return ""; // system 不会出现在前缀里
-    })
+export function toTranscript(prefix: InternalMsg[]): string {
+  const lines = prefix.map((m) => {
+    if (m.role === "user") {
+      const inner = m.content.match(/<user-request>([\s\S]*?)<\/user-request>/);
+      return { text: `[user] ${inner ? inner[1] : m.content}`, toolChars: -1 };
+    }
+    if (m.role === "assistant") {
+      const calls =
+        m.toolCalls
+          ?.map((tc) => `[call ${tc.name} ${JSON.stringify(tc.args)}]`)
+          .join(" ") ?? "";
+      return {
+        text: `[assistant] ${m.content ?? ""} ${calls}`.trim(),
+        toolChars: -1,
+      };
+    }
+    if (m.role === "tool") {
+      // toolChars = 正文字符数;≥ 0 标记该行超预算时可打桩
+      return { text: `[tool result] ${m.content}`, toolChars: m.content.length };
+    }
+    return { text: "", toolChars: -1 }; // system 不会出现在前缀里
+  });
+
+  // 从最新往回累计预算;放不下的更旧 tool 正文打桩(保留行结构,
+  // summarizer 仍知道「这里有过一次工具调用及其体量」)。
+  // 严格预算:某条放不下就打桩,转写总量才有上界 —— 保证压缩请求
+  // 本身不再撞 summarizer 的窗口
+  let remaining = TRANSCRIPT_BUDGET_CHARS;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (line.toolChars < 0) continue; // user/assistant 行不打桩
+    if (line.toolChars > remaining) {
+      line.text = `[tool result omitted — ${line.toolChars} chars of stale page/fetch content; conclusions from it are kept in the assistant turns above]`;
+    } else {
+      remaining -= line.toolChars;
+    }
+  }
+
+  return lines
+    .map((l) => l.text)
     .filter(Boolean)
     .join("\n\n");
 }

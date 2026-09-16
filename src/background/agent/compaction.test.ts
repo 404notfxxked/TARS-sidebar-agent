@@ -4,16 +4,23 @@
 import { describe, expect, it } from "vitest";
 import {
   THRESHOLDS,
+  TRANSCRIPT_BUDGET_CHARS,
   compactHistory,
   isContextOverflow,
   summaryToMsg,
   shouldCompact,
+  toTranscript,
   usableTokens,
 } from "./compaction";
 import type { ChatProvider, InternalMsg } from "../provider/types";
 
 const user = (content: string): InternalMsg => ({ role: "user", content });
 const assistant = (content: string): InternalMsg => ({ role: "assistant", content });
+const tool = (content: string): InternalMsg => ({
+  role: "tool",
+  toolCallId: "t1",
+  content,
+});
 
 /** n 轮「一问一答」历史,user 内容带 <user-request> 包裹(与真实 wire 一致) */
 function turns(n: number): InternalMsg[] {
@@ -147,5 +154,42 @@ describe("summaryToMsg", () => {
     expect(msg.content).toContain("<context-summary>");
     expect(msg.content).toContain("用户在做测试框架");
     expect(msg.content.endsWith("</context-summary>")).toBe(true);
+  });
+});
+
+describe("toTranscript 转写预算", () => {
+  it("预算内:tool 正文原样进转写", () => {
+    const transcript = toTranscript([
+      user("<user-request>总结这页</user-request>"),
+      tool("页面正文不多"),
+      assistant("结论"),
+    ]);
+    expect(transcript).toBe(
+      "[user] 总结这页\n\n[tool result] 页面正文不多\n\n[assistant] 结论",
+    );
+  });
+
+  it("超预算:旧 tool 正文打桩,最新 tool 与 user/assistant 行保留", () => {
+    const big = "x".repeat(80_000);
+    const transcript = toTranscript([
+      user("<user-request>q1</user-request>"),
+      tool(big), // 最旧的大结果 → 打桩
+      assistant("第一轮结论"),
+      tool(big), // 较新的结果 → 累计后预算也耗尽?不:预算 120k,两个 80k
+      tool("y".repeat(30_000)), // 最新结果保留
+      user("<user-request>q2</user-request>"),
+    ]);
+    // 从最新往回:30k 保留(余 90k)→ 80k 保留(余 10k)→ 最旧 80k 打桩
+    expect(transcript).toContain("[user] q1");
+    expect(transcript).toContain("[assistant] 第一轮结论");
+    expect(transcript).toContain(`[tool result] ${"y".repeat(30_000)}`);
+    expect(transcript).toContain(`[tool result] ${"x".repeat(80_000)}`);
+    expect(transcript).toContain(
+      "[tool result omitted — 80000 chars of stale page/fetch content",
+    );
+    // 打桩只发生一次(最旧的);打桩后转写总量收敛进预算 —— 压缩请求
+    // 本身不再可能撞 summarizer 的窗口
+    expect(transcript.match(/omitted/g)).toHaveLength(1);
+    expect(transcript.length).toBeLessThan(TRANSCRIPT_BUDGET_CHARS);
   });
 });
