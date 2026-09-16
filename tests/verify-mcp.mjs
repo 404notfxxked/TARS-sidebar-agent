@@ -339,7 +339,7 @@ await setMcp(mcpOn);
 
   // 工具执行结果回填(log/tool 完成事件的 data 里带结果原文)
   try {
-    await waitForRunLog(
+    const logs = await waitForRunLog(
       sidepanel,
       (e) =>
         e.tag === "tool" &&
@@ -348,7 +348,11 @@ await setMcp(mcpOn);
       "mcp 工具结果日志",
       15000,
     );
-    check(true, "T2-3 tools/call 结果回填给模型");
+    check(
+      logs.some((e) => e.tag === "tool" && e.msg === `${WIRE_GET_ISSUE} 完成`),
+      "T2-3 tools/call 结果回填给模型",
+      `run 日志 ${logs.length} 条,未见 tool 完成事件`,
+    );
   } catch (err) {
     console.log("DEBUG 日志转储:\n", err.message);
     check(false, "T2-3 tools/call 结果回填给模型", "日志未找到");
@@ -488,12 +492,25 @@ console.log("\n===== T5. 设置页:开关/添加/工具清单/测试连接 =====
   await urlInput.fill(MODERN_URL);
   // 失焦落盘并触发工具清单拉取
   await urlInput.blur();
-  await sidepanel.locator('p:has-text("get_issue")').waitFor({ timeout: 15000 });
-  check(true, "T5-1 展开态自动拉取并展示工具清单");
+  const toolRow = sidepanel.locator('p:has-text("get_issue")');
+  await toolRow.waitFor({ timeout: 15000 });
+  const toolText = (await toolRow.first().textContent()) ?? "";
+  check(
+    toolText.includes("get_issue"),
+    "T5-1 展开态自动拉取并展示工具清单",
+    `渲染内容:${toolText}`,
+  );
 
   await sidepanel.locator(`button:has-text("${zh.settings.testConnection}")`).click();
-  await sidepanel.locator('span:has-text("已连接")').waitFor({ timeout: 15000 });
-  check(true, "T5-2 测试连接显示成功与工具数");
+  const connState = await sidepanel
+    .locator('span:has-text("已连接")')
+    .first()
+    .textContent();
+  check(
+    !!connState && connState.includes("已连接"),
+    "T5-2 测试连接显示成功与工具数",
+    `状态文案:${connState}`,
+  );
 
   // 落盘校验:storage 里 mcp 配置完整
   const saved = await sidepanel.evaluate(

@@ -251,7 +251,10 @@ console.log("\n===== T2. / 菜单与 <skill> 注入 =====");
 {
   await chatInput().fill("/");
   await sidepanel.locator('[role="option"]').first().waitFor({ timeout: 5000 });
-  check(true, "T2-1 输入 / 弹出联想菜单");
+  check(
+    (await sidepanel.locator('[role="option"]').count()) > 0,
+    "T2-1 输入 / 弹出联想菜单",
+  );
 
   // 屏幕内断言:浮层曾因锚点缺 relative 挂到面板根、被 top: -N 顶出视口,
   // DOM 可见性断言照样绿(假阳性)——选项 bounding box 必须真落在视口里
@@ -487,7 +490,7 @@ console.log("\n===== T8. 删除技能 =====");
   // 收尾:回聊天页,留干净状态
   await backToChat();
   await chatInput().waitFor({ state: "visible", timeout: 5000 });
-  check(true, "T9 收尾回到聊天视图");
+  check(await chatInput().isVisible(), "T9 收尾回到聊天视图");
 }
 
 // ---- 汇总 ----

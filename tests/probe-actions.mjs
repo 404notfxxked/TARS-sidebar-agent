@@ -10,7 +10,7 @@ import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
-const USER_DATA_DIR = "/tmp/verify-actions-profile";
+const USER_DATA_DIR = "/tmp/probe-actions-profile";
 const OUT = "/tmp/tars-actions";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -79,16 +79,16 @@ ok(
   "复制后按钮翻成已复制反馈(useCopyFlash 成功路径)",
 );
 // 剪贴板真实写入:标签翻转即代表 copy() 已 resolve,这里再做内容级加分断言。
-// readText 无权限时会弹真窗永久阻塞(evaluate 无超时),必须带超时竞速
-try {
-  const clip = await Promise.race([
-    page.evaluate(() => navigator.clipboard.readText()),
-    new Promise((r) => setTimeout(() => r("<timeout>"), 3000)),
-  ]);
-  if (clip === "<timeout>") throw new Error("clipboard read timed out");
-  ok(clip === ANSWERS[0], `剪贴板内容 = 回答原文(${clip.slice(0, 20)}…)`);
-} catch {
+// readText 无权限时会弹真窗永久阻塞(evaluate 无超时),必须带超时竞速;
+// 只有环境拒绝(timeout/权限拒绝)才降级跳过,内容不匹配照常 FAIL
+const clip = await Promise.race([
+  page.evaluate(() => navigator.clipboard.readText()).catch(() => "<denied>"),
+  new Promise((r) => setTimeout(() => r("<timeout>"), 3000)),
+]);
+if (clip === "<timeout>" || clip === "<denied>") {
   console.log("  ⚠️ 剪贴板读取被环境拒绝,跳过内容断言(标签断言已覆盖)");
+} else {
+  ok(clip === ANSWERS[0], `剪贴板内容 = 回答原文(${clip.slice(0, 20)}…)`);
 }
 
 // ── 重新生成(本轮收尾气泡挂点)──
@@ -96,7 +96,7 @@ const regenBtn = bubble.locator(`button[aria-label="${zh.chat.regenerate}"]`);
 ok((await regenBtn.count()) === 1, "末条答案带「重新生成」");
 await regenBtn.click();
 await page.getByText(ANSWERS[1]).waitFor({ timeout: 30000 });
-ok(true, "重答后新答案可见(BETA)");
+ok(await page.getByText(ANSWERS[1]).first().isVisible(), "重答后新答案可见(BETA)");
 ok(
   (await page.getByText(ANSWERS[0]).count()) === 0,
   "旧答案已退场(ALPHA 不再渲染)",
@@ -155,7 +155,7 @@ await replayBubble
   .locator(`button[aria-label="${zh.chat.regenerate}"]`)
   .click();
 await page.getByText(ANSWERS[2]).waitFor({ timeout: 30000 });
-ok(true, "回放挂点重答成功(GAMMA)");
+ok(await page.getByText(ANSWERS[2]).first().isVisible(), "回放挂点重答成功(GAMMA)");
 await page.screenshot({ path: `${OUT}/2-replay-regen.png` });
 
 console.log("\n✅ VERDICT: PASS — 截图在 /tmp/tars-actions/");

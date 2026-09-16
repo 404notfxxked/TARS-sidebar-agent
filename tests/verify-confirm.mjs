@@ -132,7 +132,11 @@ try {
   await sendOnly("帮我在搜索框填写内容并提交");
   await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
   const cardText = await sidepanel.locator(card).innerText();
-  assert("确认卡弹出(默认开启)", true);
+  assert(
+    "确认卡弹出(默认开启)",
+    (await sidepanel.locator(card).isVisible()) && cardText.trim().length > 0,
+    `卡片内容:${cardText}`,
+  );
   assert("展示写入内容", cardText.includes("确认门测试写入内容"));
   assert("展示回车提交提示", cardText.includes("回车提交"));
   assert("展示元素定位", cardText.includes("search-q"));
