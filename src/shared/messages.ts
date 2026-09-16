@@ -94,7 +94,7 @@ export type SideToBg =
   | { type: typeof MSG.CANCEL_RUN; sessionId: string }
   | { type: typeof MSG.PANEL_VISIBILITY; hidden: boolean }
   | { type: typeof MSG.CONFIRM_RESPONSE; requestId: string; approved: boolean }
-  | { type: typeof MSG.LOAD_HISTORY; sessionId: string }
+  | { type: typeof MSG.LOAD_HISTORY; sessionId: string; resync?: boolean }
   | { type: typeof MSG.LIST_SESSIONS }
   | { type: typeof MSG.DELETE_SESSION; sessionId: string }
   | { type: typeof MSG.CLEAR_ALL_HISTORY }
@@ -215,6 +215,8 @@ export type AgentEvent =
       messages: ChatRecord[];
       /** 该会话存在压缩时带上:面板在压缩点渲染分隔条 */
       compaction?: CompactionMark | null;
+      /** 回显 LOAD_HISTORY.resync:面板据此走「按库替换」而非「本地空才填」 */
+      resync?: boolean;
     }
   | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
   | { type: typeof MSG.MEMORIES; memories: MemoryItem[] }

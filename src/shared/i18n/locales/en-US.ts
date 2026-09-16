@@ -69,6 +69,8 @@ export const enUS = {
       "The current model does not support vision, so the images will not be sent with this question. The images have been saved and can be attached again after switching to a vision-capable model.",
     maxTurnsNotice:
       "The step limit for this run has been reached; the task is not complete",
+    disconnectNotice:
+      "The connection to the background was interrupted (the browser reclaimed the service worker). The conversation has been restored from saved records; regenerate if an answer looks incomplete",
     truncatedChars: "… ({n} characters in total)",
     imageExpired: "Image expired",
     pendingImageAlt: "Image to send, {w}×{h}",

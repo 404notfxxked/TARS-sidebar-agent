@@ -64,6 +64,8 @@ export const zhCN = {
     visionModelFallback:
       "当前模型不支持视觉，图片不会随本次提问发送；图片已保存，切回视觉模型后可继续引用",
     maxTurnsNotice: "本轮已达到步数上限，任务未完成",
+    disconnectNotice:
+      "与后台的连接中断过（浏览器回收了后台进程），对话已按保存的记录恢复；若回答不完整，请重新生成",
     truncatedChars: "…（共 {n} 字）",
     imageExpired: "图片已失效",
     pendingImageAlt: "待发送图片 {w}×{h}",

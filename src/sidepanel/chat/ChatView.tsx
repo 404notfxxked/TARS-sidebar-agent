@@ -475,7 +475,7 @@ export default function ChatView({
               ) : m.error ? (
                 <ErrorBubble key={i} text={m.content} />
               ) : m.notice ? (
-                <NoticeBubble key={i} />
+                <NoticeBubble key={i} kind={m.noticeKind} />
               ) : (
                 <AssistantBubble
                   key={i}
