@@ -26,6 +26,7 @@ import {
   findInteractive,
   normalizeRole,
 } from "./interact";
+import { clearMarks, drawMarks } from "./screenshot";
 
 // 防重复注入:本脚本经 chrome.scripting.executeScript 按需注入(manifest 无
 // 静态注入),同一次 run 里多个工具并发首调都会走「发送失败 → 注入 → 重试」,
@@ -85,6 +86,10 @@ function summarizeResult(name: string, result: unknown): unknown {
     case "find_elements": {
       const r = result as { count?: number; returned?: number };
       return { count: r.count, returned: r.returned };
+    }
+    case "screenshot_mark": {
+      const r = result as { marks?: unknown[] };
+      return { marks: r.marks?.length ?? 0 };
     }
     default:
       return result;
@@ -159,6 +164,15 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
       }
       return { filled: sel, pressEnterAfter: a.pressEnterAfter === true };
     }
+
+    // 截图标记层:画/摘都是纯视觉操作。drawMarks 返回「号 → 元素」映射表,
+    // SW 据此组装工具结果;图像捕获发生在 SW(captureVisibleTab),
+    // 标记必须在捕获前画上、捕获后立即摘除(SW 侧负责时序)
+    case "screenshot_mark":
+      return { marks: drawMarks() };
+
+    case "screenshot_cleanup":
+      return clearMarks();
 
     default:
       throw new Error(`unknown content tool: ${name}`);

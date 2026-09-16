@@ -16,6 +16,7 @@ import {
   type MessageImage,
 } from "../provider";
 import {
+  SYSTEM_NOTE_PREFIX,
   compactHistory,
   isContextOverflow,
   shouldCompact,
@@ -30,7 +31,11 @@ import {
   grantableOriginOf,
   hasOriginAccess,
 } from "../../shared/hostAccess";
-import type { ToolSchema } from "../../shared/toolTypes";
+import {
+  stripScreenshot,
+  takeScreenshot,
+  type ToolSchema,
+} from "../../shared/toolTypes";
 import { getMcpToolSchemas } from "../mcp/mcpManager";
 import { createLogger } from "../../shared/logger";
 import { base64ToBytes } from "../../shared/imageCodec";
@@ -65,6 +70,10 @@ const MAX_TURNS = 10;
 // 宁可高估防超窗);随请求发送的字节预算 —— 超出时最旧的图不再随请求发送,
 // 只留文字。50MB 请求上限与上下文窗口都靠它兜底
 const IMAGE_TOKEN_ESTIMATE = 1500;
+
+/** 截图附件随工具结果注入的 user 消息文本。必须以 SYSTEM_NOTE_PREFIX 开头:
+ *  compaction 的整轮切分靠这个前缀识别「附件延续,不是新的一轮」 */
+const SCREENSHOT_NOTE = `${SYSTEM_NOTE_PREFIX} the page screenshot for the previous tool result is attached to this message. Mark numbers on the image match the marks table in that result; use those selectors to act.]`;
 const IMAGE_WIRE_BUDGET_BYTES = 8 * 1024 * 1024;
 
 // 步数耗尽后的收尾指令:只随最后一次「无工具」请求发送,不写入持久化历史。
@@ -211,9 +220,12 @@ export async function runAgentLoop(
         });
       }
     }
+    // 视觉能力:决定图片是否随请求发送,并滤除截图工具(纯文本模型看不了图)
+    const visionOk = !!modelEntry?.vision;
     const tools = [...toProviderToolSchemas()
       .filter((t) => webEnabled || !t.name.startsWith("web_"))
-      .filter((t) => memoryEnabled || !t.name.startsWith("memory_")), ...mcpSchemas];
+      .filter((t) => memoryEnabled || !t.name.startsWith("memory_"))
+      .filter((t) => visionOk || t.name !== "page_screenshot"), ...mcpSchemas];
     // 执行上下文档案:模型与开关状态(index.ts 的 run started 已记用户原文,
     // 这里补齐判断搜索质量时需要的模型身份)
     log.info("agent", "run config", {
@@ -233,7 +245,6 @@ export async function runAgentLoop(
     const persistedSeqs = history.length;
     // 随消息附带的图片:分配 id 后挂到本轮 user 消息上(字节只存内存,
     // 落盘时进 images store;历史里的旧图发送前按需水合)
-    const visionOk = !!modelEntry?.vision;
     const runImages: MessageImage[] = (payload.images ?? []).map((im) => ({
       id: crypto.randomUUID(),
       mime: im.mime,
@@ -580,13 +591,16 @@ export async function runAgentLoop(
               // 结果原文进日志(截断脱敏由 logger 负责),供事后排查对比。
               // 用户取消例外:不再回填,快速上抛让外层静默退出
               try {
-                const toolResult = await dispatchToolCall(tc.name, tc.args);
+                const raw = await dispatchToolCall(tc.name, tc.args);
+                // 截图附件先剥离:字节不进日志、不进 tool 消息
+                const shot = takeScreenshot(raw);
+                const toolResult = shot ? stripScreenshot(raw) : raw;
                 log.info("tool", `${tc.name} 完成`, {
                   ms: Date.now() - startedAt,
                   args: tc.args,
                   result: stringifyResult(toolResult),
                 });
-                return { tc, toolResult, ok: true };
+                return { tc, toolResult, shot, ok: true };
               } catch (err) {
                 if (signal?.aborted) {
                   // 取消不回填观察结果(run 即将静默退出,快速上抛),
@@ -604,11 +618,11 @@ export async function runAgentLoop(
                   args: tc.args,
                   error: errMsg,
                 });
-                return { tc, toolResult: `Error: ${errMsg}`, ok: false };
+                return { tc, toolResult: `Error: ${errMsg}`, shot: null, ok: false };
               }
             }),
           );
-          for (const { tc, toolResult, ok } of settled) {
+          for (const { tc, toolResult, shot, ok } of settled) {
             port.postMessage({
               type: MSG.AGENT_TOOL_RESULT,
               id: tc.id,
@@ -621,6 +635,25 @@ export async function runAgentLoop(
               toolCallId: tc.id,
               content: stringifyResult(toolResult),
             });
+            // OpenAI 协议的 tool 消息不支持 image_url:截图紧随一条带图
+            // user 消息注入。字节留在内存走本轮落盘(persistableMsg 剥字节、
+            // collectImageRows 收进 images store),后续轮次按需水合 ——
+            // 与用户上传图完全同一条管线
+            if (shot) {
+              messages.push({
+                role: "user",
+                content: SCREENSHOT_NOTE,
+                images: [
+                  {
+                    id: crypto.randomUUID(),
+                    mime: shot.mime,
+                    w: shot.w,
+                    h: shot.h,
+                    bytes: shot.bytes,
+                  },
+                ],
+              });
+            }
             // 工具结果(网页窗口/搜索列表)是 run 内增长最快的部分,超预算时
             // 把最旧的大结果替换为省略标记 —— 结构不变(tool 配对完整),只瘦身
             enforceToolResultBudget(messages, toolResultBudgetChars);

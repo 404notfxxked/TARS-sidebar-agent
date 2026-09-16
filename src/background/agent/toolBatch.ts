@@ -13,6 +13,8 @@ export const PARALLEL_SAFE_TOOLS: ReadonlySet<string> = new Set([
   "web_fetch",
   "find_elements",
 ]);
+// page_screenshot 刻意不进只读集:画标记 → 捕获 → 摘标记必须是原子序列,
+// 同批其它工具并发改页会让截图拍到中间态
 
 /** 单批并行上限:多路 web_search 会同时开多个真实标签页,并发过高
  *  既拖慢单路时延又容易触发引擎风控 */

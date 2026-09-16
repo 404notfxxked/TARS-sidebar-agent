@@ -106,6 +106,7 @@ export const enUS = {
       webSearch: "Web search",
       webFetch: "Read page",
       findElements: "Find elements",
+      pageScreenshot: "Screenshot",
       clickElement: "Click element",
       fillInput: "Fill input",
       memorySave: "Save memory",
