@@ -13,9 +13,9 @@ function sseResponse(chunks: string[]): Response {
   return new Response(stream);
 }
 
-async function collect(res: Response): Promise<unknown[]> {
+async function collect(res: Response, idleMs?: number): Promise<unknown[]> {
   const out: unknown[] = [];
-  for await (const event of readSSE(res)) out.push(event);
+  for await (const event of readSSE(res, idleMs)) out.push(event);
   return out;
 }
 
@@ -70,8 +70,36 @@ describe("readSSE 兼容端点脏形态", () => {
 
   it("纯注释/心跳帧不产出事件", async () => {
     const events = await collect(
-        sseResponse([': ping\n\ndata: {"v":9}\n\n: ping\n\ndata: [DONE]\n\n']),
+      sseResponse([': ping\n\ndata: {"v":9}\n\n: ping\n\ndata: [DONE]\n\n']),
     );
     expect(events).toEqual([{ v: 9 }]);
+  });
+
+  it("流中途断流:看门狗窗口内无字节即报错,不永久悬挂", async () => {
+    // 半开流:发一帧后既不 close 也不再有字节(代理吞连接的典型形态)
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"n":1}\n\n'));
+        // 故意不 close
+      },
+    });
+    const events: unknown[] = [];
+    await expect(
+      (async () => {
+        for await (const event of readSSE(new Response(stream), 40)) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toThrow(/stream stalled/);
+    expect(events).toEqual([{ n: 1 }]); // 已收到的 delta 保留在调用方缓冲
+  });
+
+  it("正常流不受看门狗影响(每个字节都重置计时)", async () => {
+    const events = await collect(
+      sseResponse(['data: {"n":1}\n\n', 'data: [DONE]\n\n']),
+      10_000,
+    );
+    expect(events).toEqual([{ n: 1 }]);
   });
 });
