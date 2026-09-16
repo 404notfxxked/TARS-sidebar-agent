@@ -95,13 +95,15 @@ const themes = ACCENTS.map((a) => ({
 }));
 
 /** M3 monochrome:所有色彩角色全部取 neutral 色调,只剩明度差(极简灰阶)。
- *  色调表按 M3 monochrome 对比规范(亮:40/100/90/10,暗:80/20/30/90) */
+ *  色调表按 M3 monochrome 对比规范(亮:40/100/90/10,暗:80/20/30/90)。
+ *  error 四角色不在此表:error 是语义不是审美,M3 规范里 error 调色板
+ *  固定红系、不随源色走 —— 石墨主题下错误气泡/危险动作必须仍然是红,
+ *  否则破坏性操作与普通信息不可区分(见 design/design-review-2026-09.md P0-1) */
 const MONO_TONES = {
   light: {
     primary: 40, onPrimary: 100, primaryContainer: 90, onPrimaryContainer: 10,
     secondary: 40, secondaryContainer: 90, onSecondaryContainer: 10,
     tertiary: 40, tertiaryContainer: 90, onTertiaryContainer: 10,
-    error: 40, onError: 100, errorContainer: 90, onErrorContainer: 10,
     onSurface: 10, onSurfaceVariant: 40, outline: 50, outlineVariant: 80,
     inverseSurface: 20, inverseOnSurface: 100, inversePrimary: 80,
   },
@@ -109,16 +111,32 @@ const MONO_TONES = {
     primary: 80, onPrimary: 20, primaryContainer: 30, onPrimaryContainer: 90,
     secondary: 80, secondaryContainer: 30, onSecondaryContainer: 90,
     tertiary: 80, tertiaryContainer: 30, onTertiaryContainer: 90,
-    error: 80, onError: 20, errorContainer: 30, onErrorContainer: 90,
     onSurface: 90, onSurfaceVariant: 80, outline: 60, outlineVariant: 30,
     inverseSurface: 90, inverseOnSurface: 20, inversePrimary: 40,
   },
 };
 
+/** mono 主题的 error 四角色:从固定红系 error 调色板取 tone
+ *  (色调映射与 MONO_TONES 同规范:亮 40/100/90/10,暗 80/20/30/90) */
+const MONO_ERROR_TONES = {
+  light: {
+    error: 40, onError: 100, errorContainer: 90, onErrorContainer: 10,
+  },
+  dark: {
+    error: 80, onError: 20, errorContainer: 30, onErrorContainer: 90,
+  },
+};
+
 function linesFor(theme, mode, mono) {
   const neutral = theme.palettes.neutral;
+  const errorPalette = theme.palettes.error;
   const roles = mono ? MONO_TONES[mode] : null;
+  const errorTones = mono ? MONO_ERROR_TONES[mode] : null;
   const lines = Object.entries(SCHEME_ROLES).map(([role, cssName]) => {
+    // mono:error 角色固定取红系调色板,其余取 neutral(见 MONO_ERROR_TONES 注)
+    if (roles && errorTones && role in errorTones) {
+      return `  --md-sys-color-${cssName}: ${hexFromArgb(errorPalette.tone(errorTones[role]))};`;
+    }
     const value = roles
       ? hexFromArgb(neutral.tone(roles[role]))
       : hexFromArgb(theme.schemes[mode][role]);
