@@ -154,6 +154,8 @@
   .trace-status {
     font-size: 11px;
     font-feature-settings: "tnum";
+    /* on-surface-variant 而非 outline:11px 小字对 4.5:1 的 AA 要求,
+       outline 在浅色 surface 上只有 4.27:1(视觉评审 2026-09 实测) */
     color: var(--md-sys-color-on-surface-variant);
   }
   .trace-row[data-status="error"] .trace-status {
@@ -268,7 +270,8 @@
   }
   .trace-sec {
     margin: 5px 0 2px;
-    font-size: 10px;
+    /* 11px 下限:10px 中文笔画黏连(评审 2026-09);弱化靠颜色不靠再小 */
+    font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.06em;
     color: var(--md-sys-color-on-surface-variant);
@@ -278,7 +281,7 @@
     margin: 3px 0 2px;
     padding: 2px 8px;
     border-radius: var(--radius-full);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--md-sys-color-primary);
     transition: background 150ms var(--ease-emphasized);

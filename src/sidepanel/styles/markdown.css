@@ -127,7 +127,7 @@
     padding: 3px 5px 3px 12px;
     /* 头部用色阶(高一级容器)分层,不画分割线 */
     background: var(--md-sys-color-surface-container-high);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--md-sys-color-on-surface-variant);
   }
@@ -176,18 +176,20 @@
 }
 
 /* ---- 代码高亮配色(rehype-highlight / highlight.js)----
-   与主题同机制的令牌:浅色定义在 :root,深色随 [data-theme] 翻转 */
+   与主题同机制的令牌:浅色定义在 :root,深色随 [data-theme] 翻转。
+   全部令牌在代码容器底(浅 #edeee9 / 深 #1e201d)上实测 ≥4.5:1
+   (2026-09 视觉评审逐色校正;comment 曾只有 2.33:1) */
 
 :root {
-  --hl-comment: #93a098;
-  --hl-keyword: #1a7f4b;
-  --hl-string: #b45309;
-  --hl-number: #2563eb;
+  --hl-comment: #5c6a61;
+  --hl-keyword: #177242;
+  --hl-string: #9c4f09;
+  --hl-number: #1e53c9;
   --hl-title: #0f766e;
   --hl-attr: #8a5a00;
 }
 [data-theme="dark"] {
-  --hl-comment: #7d8781;
+  --hl-comment: #8a948d;
   --hl-keyword: #52d687;
   --hl-string: #e8a356;
   --hl-number: #6ea8fe;
