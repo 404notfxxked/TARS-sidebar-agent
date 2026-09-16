@@ -148,8 +148,11 @@ export default function SettingsView({
               initialCompact={config.compact}
               initialRef={
                 config.compactProvider && config.compactModel
-                  ? `${config.compactProvider}||${config.compactModel}`
-                  : ""
+                  ? {
+                      providerId: config.compactProvider,
+                      modelId: config.compactModel,
+                    }
+                  : null
               }
               providers={domain.providers}
               run={run}
