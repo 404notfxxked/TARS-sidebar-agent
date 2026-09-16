@@ -101,9 +101,13 @@ export default function AppearanceSection({
         />
       </div>
 
-      {/* 重点色:色板 = 各源色,选中套整个 scheme(m3.css 的 data-accent) */}
+      {/* 重点色:色板 = 各源色,选中套整个 scheme(m3.css 的 data-accent)。
+          当前选中名并进字段标签(「重点色 · 青绿」):曾浮在色点行尾,
+          基线错位显孤立(评审 2026-09 P2-10) */}
       <div className="settings-field">
-        <span className="field-label">{t("settings.accent")}</span>
+        <span className="field-label">
+          {t("settings.accent")} · {t(ACCENT_LABEL_KEYS[accent])}
+        </span>
         <div
           role="radiogroup"
           aria-label={t("settings.accent")}
@@ -129,9 +133,6 @@ export default function AppearanceSection({
               style={{ backgroundColor: color }}
             />
           ))}
-          <span className="ml-1 text-[11px] text-on-surface-variant">
-            {t(ACCENT_LABEL_KEYS[accent])}
-          </span>
         </div>
       </div>
 
