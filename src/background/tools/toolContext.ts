@@ -1,6 +1,10 @@
 // 工具执行上下文:run 作用域,提交时捕获 tabId / 会话 / 取消信号,工具从中读取
 // 解决 P0:用户对 tab A 提问,中途切到 tab B,工具应读 A 而非实时激活的 B
-// 安全性:SW 单线程 + dispatchToolCall 被 await 串行化,set 后不会被其他 run 抢占
+// 并发安全(1.2.0 只读工具并行后修订):整 run 复用同一个 ctx 对象,
+// dispatchToolCall 执行前重复 set 只是重申归属,不产生新对象 ——
+// lastOperatedTabId 的跨轮记忆与并行兄弟工具的读取互不干扰;
+// 清理只在 run 收口做(clearToolExecutionContext 条件清,并发 run 互不误伤),
+// per-call finally 置 null 在并行批次下会砸掉晚完成工具的后置读取
 
 export interface ToolExecutionContext {
   /** 提交时激活的 tab;无激活 tab 时可能为 undefined */
@@ -37,6 +41,13 @@ export function setToolExecutionContext(ctx: ToolExecutionContext | null): void 
 
 export function getToolExecutionContext(): ToolExecutionContext | null {
   return _ctx;
+}
+
+/** run 收口清除:仅当全局 ctx 仍是本 run 传入的对象时才清。
+ *  并发 run(多窗口各开面板)下,后来 run 已覆盖全局时不动它 —— 清理
+ *  只属于还持有全局的那个 run */
+export function clearToolExecutionContext(ctx: ToolExecutionContext): void {
+  if (_ctx === ctx) _ctx = null;
 }
 
 /**
