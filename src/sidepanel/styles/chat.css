@@ -511,6 +511,33 @@
   opacity: 1;
 }
 
+/* 错误气泡内联重试:胶囊形态同 trace-copy-btn,文字用 on-error-container
+   (在 error-container 底上对比度充足),状态层按同一色 8%/12% */
+.error-retry-btn {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-error-container);
+  transition: background 150ms var(--ease-emphasized);
+}
+.error-retry-btn:hover {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-error-container) 8%,
+    transparent
+  );
+}
+.error-retry-btn:active {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-error-container) 12%,
+    transparent
+  );
+}
+
 /* 消息动作行(复制/重新生成):悬停气泡或键盘聚焦时显形,复制反馈期间保持。
    行常驻文档流只做透明度过渡,布局不跳;负左缘把图标对齐气泡文字起点 */
 .msg-actions {

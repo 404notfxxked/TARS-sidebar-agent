@@ -51,6 +51,7 @@ export const enUS = {
     openSessions: "Chat history",
     newChat: "New chat",
     regenerate: "Regenerate",
+    retry: "Retry",
     openSettings: "Open settings",
     busySessionsHint: "You can view chat history once the current reply finishes",
     busyNewChatHint: "You can start a new chat once the current reply finishes",
