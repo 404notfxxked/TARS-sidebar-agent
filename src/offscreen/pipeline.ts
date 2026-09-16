@@ -71,6 +71,32 @@ const SHELL_HINT =
   "页面正文极少,大概率是 JS 渲染的壳页或登录墙:page_find 难有命中," +
   "page_read 也只有这些内容;可传 refresh=true 重试一次,仍为空则改用 " +
   "web_search 查信息,并如实告知用户该页读不到";
+/** 提取失衡判定:HTML 低于该体量谈不上「大页少文」(正常小页不误报) */
+const SUSPECT_HTML_BYTES_MIN = 20_000;
+/** 大 HTML 提取出的正文低于该值 → 内容没提取到(淘宝案形状) */
+const SUSPECT_MAX_CHARS = 400;
+/** 正文 PUA(私用区 U+E000-F8FF)字符达到该数量 → 字体反爬强信号
+ *  (正常页面偶发一两个装饰符,不触信号) */
+const SUSPECT_PUA_MIN = 8;
+const PUA_RE = /[\uE000-\uF8FF]/g;
+const SUSPECT_HINT =
+  "页面提取结果可疑(HTML 体量大但正文异常少,或正文有大量私有区乱码," +
+  "疑似字体反爬):page_find/page_read 拿到的内容大概率不完整,建议改用 " +
+  "web_search 查信息,并如实告知用户该页无法正常读取";
+
+/**
+ * 管线自报 hint(page_screenshot 定调的「可疑信号」机制,先于截图通道落地):
+ * 正文近零 → 壳页;HTML 大而正文异常少 → 提取失衡;PUA 密集 → 字体反爬。
+ * 三者都在劝模型别再空耗 turn,改用 web_search 并如实告知用户。
+ */
+function selfReportHint(doc: VirtualDoc): string | null {
+  if (doc.totalChars < SHELL_HINT_MAX_CHARS) return SHELL_HINT;
+  if (doc.htmlBytes >= SUSPECT_HTML_BYTES_MIN && doc.totalChars < SUSPECT_MAX_CHARS) {
+    return SUSPECT_HINT;
+  }
+  const pua = doc.md.match(PUA_RE)?.length ?? 0;
+  return pua >= SUSPECT_PUA_MIN ? SUSPECT_HINT : null;
+}
 /** page_find 单次最多返回命中区域数 */
 const SEARCH_LIMIT_MAX = 10;
 const SEARCH_LIMIT_DEFAULT = 5;
@@ -90,6 +116,8 @@ export interface VirtualDoc {
   lower: string | null;
   headings: HeadingAnchor[];
   totalChars: number;
+  /** 采样 HTML 的字节量(剪枝前的原始体量):管线自报信号用(大页少文判定) */
+  htmlBytes: number;
   /** 正文超出 DOC_MAX_CHARS 被截(信息流类页面会遇到) */
   truncatedTotal: boolean;
 }
@@ -164,6 +192,7 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
     lower: null,
     headings,
     totalChars: md.length,
+    htmlBytes: new TextEncoder().encode(meta.html).length,
     truncatedTotal,
   };
 }
@@ -338,6 +367,7 @@ export function runPageRead(doc: VirtualDoc, offset: unknown, chars: unknown) {
   const size = Math.min(Math.max(typeof chars === "number" ? chars : READ_WINDOW_DEFAULT, 500), READ_WINDOW_MAX);
   const end = Math.min(off + size, doc.totalChars);
   const done = end >= doc.totalChars;
+  const hint = selfReportHint(doc);
   return {
     title: doc.title,
     url: doc.url,
@@ -347,7 +377,7 @@ export function runPageRead(doc: VirtualDoc, offset: unknown, chars: unknown) {
     next_offset: done ? null : end,
     done,
     ...(doc.truncatedTotal ? { truncated_total: true } : {}),
-    ...(doc.totalChars < SHELL_HINT_MAX_CHARS ? { hint: SHELL_HINT } : {}),
+    ...(hint ? { hint } : {}),
     headings: headingChainAt(doc, off),
     text: doc.md.slice(off, end),
   };
@@ -535,19 +565,19 @@ export function runPageOutline(doc: VirtualDoc) {
       collapsed: false,
       items: [],
       hint:
-        doc.totalChars < SHELL_HINT_MAX_CHARS
-          ? SHELL_HINT
-          : "页面没有标题结构,用 page_find 关键词定位内容,或 page_read 从头读",
+        selfReportHint(doc) ??
+        "页面没有标题结构,用 page_find 关键词定位内容,或 page_read 从头读",
     };
   }
 
-  const shellHint = doc.totalChars < SHELL_HINT_MAX_CHARS ? { hint: SHELL_HINT } : {};
+  const hint = selfReportHint(doc);
+  const hintField = hint ? { hint } : {};
 
   if (doc.headings.length <= OUTLINE_FULL_MAX) {
     return {
       ...base(),
       collapsed: false,
-      ...shellHint,
+      ...hintField,
       // 全量模式才带 preview;折叠模式条目已经很多,省掉控制 token 开销
       items: doc.headings.map(({ offset, level, title }) => ({
         offset,
@@ -581,5 +611,5 @@ export function runPageOutline(doc: VirtualDoc) {
     };
   });
 
-  return { ...base(), collapsed: true, cutoff_level: cutoff, ...shellHint, items };
+  return { ...base(), collapsed: true, cutoff_level: cutoff, ...hintField, items };
 }
