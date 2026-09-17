@@ -18,6 +18,11 @@ import {
   savePrefs,
   type ProviderEntry,
 } from "../../shared/configStore";
+import {
+  loadCatalog,
+  thinkingOptionsOf,
+  type Catalog,
+} from "../../shared/modelCatalog";
 import { createLogger } from "../../shared/logger";
 import {
   MAX_ATTACHMENTS,
@@ -34,6 +39,7 @@ import {
   UserBubble,
 } from "./bubbles";
 import ModelPicker from "./ModelPicker";
+import ThinkingPicker from "./ThinkingPicker";
 import SkillMenu from "./SkillMenu";
 import { ConfirmCard } from "./ConfirmCard";
 import { EmptyState } from "./EmptyState";
@@ -107,6 +113,40 @@ export default function ChatView({
   const curModels = curProvider?.models ?? [];
   /** 当前模型是否支持视觉:图片入口的门控依据 */
   const visionOk = !!curModels.find((m) => m.id === modelId)?.vision;
+
+  // ---- 思考程度:总开关(设置→推理)开着且目录有档位时,输入行出选择器 ----
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  useEffect(() => {
+    loadCatalog()
+      .then(setCatalog)
+      .catch(() => {}); // 目录层缺失不算错误,按钮不出现即可
+  }, []);
+  const curModelEntry = providers
+    .find((p) => p.id === modelProvider)
+    ?.models.find((m) => m.id === modelId);
+  const thinkingOptions =
+    catalog && curModelEntry
+      ? thinkingOptionsOf(catalog, curModelEntry.id)
+      : null;
+  const showThinking = curModelEntry?.reasoning === true && !!thinkingOptions;
+  const setThinkingEffort = (effort: string | undefined) => {
+    const p = providers.find((x) => x.id === modelProvider);
+    if (!p) return;
+    const nextProviders = providers.map((x) =>
+      x.id === p.id
+        ? {
+            ...x,
+            models: x.models.map((m) =>
+              m.id === modelId ? { ...m, reasoningEffort: effort } : m,
+            ),
+          }
+        : x,
+    );
+    setProviders(nextProviders);
+    savePrefs({ providers: nextProviders }).catch((err) =>
+      log.warn("chat", "save thinking effort failed", { error: String(err) }),
+    );
+  };
 
   // ---- 图片附件状态 ----
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -696,6 +736,13 @@ export default function ChatView({
               modelProvider={modelProvider}
               modelId={modelId}
               onPick={pickModel}
+            />
+          )}
+          {showThinking && thinkingOptions && (
+            <ThinkingPicker
+              options={thinkingOptions}
+              value={curModelEntry?.reasoningEffort}
+              onPick={setThinkingEffort}
             />
           )}
           {/* 发送/停止是同一个按钮:状态切换不换元素,焦点不掉(键盘用户

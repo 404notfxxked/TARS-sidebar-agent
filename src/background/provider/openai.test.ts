@@ -155,14 +155,10 @@ describe("OpenAIAdapter 思考程度 → wire 参数", () => {
 
   it("档位值直传 reasoning_effort(各家族通用)", async () => {
     expect(
-      (await bodyWith({ model: "glm-5.3", reasoningEffort: "max" }))[
-        "reasoning_effort"
-      ],
+      (await bodyWith({ model: "glm-5.3", reasoningEffort: "max" })).reasoning_effort,
     ).toBe("max");
     expect(
-      (await bodyWith({ model: "gpt-5", reasoningEffort: "medium" }))[
-        "reasoning_effort"
-      ],
+      (await bodyWith({ model: "gpt-5", reasoningEffort: "medium" })).reasoning_effort,
     ).toBe("medium");
   });
 
@@ -175,14 +171,10 @@ describe("OpenAIAdapter 思考程度 → wire 参数", () => {
 
   it("关:effort 家族 → reasoning_effort none(deepseek/gemini)", async () => {
     expect(
-      (await bodyWith({ model: "deepseek-flash", reasoningEffort: "off" }))[
-        "reasoning_effort"
-      ],
+      (await bodyWith({ model: "deepseek-flash", reasoningEffort: "off" })).reasoning_effort,
     ).toBe("none");
     expect(
-      (await bodyWith({ model: "gemini-3.8-flash", reasoningEffort: "off" }))[
-        "reasoning_effort"
-      ],
+      (await bodyWith({ model: "gemini-3.8-flash", reasoningEffort: "off" })).reasoning_effort,
     ).toBe("none");
   });
 
@@ -191,22 +183,16 @@ describe("OpenAIAdapter 思考程度 → wire 参数", () => {
       (await bodyWith({ model: "glm-4.5", reasoningEffort: "off" })).thinking,
     ).toEqual({ type: "disabled" });
     expect(
-      (await bodyWith({ model: "qwen3-235b", reasoningEffort: "off" }))[
-        "enable_thinking"
-      ],
+      (await bodyWith({ model: "qwen3-235b", reasoningEffort: "off" })).enable_thinking,
     ).toBe(false);
   });
 
   it("关:o 系/gpt-5 无法真正关,降级 minimal(最低档)", async () => {
     expect(
-      (await bodyWith({ model: "o3", reasoningEffort: "off" }))[
-        "reasoning_effort"
-      ],
+      (await bodyWith({ model: "o3", reasoningEffort: "off" })).reasoning_effort,
     ).toBe("minimal");
     expect(
-      (await bodyWith({ model: "gpt-5", reasoningEffort: "off" }))[
-        "reasoning_effort"
-      ],
+      (await bodyWith({ model: "gpt-5", reasoningEffort: "off" })).reasoning_effort,
     ).toBe("minimal");
   });
 
@@ -225,7 +211,7 @@ describe("OpenAIAdapter 思考程度 → wire 参数", () => {
       (await bodyWith({
         model: "deepseek/deepseek-v4-flash",
         reasoningEffort: "off",
-      }))["reasoning_effort"],
+      })).reasoning_effort,
     ).toBe("none");
   });
 });
