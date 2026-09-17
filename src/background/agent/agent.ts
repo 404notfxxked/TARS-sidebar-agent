@@ -26,7 +26,11 @@ import {
   type CompactionOutcome,
 } from "./compaction";
 import { projectEmergency, shouldEmergencyCompact } from "./overflow";
-import { loadConfig, inferMaxTokensField } from "../../shared/configStore";
+import {
+  loadConfig,
+  inferMaxTokensField,
+  markReasoningObserved,
+} from "../../shared/configStore";
 import {
   grantableOriginOf,
   hasOriginAccess,
@@ -190,6 +194,11 @@ export async function runAgentLoop(
       maxTokens: modelEntry?.maxTokens,
       maxTokensField:
         modelEntry?.maxTokensField ?? inferMaxTokensField(config.model),
+      // 思考程度门控:总开关(reasoning)关着时,存过的强度也不发
+      reasoningEffort:
+        modelEntry?.reasoning === true
+          ? modelEntry?.reasoningEffort
+          : undefined,
     });
     // 压缩用模型:摘要调用(含撞窗紧急压缩)专用,选了便宜模型就由它跑摘要
     // 省钱。没配/引用失效(供应商或模型被删)/无 key 时回落当前模型 ——
@@ -558,6 +567,19 @@ export async function runAgentLoop(
 
       const result = await callChat();
       lastUsage = result.usage;
+
+      // 推理能力观测回写(判定第 3 层):流里真见到 reasoning_content 而条目
+      // 未标记 → 置位。幂等、fire-and-forget,失败不影响本轮回答
+      if (
+        result.reasoning_content !== undefined &&
+        modelEntry?.reasoning === undefined
+      ) {
+        void markReasoningObserved(cur.id, config.model).catch((e) =>
+          log.warn("agent", "推理标记回写失败", {
+            err: e instanceof Error ? e.message : String(e),
+          }),
+        );
+      }
 
       // 模型要调用工具 → 执行并回填观察结果,进入下一轮
       if (result.toolCalls.length > 0) {

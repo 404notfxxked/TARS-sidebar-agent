@@ -139,6 +139,97 @@ beforeEach(() => {
   apiFetchMock.mockReset();
 });
 
+describe("OpenAIAdapter 思考程度 → wire 参数", () => {
+  /** 以指定 cfg 跑一轮,返回发给 apiFetch 的 body(取最近一次调用) */
+  const bodyWith = async (cfg: {
+    model: string;
+    reasoningEffort?: string;
+  }) => {
+    apiFetchMock.mockResolvedValue(
+      sseResponse([frame({ content: "ok" }, "stop"), "data: [DONE]\n\n"]),
+    );
+    const { req } = makeReq();
+    await new OpenAIAdapter({ apiKey: "sk-test", ...cfg }).chat(req);
+    return apiFetchMock.mock.calls.at(-1)![0].body as Record<string, unknown>;
+  };
+
+  it("档位值直传 reasoning_effort(各家族通用)", async () => {
+    expect(
+      (await bodyWith({ model: "glm-5.3", reasoningEffort: "max" }))[
+        "reasoning_effort"
+      ],
+    ).toBe("max");
+    expect(
+      (await bodyWith({ model: "gpt-5", reasoningEffort: "medium" }))[
+        "reasoning_effort"
+      ],
+    ).toBe("medium");
+  });
+
+  it("undefined = 跟随模型默认,不发任何思考参数", async () => {
+    const body = await bodyWith({ model: "deepseek-flash" });
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
+    expect(body.enable_thinking).toBeUndefined();
+  });
+
+  it("关:effort 家族 → reasoning_effort none(deepseek/gemini)", async () => {
+    expect(
+      (await bodyWith({ model: "deepseek-flash", reasoningEffort: "off" }))[
+        "reasoning_effort"
+      ],
+    ).toBe("none");
+    expect(
+      (await bodyWith({ model: "gemini-3.8-flash", reasoningEffort: "off" }))[
+        "reasoning_effort"
+      ],
+    ).toBe("none");
+  });
+
+  it("关:glm → thinking.type disabled;qwen → enable_thinking false", async () => {
+    expect(
+      (await bodyWith({ model: "glm-4.5", reasoningEffort: "off" })).thinking,
+    ).toEqual({ type: "disabled" });
+    expect(
+      (await bodyWith({ model: "qwen3-235b", reasoningEffort: "off" }))[
+        "enable_thinking"
+      ],
+    ).toBe(false);
+  });
+
+  it("关:o 系/gpt-5 无法真正关,降级 minimal(最低档)", async () => {
+    expect(
+      (await bodyWith({ model: "o3", reasoningEffort: "off" }))[
+        "reasoning_effort"
+      ],
+    ).toBe("minimal");
+    expect(
+      (await bodyWith({ model: "gpt-5", reasoningEffort: "off" }))[
+        "reasoning_effort"
+      ],
+    ).toBe("minimal");
+  });
+
+  it("关:识别不出的家族不发参数(猜错会 400,跟随默认永远安全)", async () => {
+    const body = await bodyWith({
+      model: "some-mystery-model",
+      reasoningEffort: "off",
+    });
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
+    expect(body.enable_thinking).toBeUndefined();
+  });
+
+  it("OpenRouter 风格带厂商前缀的 id 家族识别照常", async () => {
+    expect(
+      (await bodyWith({
+        model: "deepseek/deepseek-v4-flash",
+        reasoningEffort: "off",
+      }))["reasoning_effort"],
+    ).toBe("none");
+  });
+});
+
 describe("OpenAIAdapter.chat 流式聚合", () => {
   it("tool_calls arguments 分 3 片到达,按 index 拼回完整 JSON", async () => {
     apiFetchMock.mockResolvedValue(

@@ -51,6 +51,44 @@ type SSEChunk = {
   };
 };
 
+// ---- 思考程度 → wire 参数 ----
+// 档位值(low/medium/high/max/xhigh/minimal)各家 OpenAI 兼容层已事实收敛
+// 到 reasoning_effort,直传;「关」没有统一参数,按模型 id 家族分派。
+// 家族识别不出时不发任何参数——猜错参数会 400,跟随模型默认永远安全。
+// 例外如实标注:o 系/gpt-5 无法真正关思考,off 降级为 minimal(最低档)。
+
+function thinkingFamily(model: string): string {
+  if (/(^|\/)deepseek/i.test(model)) return "deepseek";
+  if (/(^|\/)glm/i.test(model)) return "glm";
+  if (/qwen|qwq/i.test(model)) return "qwen";
+  if (/(^|\/)gemini/i.test(model)) return "gemini";
+  if (/(^|\/)(o[1345](-|$)|gpt-5)/i.test(model)) return "openai";
+  return "unknown";
+}
+
+function thinkingParam(
+  effort: string | undefined,
+  model: string,
+): Record<string, unknown> {
+  if (!effort) return {};
+  if (effort === "off") {
+    switch (thinkingFamily(model)) {
+      case "deepseek":
+      case "gemini":
+        return { reasoning_effort: "none" };
+      case "glm":
+        return { thinking: { type: "disabled" } };
+      case "qwen":
+        return { enable_thinking: false };
+      case "openai":
+        return { reasoning_effort: "minimal" };
+      default:
+        return {};
+    }
+  }
+  return { reasoning_effort: effort };
+}
+
 export class OpenAIAdapter implements ChatProvider {
   constructor(
     private cfg: {
@@ -62,6 +100,9 @@ export class OpenAIAdapter implements ChatProvider {
       /** OpenAI 推理模型(o 系列/gpt-5)只认 max_completion_tokens,发旧的
        *  max_tokens 会直接 400;兼容端点一律 max_tokens(缺省) */
       maxTokensField?: "max_tokens" | "max_completion_tokens";
+      /** 思考程度(undefined = 跟随模型默认,不发任何参数):"off" = 请求关
+       *  思考,其余为档位 token,经 thinkingParam 映射为 wire 参数 */
+      reasoningEffort?: string;
     },
   ) {}
 
@@ -80,6 +121,7 @@ export class OpenAIAdapter implements ChatProvider {
                 this.cfg.maxTokens,
             }
           : {}),
+        ...thinkingParam(this.cfg.reasoningEffort, this.cfg.model),
         stream: true,
         stream_options: { include_usage: true },
       },
