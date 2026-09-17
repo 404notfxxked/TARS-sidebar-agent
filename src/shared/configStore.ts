@@ -50,14 +50,14 @@ export interface ModelEntry {
   /** maxTokens 的请求字段名;缺省按模型名推断(见 inferMaxTokensField),仅 OpenAI
    *  推理模型等不认 max_tokens 的端点需要手动改 */
   maxTokensField?: "max_tokens" | "max_completion_tokens";
-  /** 推理(思考)模型标记,当前是纯元数据:预填(models.dev 目录 / id 启发式,
-   *  见 shared/modelCatalog 三层判定)+ 运行时观测回写 + 手动纠正。本字段
-   *  同时是总开关:true 时聊天输入行才显示思考程度选择器、请求才携带思考参数 */
+  /** 推理(思考)模型标记:纯能力元数据,是聊天思考选择器的可见性依据。
+   *  三层判定:预填(models.dev 目录 / id 启发式,见 shared/modelCatalog)
+   *  + 运行时观测回写 + 手动纠正;没有手动开关,不认识的模型靠观测兜底 */
   reasoning?: boolean;
-  /** 思考程度(undefined = 跟随模型默认,不发参数):"off" = 请求关思考,
-   *  其余为目录档位 token(low/medium/high/xhigh/max…),wire 映射见
-   *  openai.ts thinkingParam(档位直传 reasoning_effort,off 按家族分派)。
-   *  仅在 reasoning 为 true 时由 agent 门控发送 */
+  /** 思考程度(undefined = 折中默认:发送时由 defaultThinkingEffort 取目录
+   *  中间档,纯开关模型则跟随模型默认不发参数):"off" = 请求关思考,其余
+   *  为目录档位 token,wire 映射见 openai.ts thinkingParam。仅 reasoning
+   *  为 true 时由 agent 门控发送 */
   reasoningEffort?: string;
 }
 

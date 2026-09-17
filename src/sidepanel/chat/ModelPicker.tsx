@@ -147,7 +147,7 @@ export default function ModelPicker({
           aria-hidden="true"
           className="shrink-0"
         >
-          <path d="m3 6 5 5-5 5" />
+          <path d="m6 3.5 4.5 4.5L6 12.5" />
         </svg>
       </button>
       {open && (

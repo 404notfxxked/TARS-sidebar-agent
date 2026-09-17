@@ -209,19 +209,6 @@ function ModelRow({
         className="field-input"
       />
       <div className="mt-2.5 flex items-center justify-between">
-        <span className="text-[12.5px] font-medium text-on-surface">{t("settings.reasoning")}</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={!!entry.reasoning}
-          aria-label={`${entry.alias || entry.id} ${t("settings.reasoning")}`}
-          onClick={() => onPatch({ reasoning: !entry.reasoning }, true)}
-          className="switch"
-        >
-          <span className="switch-knob" />
-        </button>
-      </div>
-      <div className="mt-1 flex items-center justify-between">
         <span className="text-[12.5px] font-medium text-on-surface">{t("settings.vision")}</span>
         <button
           type="button"

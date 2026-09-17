@@ -86,6 +86,18 @@ function thinkingParam(
         return {};
     }
   }
+  if (effort === "on") {
+    // 纯开关模型的「开」:只有 glm/qwen 需要显式发,其余家族开就是默认,
+    // 不发参数(发了未知字段反而可能 400)
+    switch (thinkingFamily(model)) {
+      case "glm":
+        return { thinking: { type: "enabled" } };
+      case "qwen":
+        return { enable_thinking: true };
+      default:
+        return {};
+    }
+  }
   return { reasoning_effort: effort };
 }
 

@@ -49,20 +49,42 @@ export function inferReasoning(id: string): true | undefined {
 /**
  * 思考档位选项(供聊天输入行选择器):null = 该模型没有可靠的档位数据,
  * 选择器整个不显示——不知道能发什么参数就不显示入口,零风险。
- * 返回数组不含「跟随默认」(UI 恒在首位的隐式项);"toggle" 翻译成 "off";
- * effort 里的 "none" 语义同关,并入 "off" 去重。
+ * 有 effort 档位 → [关?][档位…];纯开关模型 → [关, 开](两个都能映射成
+ * 真实 wire 参数,选择器里没有「不发送」这种隐式状态)。
  */
 export function thinkingOptionsOf(cat: Catalog, id: string): string[] | null {
   const ro = cat.models[id]?.ro;
   if (!ro || ro.length === 0) return null;
-  const out: string[] = [];
-  if (ro.includes("toggle")) out.push("off");
+  const levels: string[] = [];
+  let hasOff = false;
   for (const v of ro) {
-    if (v === "toggle") continue;
-    const token = v === "none" ? "off" : v;
-    if (!out.includes(token)) out.push(token);
+    // toggle 与 none 都意味着「能关」:前者是独立开关,后者是档位里的关档
+    if (v === "toggle" || v === "none") hasOff = true;
+    else if (!levels.includes(v)) levels.push(v);
   }
-  return out.length > 0 ? out : null;
+  if (levels.length > 0) {
+    return hasOff ? ["off", ...levels] : levels;
+  }
+  return hasOff ? ["off", "on"] : null;
+}
+
+/**
+ * 折中默认档(reasoningEffort 未设置时实际发送的值):有 effort 档位时去
+ * 掉「关」取中间偏高一档——[low,high,max]→high、[minimal,low,medium,high]→
+ * medium、[low,medium,high]→medium;两档取较低档([high,max]→high,默认
+ * 宁慢于超支);纯开关模型 → "on"(显式开,与「关」对应);无数据 →
+ * undefined(选择器不显示,该状态用户永远看不到)。
+ */
+export function defaultThinkingEffort(
+  cat: Catalog,
+  id: string,
+): string | undefined {
+  const options = thinkingOptionsOf(cat, id);
+  if (!options) return undefined;
+  const levels = options.filter((t) => t !== "off");
+  if (levels.length === 0) return "on";
+  const idx = levels.length <= 2 ? 0 : Math.ceil((levels.length - 1) / 2);
+  return levels[idx];
 }
 
 /** 合成预填值:目录(ctx / v / r)→ 启发式(仅推理肯定)→ 其余留空交手动 */

@@ -32,6 +32,10 @@ import {
   markReasoningObserved,
 } from "../../shared/configStore";
 import {
+  defaultThinkingEffort,
+  loadCatalog,
+} from "../../shared/modelCatalog";
+import {
   grantableOriginOf,
   hasOriginAccess,
 } from "../../shared/hostAccess";
@@ -146,10 +150,12 @@ export async function runAgentLoop(
     signal,
   };
 
-  try {
-    // 当前供应商与模型条目:providers 里按 modelProvider 引用取,模型条目再
-    // 按 config.model 在该供应商的列表里取(跨供应商同名模型互不干扰)
-    const config = await loadConfig();
+    try {
+      // 当前供应商与模型条目:providers 里按 modelProvider 引用取,模型条目再
+      // 按 config.model 在该供应商的列表里取(跨供应商同名模型互不干扰)
+      const config = await loadConfig();
+      // 模型能力目录(本地快照,SW 侧读;失败不影响 run,只是没有折中默认档)
+      const catalog = await loadCatalog().catch(() => null);
     const cur =
       config.providers.find((p) => p.id === config.modelProvider) ??
       config.providers[0];
@@ -194,10 +200,14 @@ export async function runAgentLoop(
       maxTokens: modelEntry?.maxTokens,
       maxTokensField:
         modelEntry?.maxTokensField ?? inferMaxTokensField(config.model),
-      // 思考程度门控:总开关(reasoning)关着时,存过的强度也不发
+      // 思考程度:元数据标记为推理的模型才发;未设置时发折中默认档
+      // (目录中间偏高一档,纯开关模型 undefined = 跟随模型默认)
       reasoningEffort:
         modelEntry?.reasoning === true
-          ? modelEntry?.reasoningEffort
+          ? (modelEntry?.reasoningEffort ??
+            (catalog
+              ? defaultThinkingEffort(catalog, config.model)
+              : undefined))
           : undefined,
     });
     // 压缩用模型:摘要调用(含撞窗紧急压缩)专用,选了便宜模型就由它跑摘要

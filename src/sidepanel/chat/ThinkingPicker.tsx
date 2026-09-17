@@ -1,7 +1,9 @@
-// 输入区的思考程度选择器:当前模型「推理」总开关开着且目录有该模型的档位
+// 输入区的思考程度选择器:当前模型被判定为推理模型且目录有该模型的档位
 // 数据时才渲染(可见性由调用侧判)。pill 触发钮 + 向上 combo-pop,与
 // ModelPicker 同款交互(点外/Esc 关闭);选择写回该模型的 reasoningEffort
-// (持久,聊天里改的是该模型的默认),发送侧由 agent 按总开关门控。
+// (持久,聊天里改的是该模型的默认),发送侧由 agent 按能力标记门控。
+// 选项不含「不发送」这类隐式状态:关(如支持)与各档位,未选择时由调用侧
+// 传折中默认档,显示与实际发送永远一致。
 
 import { useEffect, useRef, useState } from "react";
 import type { TFn } from "../../shared/i18n";
@@ -11,8 +13,8 @@ import { useT } from "../ui/hooks";
 // t 由调用方传入(useT 产物):render 期辅助函数自读模块态会被 React
 // Compiler 按参数记忆化,语言切换后返回旧文案(先例 toolNames)。
 const EFFORT_KEYS: Record<string, string> = {
-  default: "chat.thinkDefault",
   off: "chat.thinkOff",
+  on: "chat.thinkOn",
   minimal: "chat.thinkMinimal",
   low: "chat.thinkLow",
   medium: "chat.thinkMedium",
@@ -27,24 +29,22 @@ export function effortLabel(t: TFn, token: string): string {
   return key ? t(key) : token;
 }
 
-const DEFAULT_TOKEN = "default";
-
 export default function ThinkingPicker({
   options,
   value,
   onPick,
 }: {
-  /** 档位 token 列表(thinkingOptionsOf 产物,不含「跟随默认」隐式项) */
+  /** 档位 token 列表(thinkingOptionsOf 产物,含「关」如模型支持) */
   options: string[];
-  /** 当前 reasoningEffort(undefined = 跟随默认) */
-  value: string | undefined;
-  onPick: (effort: string | undefined) => void;
+  /** 当前生效档(调用侧已把未设置解析成折中默认档) */
+  value: string;
+  onPick: (effort: string) => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const popRef = useRef<HTMLDivElement | null>(null);
-  const stateRef = useRef({ options, value, onPick });
-  stateRef.current = { options, value, onPick };
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
 
   useEffect(() => {
     if (!open) return;
@@ -62,8 +62,6 @@ export default function ThinkingPicker({
     };
   }, [open]);
 
-  const current = value ?? DEFAULT_TOKEN;
-
   return (
     <div ref={popRef} className="relative">
       <button
@@ -75,7 +73,7 @@ export default function ThinkingPicker({
         className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
       >
         <span>
-          {t("chat.thinking")} · {effortLabel(t, current)}
+          {t("chat.thinking")} · {effortLabel(t, value)}
         </span>
         <svg
           width="10"
@@ -89,7 +87,7 @@ export default function ThinkingPicker({
           aria-hidden="true"
           className="shrink-0"
         >
-          <path d="m3 6 5 5-5 5" />
+          <path d="m6 3.5 4.5 4.5L6 12.5" />
         </svg>
       </button>
       {open && (
@@ -98,8 +96,8 @@ export default function ThinkingPicker({
           aria-label={t("chat.thinkingLevel")}
           className="combo-pop combo-pop--up"
         >
-          {[DEFAULT_TOKEN, ...options].map((token) => {
-            const selected = current === token;
+          {options.map((token) => {
+            const selected = value === token;
             return (
               <button
                 key={token}
@@ -109,9 +107,7 @@ export default function ThinkingPicker({
                 className="combo-option"
                 onClick={() => {
                   setOpen(false);
-                  stateRef.current.onPick(
-                    token === DEFAULT_TOKEN ? undefined : token,
-                  );
+                  onPickRef.current(token);
                 }}
               >
                 {effortLabel(t, token) + (selected ? " ✓" : "")}

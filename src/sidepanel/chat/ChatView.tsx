@@ -19,6 +19,7 @@ import {
   type ProviderEntry,
 } from "../../shared/configStore";
 import {
+  defaultThinkingEffort,
   loadCatalog,
   thinkingOptionsOf,
   type Catalog,
@@ -128,6 +129,11 @@ export default function ChatView({
     catalog && curModelEntry
       ? thinkingOptionsOf(catalog, curModelEntry.id)
       : null;
+  // 未设置时显示与实际发送一致的折中默认档(defaultThinkingEffort)
+  const thinkingDefault =
+    catalog && curModelEntry
+      ? defaultThinkingEffort(catalog, curModelEntry.id)
+      : undefined;
   const showThinking = curModelEntry?.reasoning === true && !!thinkingOptions;
   const setThinkingEffort = (effort: string | undefined) => {
     const p = providers.find((x) => x.id === modelProvider);
@@ -741,7 +747,12 @@ export default function ChatView({
           {showThinking && thinkingOptions && (
             <ThinkingPicker
               options={thinkingOptions}
-              value={curModelEntry?.reasoningEffort}
+              value={
+                curModelEntry?.reasoningEffort ??
+                thinkingDefault ??
+                // 类型兜底:showThinking 已蕴含 options 非空,运行时不可达
+                (thinkingOptions.includes("off") ? "off" : thinkingOptions[0])
+              }
               onPick={setThinkingEffort}
             />
           )}

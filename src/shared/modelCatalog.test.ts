@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   backfillEntry,
+  defaultThinkingEffort,
   inferReasoning,
   prefillEntry,
   thinkingOptionsOf,
@@ -163,10 +164,10 @@ describe("thinkingOptionsOf(思考档位选项,null = 不显示入口)", () => {
     ).toEqual(["off", "low", "high", "max"]);
   });
 
-  it("纯开关模型 → 只有 off", () => {
+  it("纯开关模型 → 关 + 开", () => {
     expect(
       thinkingOptionsOf({ models: { "glm-4.5": { ro: ["toggle"] } } }, "glm-4.5"),
-    ).toEqual(["off"]);
+    ).toEqual(["off", "on"]);
   });
 
   it("effort 里的 none 语义同关,并入 off 去重", () => {
@@ -193,5 +194,43 @@ describe("thinkingOptionsOf(思考档位选项,null = 不显示入口)", () => {
     expect(thinkingOptionsOf({ models: { a: {} } }, "a")).toBeNull();
     expect(thinkingOptionsOf({ models: { b: { ro: [] } } }, "b")).toBeNull();
     expect(thinkingOptionsOf({ models: {} }, "c")).toBeNull();
+  });
+});
+
+describe("defaultThinkingEffort(未设置时发送的折中默认档)", () => {
+  const cat: Catalog = {
+    models: {
+      "glm-5.3": { ro: ["low", "high", "max"] },
+      "gpt-5": { ro: ["minimal", "low", "medium", "high"] },
+      "gemini-3.8-flash": { ro: ["low", "medium", "high"] },
+      "glm-5.2": { ro: ["high", "max"] },
+      "glm-4.5": { ro: ["toggle"] },
+      "no-ro": {},
+    },
+  };
+
+  it("三档取正中([low,high,max] → high)", () => {
+    expect(defaultThinkingEffort(cat, "glm-5.3")).toBe("high");
+  });
+
+  it("四档取中间偏高一档([minimal,low,medium,high] → medium)", () => {
+    expect(defaultThinkingEffort(cat, "gpt-5")).toBe("medium");
+  });
+
+  it("三档等距([low,medium,high] → medium)", () => {
+    expect(defaultThinkingEffort(cat, "gemini-3.8-flash")).toBe("medium");
+  });
+
+  it("两档取较低档(默认宁慢于超支:[high,max] → high)", () => {
+    expect(defaultThinkingEffort(cat, "glm-5.2")).toBe("high");
+  });
+
+  it("纯开关模型 → \"on\"(显式开,与「关」对应)", () => {
+    expect(defaultThinkingEffort(cat, "glm-4.5")).toBe("on");
+  });
+
+  it("无目录数据 → undefined", () => {
+    expect(defaultThinkingEffort(cat, "no-such")).toBeUndefined();
+    expect(defaultThinkingEffort(cat, "no-ro")).toBeUndefined();
   });
 });

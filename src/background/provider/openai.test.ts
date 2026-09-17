@@ -187,6 +187,26 @@ describe("OpenAIAdapter 思考程度 → wire 参数", () => {
     ).toBe(false);
   });
 
+  it("开:纯开关模型 glm → thinking.type enabled;qwen → enable_thinking true", async () => {
+    expect(
+      (await bodyWith({ model: "glm-4.5", reasoningEffort: "on" })).thinking,
+    ).toEqual({ type: "enabled" });
+    expect(
+      (await bodyWith({ model: "qwen3-235b", reasoningEffort: "on" }))
+        .enable_thinking,
+    ).toBe(true);
+  });
+
+  it("开:其余家族开就是默认,不发参数(发未知字段可能 400)", async () => {
+    const body = await bodyWith({
+      model: "some-mystery-model",
+      reasoningEffort: "on",
+    });
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
+    expect(body.enable_thinking).toBeUndefined();
+  });
+
   it("关:o 系/gpt-5 无法真正关,降级 minimal(最低档)", async () => {
     expect(
       (await bodyWith({ model: "o3", reasoningEffort: "off" })).reasoning_effort,
