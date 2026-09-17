@@ -105,6 +105,10 @@ MV3 的 service worker 没有 DOM 且随时休眠——解析放进 offscreen do
 
 问题与建议欢迎提 [Issues](https://github.com/404notfxxked/TARS-sidebar-agent/issues)。想动代码的话，先读 [AGENTS.md](AGENTS.md)（开发约定）与 [tests/README.md](tests/README.md)（测试地图），提交前跑通门禁：`pnpm lint && pnpm typecheck && pnpm test && pnpm build`。
 
+## 🙏 致谢
+
+- [models.dev](https://models.dev)（MIT）— 模型能力目录的数据来源。「获取模型列表」时预填的上下文窗口、推理与多模态推荐值来自其社区维护的快照（`public/model-catalog.json`，`pnpm catalog:refresh` 刷新），识别不准的可在模型设置里手动纠正。
+
 ## 📄 License
 
 [MIT](LICENSE)。第三方依赖：React（MIT）、turndown（BSD-3-Clause）、highlight.js（BSD-3-Clause）、tailwindcss（MIT）——完整清单见 [package.json](package.json) 与 `pnpm-lock.yaml`。
