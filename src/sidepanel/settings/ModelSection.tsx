@@ -8,6 +8,11 @@ import {
   type ModelEntry,
   type ProviderEntry,
 } from "../../shared/configStore";
+import {
+  backfillEntry,
+  loadCatalog,
+  prefillEntry,
+} from "../../shared/modelCatalog";
 import { fetchModels } from "../../background/provider";
 import { useConfirmReset, useT } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
@@ -204,6 +209,19 @@ function ModelRow({
         className="field-input"
       />
       <div className="mt-2.5 flex items-center justify-between">
+        <span className="text-[12.5px] font-medium text-on-surface">{t("settings.reasoning")}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!!entry.reasoning}
+          aria-label={`${entry.alias || entry.id} ${t("settings.reasoning")}`}
+          onClick={() => onPatch({ reasoning: !entry.reasoning }, true)}
+          className="switch"
+        >
+          <span className="switch-knob" />
+        </button>
+      </div>
+      <div className="mt-1 flex items-center justify-between">
         <span className="text-[12.5px] font-medium text-on-surface">{t("settings.vision")}</span>
         <button
           type="button"
@@ -399,8 +417,15 @@ function ProviderCard({
         entry.apiKey.trim(),
         ctl.signal,
       );
+      // 新增条目用 models.dev 快照 + 启发式预填;已有条目回填「从未设置」的
+      // 缺失字段——手动设置过/清空过的一律不碰
+      const cat = await loadCatalog();
       const map = new Map(entry.models.map((m) => [m.id, m]));
-      for (const id of list) if (!map.has(id)) map.set(id, { id });
+      for (const id of list) {
+        const existing = map.get(id);
+        if (!existing) map.set(id, { id, ...prefillEntry(cat, id) });
+        else map.set(id, backfillEntry(cat, id, existing));
+      }
       const next = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
       onPatch({ models: next }, true);
       setFetchState("idle");

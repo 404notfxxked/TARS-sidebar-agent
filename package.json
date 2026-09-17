@@ -18,6 +18,7 @@
     "lint:fix": "biome check --write --unsafe src tests scripts",
     "icons:export": "node scripts/export-icons.mjs",
     "tokens:m3": "node scripts/generate-m3.mjs",
+    "catalog:refresh": "node scripts/fetch-model-catalog.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
