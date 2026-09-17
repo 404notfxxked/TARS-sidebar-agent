@@ -712,8 +712,8 @@ export default function ChatView({
               pendingImages.length === 0
             }
             aria-label={status === "idle" ? t("chat.send") : t("chat.stop")}
-            className={`icon-btn-filled ml-auto h-9 w-9${
-              status === "idle" ? "" : " error"
+            className={`icon-btn-filled ml-auto h-9 w-9 ${
+              status === "idle" ? "" : "error"
             }`}
           >
             <span
@@ -751,8 +751,8 @@ function PlusIcon() {
 function ArrowUpIcon() {
   return (
     <svg
-      width="16"
-      height="16"
+      width="18"
+      height="18"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -767,12 +767,12 @@ function ArrowUpIcon() {
   );
 }
 
-/** 停止方砖(运行中) */
+/** 停止方砖(运行中):36px 圆底上取 13px,太小没有「可点停」的存在感 */
 function StopIcon() {
   return (
     <svg
-      width="11"
-      height="11"
+      width="13"
+      height="13"
       viewBox="0 0 10 10"
       fill="currentColor"
       aria-hidden="true"
