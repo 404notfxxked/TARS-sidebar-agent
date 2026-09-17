@@ -28,6 +28,7 @@ const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 // SSE 流式事件的局部类型(只取我们关心的字段)
 type SSEChunk = {
+  error?: { message?: string };
   choices?: Array<{
     delta?: {
       content?: string | null;
@@ -103,7 +104,16 @@ export class OpenAIAdapter implements ChatProvider {
           totalTokens: event.usage.total_tokens,
         };
       }
-      if (!choice) continue;
+      if (!choice) {
+        // 流中途错误帧(OpenAI 形状 {"error":{message,...}},无 choices):
+        // 流已开始没有重试余地,但必须把服务端的话抛出去,不能静默吞成空回答
+        if (event.error) {
+          throw new Error(
+            `LLM stream error: ${event.error.message ?? JSON.stringify(event.error)}`,
+          );
+        }
+        continue;
+      }
 
       const delta = choice.delta ?? {};
       if (typeof delta.content === "string") {

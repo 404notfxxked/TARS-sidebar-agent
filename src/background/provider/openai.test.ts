@@ -270,6 +270,21 @@ describe("OpenAIAdapter.chat 流式聚合", () => {
     expect(out.toolCalls).toEqual([]);
   });
 
+  it("流中途错误帧:抛出服务端消息,不静默吞成空回答", async () => {
+    apiFetchMock.mockResolvedValue(
+      sseResponse([
+        frame({ content: "写到一半" }),
+        "data: " +
+          JSON.stringify({ error: { message: "quota exceeded upstream" } }) +
+          "\n\n",
+        "data: [DONE]\n\n",
+      ]),
+    );
+    await expect(adapter().chat(makeReq().req)).rejects.toThrow(
+      "LLM stream error: quota exceeded upstream",
+    );
+  });
+
   it("请求体走流式约定:stream + include_usage,tools 映射 wire 形状", async () => {
     apiFetchMock.mockResolvedValue(
       sseResponse([frame({}, "stop"), "data: [DONE]\n\n"]),

@@ -17,7 +17,6 @@ import {
 } from "../provider";
 import {
   compactHistory,
-  isContextOverflow,
   shouldCompact,
   summaryToMsg,
   usableTokens,
@@ -25,6 +24,7 @@ import {
   THRESHOLDS,
   type CompactionOutcome,
 } from "./compaction";
+import { projectEmergency, shouldEmergencyCompact } from "./overflow";
 import { loadConfig, inferMaxTokensField } from "../../shared/configStore";
 import {
   grantableOriginOf,
@@ -423,11 +423,7 @@ export async function runAgentLoop(
     ): Promise<ChatResult> => {
       const attempt = async () => {
         const base = emergency
-          ? [
-              messages[0],
-              emergency.summaryMsg,
-              ...messages.slice(emergency.afterIdx),
-            ]
+          ? projectEmergency(messages, emergency.summaryMsg, emergency.afterIdx)
           : messages;
         return provider.chat({
           messages: await projectForRequest([...base, ...extraMsgs]),
@@ -442,11 +438,7 @@ export async function runAgentLoop(
       try {
         return await attempt();
       } catch (err) {
-        if (
-          emergency !== null ||
-          !modelEntry?.contextTokens ||
-          !isContextOverflow(err)
-        )
+        if (!shouldEmergencyCompact(err, emergency, modelEntry?.contextTokens))
           throw err;
         log.warn("agent", "请求超出上下文窗口,紧急压缩后重试", {
           turn: turnNo,
