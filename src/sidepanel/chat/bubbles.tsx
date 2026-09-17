@@ -139,13 +139,27 @@ export function AssistantBubble({
   );
 }
 
-export function ErrorBubble({ text }: { text: string }) {
+/** 错误气泡:onRetry 挂在末条错误上(= regenerate,同问重跑);
+ *  三段式文案(发生了什么/为什么/下一步)需要后台错误分类,当前只做恢复动作 */
+export function ErrorBubble({
+  text,
+  onRetry,
+}: {
+  text: string;
+  onRetry?: () => void;
+}) {
+  const t = useT();
   return (
     <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-error-container px-3.5 py-2.5 text-[13px] leading-relaxed text-on-error-container">
       <WarnIcon />
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
         {text}
       </span>
+      {onRetry && (
+        <button type="button" className="error-retry-btn" onClick={onRetry}>
+          {t("chat.retry")}
+        </button>
+      )}
     </div>
   );
 }

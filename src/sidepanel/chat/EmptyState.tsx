@@ -103,7 +103,7 @@ export function EmptyState({
         })}
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn h-7 w-7 self-center"
           aria-label={t("chat.suggestShuffle")}
           title={t("chat.suggestShuffle")}
           onClick={() => setChipKeys(shuffle(SUGGESTIONS).slice(0, 3))}
