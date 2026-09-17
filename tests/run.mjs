@@ -23,6 +23,7 @@ const SUITES = {
   compaction: "verify-compaction.mjs",
   "web-search": "verify-web-search.mjs",
   vision: "verify-vision.mjs",
+  screenshot: "verify-screenshot.mjs",
   cancel: "verify-cancel.mjs",
   "llm-errors": "verify-llm-errors.mjs",
   interact: "verify-interact.mjs",

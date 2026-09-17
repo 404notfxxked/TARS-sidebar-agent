@@ -8,6 +8,7 @@ import {
 } from "./toolContext";
 import { runWebSearch, type WebSearchArgs, type WebSearchResult } from "../web/webSearch";
 import { runWebFetch, type WebFetchArgs, type WebFetchResult } from "../web/webFetch";
+import { runPageScreenshot } from "./screenshot";
 import {
   addMemory,
   deleteMemoriesByMatch,
@@ -319,7 +320,18 @@ registerTool<WebFetchArgs, WebFetchResult>({
 // 观察:定位可交互元素(selector 供 click_element / fill_input 使用)
 registerTool<
   { text?: string; role?: string; limit?: number; tabId?: number },
-  { count?: number; returned?: number; truncated?: boolean; elements?: unknown[] }
+  {
+    count?: number;
+    returned?: number;
+    truncated?: boolean;
+    elements?: unknown[];
+    page?: {
+      scroll_y: number;
+      scroll_height: number;
+      viewport_height: number;
+      at_bottom: boolean;
+    };
+  }
 >({
   type: "function",
   name: "find_elements",
@@ -345,6 +357,82 @@ registerTool<
       returned?: number;
       truncated?: boolean;
       elements?: unknown[];
+      page?: {
+        scroll_y: number;
+        scroll_height: number;
+        viewport_height: number;
+        at_bottom: boolean;
+      };
+    };
+  },
+});
+
+// 观察:视口截图(set-of-marks)。定位 = 升级通道而非并列通道:文本工具便宜、
+// 精确、可检索,截图同价一次 page_read 但保真更差(小字误读)、不可检索、
+// 仅视口 —— 只有文本读不到(字体反爬/canvas 渲染/图即内容)或问题本身是
+// 视觉的(长什么样/什么颜色/图表形状)才值得截。纪律写进描述当教科书
+// (「何时截图」三层判断的第 ③ 层:模型自判);第 ② 层管线自报信号在
+// offscreen pipeline 的 hint。结果里的 screenshot 字段由 agent 循环剥离,
+// 转成紧随工具消息的带图 user 消息 —— tool 消息按协议只走文本
+registerTool<
+  { tabId?: number },
+  {
+    url?: string;
+    viewport?: { w: number; h: number };
+    marks?: { n: number; selector: string; tag: string; role: string | null; label: string | null }[];
+    hint?: string;
+    screenshot?: unknown;
+  }
+>({
+  type: "function",
+  name: "page_screenshot",
+  description:
+    "Take a screenshot of the target tab's current viewport. Interactive elements in view are outlined and numbered on the image (set-of-marks); the tool result carries the mark table (number → tag / role / label / selector) and the image itself arrives with the immediately following user message.\nActing on what you see: use the mark's selector with click_element / fill_input — the screenshot locates visually, the DOM executes.\nWhen to use: (1) escalation — text tools came back near-empty, garbled (font-obfuscation, canvas/webGL-rendered, image-as-content pages; page_outline / page_read hints point this out); (2) the question is about how the page LOOKS — layout, colors, images, chart shapes, visual state.\nWhen NOT to use: pure text/fact questions — page_read / page_find are cheaper, searchable and more precise. Never screenshot \"just to be safe\": at most once per question, and re-shoot only after the page actually changed (scroll / refresh first if the target is off-screen).\nNote: viewport only (what is on screen now). Requires a vision-capable model and site permission for the page.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
+    },
+  },
+  execute: (args) => runPageScreenshot(args),
+});
+
+// 观察/导航:滚动。价值 = 喂惰性加载 + 与 screenshot 组成视觉循环(SoM 只标
+// 视口内,scroll 后重截);读页不受滚动影响(page_read 读完整文档)——这条
+// 反向纪律写在描述里,防止模型「为读而滚」。返回落点几何供模型判断还有没有下文
+registerTool<
+  { direction?: "up" | "down" | "top" | "bottom"; pages?: number; selector?: string; tabId?: number },
+  {
+    scroll_y?: number;
+    scroll_height?: number;
+    viewport_height?: number;
+    at_bottom?: boolean;
+  }
+>({
+  type: "function",
+  name: "scroll_page",
+  description:
+    "Scroll the page, or bring an element into view. Without selector: scrolls the window by `pages` viewport-heights in `direction` (down/up, or top/bottom to jump to the very start/end). With `selector`: scrolls that element into view instead.\nWhen to use: (1) triggering lazy-loaded / infinite-feed content, then re-reading or re-shooting; (2) bringing a below-the-fold element into the viewport right before page_screenshot — screenshot marks only cover the visible viewport; (3) checking whether more content remains (at_bottom in the result).\nWhen NOT to use: reading content — page_read / page_find work on the fully extracted document and are NOT affected by scrolling; acting on an off-screen element is also fine — click_element / fill_input scroll it into view automatically. Do not scroll just to \"look around\": page_outline maps the whole page without scrolling.\nReturns the resulting geometry: scroll_y / scroll_height / viewport_height / at_bottom.",
+  parameters: {
+    type: "object",
+    properties: {
+      direction: {
+        type: "string",
+        enum: ["up", "down", "top", "bottom"],
+        description: "Scroll direction; default down. top/bottom jump to the very start/end",
+      },
+      pages: { type: "number", description: "Scroll amount in viewport-heights; default 1, cap 10 (ignored with selector / top / bottom)" },
+      selector: { type: "string", description: "Scroll this element into view instead of window scrolling (from find_elements output)" },
+      tabId: { type: "number", description: "Target tab id; omit to keep operating on the last tab these tools acted on in this run (initially the page at submit time)" },
+    },
+  },
+  execute: async (args) => {
+    const tabId = await resolveTargetTabId(args);
+    return (await callContentTool(tabId, "scroll_page", args)) as {
+      scroll_y?: number;
+      scroll_height?: number;
+      viewport_height?: number;
+      at_bottom?: boolean;
     };
   },
 });

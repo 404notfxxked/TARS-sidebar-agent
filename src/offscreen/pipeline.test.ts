@@ -135,4 +135,23 @@ describe("空壳页 hint(管线自报,京东/淘宝壳页案)", () => {
     expect(runPageOutline(doc).hint).toBeUndefined();
     expect(runPageRead(doc, 0, 6000).hint).toBeUndefined();
   });
+
+  it("大 HTML 提取失衡:正文哪怕过了壳页阈值也报可疑(淘宝案形状)", () => {
+    const html =
+      `<body><h1>商品</h1><p>${"内容字符".repeat(60)}</p>` +
+      `<!--${"x".repeat(30_000)}--></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    expect(doc.totalChars).toBeGreaterThanOrEqual(200);
+    expect(doc.htmlBytes).toBeGreaterThanOrEqual(20_000);
+    expect(runPageOutline(doc).hint).toContain("可疑");
+  });
+
+  it("正文 PUA 密集:体量充足也报字体反爬可疑", () => {
+    const html =
+      `<body><h1>详情</h1>` +
+      `<p>${"正常描述文字".repeat(40)}${"\uE0A0".repeat(8)}</p></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    expect(doc.totalChars).toBeGreaterThanOrEqual(200);
+    expect(runPageRead(doc, 0, 6000).hint).toContain("字体反爬");
+  });
 });

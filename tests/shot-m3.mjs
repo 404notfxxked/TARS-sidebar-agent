@@ -3,12 +3,13 @@
 // 用法: pnpm build && node tests/shot-m3.mjs          # 全量:深浅色 × 对话/设置/历史/记忆/MCP + 模型弹层
 //       pnpm build && node tests/shot-m3.mjs --accents # 只跑 8 套重点色试色(对话+设置,浅色)
 //       pnpm build && node tests/shot-m3.mjs --hints   # 只跑提示分层留档(ⓘ 悬停/了解详情,中英)
+//       pnpm build && node tests/shot-m3.mjs --som     # 只跑 SoM 视觉留档(page_screenshot 编号框)
 // 回归: 一轮真实 mock 对话(含 web_search 工具调用)驱动 气泡/markdown/过程卡 渲染,
 //       期间收集 pageerror/console error,结束时汇总。
 // 配置走旧版单供应商字段:顺带练习读时迁移路径。
 
 import { zh, en } from "./lib-i18n.mjs";
-import { rmSync, mkdirSync } from "fs";
+import { rmSync, mkdirSync, writeFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import {
@@ -31,6 +32,7 @@ mkdirSync(OUT_DIR, { recursive: true });
 
 const ACCENTS_ONLY = process.argv.includes("--accents");
 const HINTS_ONLY = process.argv.includes("--hints");
+const SOM_ONLY = process.argv.includes("--som");
 /** [id, 设置页色板 aria-label 名];id 清单对应 scripts/generate-m3.mjs 的
  *  ACCENTS,标签从字典取 —— 字典改色名断言自动跟随 */
 const ACCENTS = [
@@ -155,6 +157,229 @@ async function runHints(browser, extId) {
   console.log(`\n✅ VERDICT: PASS(hints)— 截图在 ${OUT_DIR}/`);
 }
 
+// ---- SoM 视觉留档(page_screenshot 轮并入,2026-09):mock LLM 驱动
+// find_elements → page_screenshot,把模型实际收到的 JPEG(含 SoM 编号框、
+// 1280 降采样)与 marks 对照表落盘。行为断言归 verify-screenshot 套件,
+// 这里只留档 + 健康检查。标记层是瞬态的(画上→捕获→摘除),wire 上的
+// 带图 user 消息是唯一留得下来的产物 ──
+async function runSom(browser, extId, mock) {
+  const ok = (cond, label) => {
+    if (!cond) throw new Error(`❌ ${label}`);
+    console.log(`  ✅ ${label}`);
+  };
+
+  // 富内容后台页:导航/按钮/表单混排,编号框有真实密度可言
+  const SOM_HTML = `<html><head><meta charset="utf-8"><title>Acme 控制台</title></head>
+<body style="margin:0;font-family:system-ui,sans-serif;background:#f6f7f9">
+  <header style="display:flex;gap:16px;align-items:center;padding:12px 24px;background:#fff;border-bottom:1px solid #e5e7eb">
+    <strong style="font-size:18px">Acme 控制台</strong>
+    <a href="#">概览</a><a href="#">订单</a><a href="#">报表</a>
+    <button>新建订单</button>
+    <input placeholder="搜索订单、客户…" style="margin-left:auto;width:200px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px">
+    <button>通知</button>
+  </header>
+  <main style="padding:24px;display:grid;grid-template-columns:2fr 1fr;gap:16px">
+    <section style="background:#fff;border-radius:10px;padding:16px">
+      <h2 style="margin:0 0 8px">本周数据</h2>
+      <p style="color:#555;margin:0 0 12px">订单量、转化率与退款率的趋势一览,数据每日凌晨刷新。</p>
+      <button>导出 CSV</button>
+      <button>分享看板</button>
+      <p style="margin-top:16px"><a href="#">查看历史归档</a></p>
+    </section>
+    <aside style="background:#fff;border-radius:10px;padding:16px">
+      <h2 style="margin:0 0 12px">快捷操作</h2>
+      <label>收件人 <input style="width:100%;margin:4px 0 10px;padding:6px;border:1px solid #d1d5db;border-radius:6px"></label>
+      <select style="width:100%;margin-bottom:10px;padding:6px"><option>普通快递</option><option>次日达</option></select>
+      <textarea placeholder="备注…" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:6px;border:1px solid #d1d5db;border-radius:6px"></textarea>
+      <button>发送通知</button>
+      <p style="margin:12px 0 0"><a href="#">管理通知模板</a></p>
+    </aside>
+  </main>
+</body></html>`;
+
+  // wire 侧顺手捕获:带图 user 消息(data URL + 注记文本)与 screenshot 结果
+  let wireImage = null;
+  let noteText = null;
+  let shotResult = null;
+  mock.setRoutes([
+    {
+      match: (url) => url.includes("mock.test/som"),
+      handle: async (ctx) =>
+        ctx.fulfill({
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+          body: SOM_HTML,
+        }),
+    },
+    {
+      match: (url) => url.includes("/chat/completions"),
+      handle: async (ctx) => {
+        const body = JSON.parse(ctx.params.request.postData ?? "{}");
+        const msgs = body.messages ?? [];
+        // 截图注记以 user 消息插在 run 中段,「最后一条 user 之后」式窗口
+        // 会清零计数 → 全局数 assistant tool_calls(verify-screenshot 同款)
+        const done = msgs
+          .flatMap((m) => (m.role === "assistant" ? m.tool_calls ?? [] : []))
+          .length;
+        for (const m of msgs) {
+          if (m.role === "user" && Array.isArray(m.content)) {
+            const img = m.content.find((p) => p.type === "image_url");
+            if (img) {
+              wireImage = img.image_url.url;
+              noteText =
+                m.content.find((p) => p.type === "text")?.text ?? null;
+            }
+          }
+          if (m.role === "tool") {
+            try {
+              const r = JSON.parse(m.content);
+              if (Array.isArray(r.marks)) shotResult = r;
+            } catch {
+              // find_elements 等其它工具结果不是 screenshot 形态,跳过
+            }
+          }
+        }
+        const fulfillSSE = (sseBody) =>
+          ctx.fulfill({
+            headers: { "Content-Type": "text/event-stream" },
+            body: sseBody,
+          });
+        if (done >= 2) {
+          return fulfillSSE(
+            sse(
+              { choices: [{ delta: { content: "已按编号框定位到页面元素。" } }] },
+              { choices: [{ delta: {}, finish_reason: "stop" }] },
+            ),
+          );
+        }
+        const calls = [
+          { name: "find_elements", args: {} },
+          { name: "page_screenshot", args: {} },
+        ];
+        const next = calls[done];
+        return fulfillSSE(
+          sse(
+            {
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: `call-${done}`,
+                        function: {
+                          name: next.name,
+                          arguments: JSON.stringify(next.args),
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+          ),
+        );
+      },
+    },
+  ]);
+
+  const page = await browser.newPage({ deviceScaleFactor: 2 });
+  await page.setViewportSize({ width: 420, height: 740 });
+  await page.goto(`chrome-extension://${extId}/sidepanel.html`);
+  await page.evaluate(() =>
+    chrome.storage.local.set({
+      providers: [
+        {
+          id: "p0",
+          name: "test",
+          baseUrl: "https://api.test.example.com/v1",
+          apiKey: "sk-test",
+          models: [{ id: "gpt-v", vision: true }],
+        },
+      ],
+      modelProvider: "p0",
+      model: "gpt-v",
+    }),
+  );
+  await page.reload();
+  await sleep(800);
+
+  // 目标页后开 = 窗口激活 tab,captureVisibleTab 拍到的才是它
+  const target = await browser.newPage();
+  await target.setViewportSize({ width: 1280, height: 800 });
+  await target.goto("https://mock.test/som", { waitUntil: "load" });
+  await sleep(400);
+  await target.screenshot({ path: `${OUT_DIR}/som-1-page.png` });
+  console.log("  📸 som-1-page.png(无标记原页)");
+
+  const tabId = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) =>
+          resolve(tabs[0]?.id ?? -1),
+        );
+      }),
+  );
+  ok(tabId > 0, "拿到目标页 tabId");
+
+  const input = page.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
+  await input.fill("看看这个页面,告诉我有哪些可以操作的元素");
+  await page.locator(`button[aria-label="${zh.chat.send}"]`).click();
+  await page
+    .locator(`button[aria-label="${zh.chat.send}"]`)
+    .waitFor({ state: "visible", timeout: 30000 });
+  await sleep(400);
+
+  ok(
+    !!wireImage && wireImage.startsWith("data:image/jpeg;base64,"),
+    "wire 上有带图 user 消息",
+  );
+  ok(
+    wireImage.length > 10_000,
+    `截图附件非空(data URL ${Math.round(wireImage.length / 1024)}KB)`,
+  );
+
+  const B64_PREFIX = "data:image/jpeg;base64,";
+  writeFileSync(
+    `${OUT_DIR}/som-2-model-view.jpg`,
+    Buffer.from(wireImage.slice(B64_PREFIX.length), "base64"),
+  );
+  console.log("  📸 som-2-model-view.jpg(模型视角,含编号框)");
+
+  ok(
+    Array.isArray(shotResult?.marks) && shotResult.marks.length >= 1,
+    `marks 表非空(${shotResult?.marks?.length ?? 0} 个编号)`,
+  );
+  const md = [
+    "# SoM 视觉留档(page_screenshot)",
+    "",
+    "- `som-1-page.png` — 原页(无标记,人类视角)",
+    "- `som-2-model-view.jpg` — 模型实际收到的 JPEG(视口捕获,1280 宽降采样,含编号框)",
+    `- 捕获几何:viewport ${shotResult.viewport?.w}×${shotResult.viewport?.h} · scroll_y=${shotResult.page?.scroll_y} / scroll_height=${shotResult.page?.scroll_height} · at_bottom=${shotResult.page?.at_bottom}`,
+    "",
+    "## 随图注入的注记(模型收到原文)",
+    "",
+    "```",
+    noteText ?? "(无)",
+    "```",
+    "",
+    "## marks 对照表(编号 → 元素)",
+    "",
+    "| # | tag | role | label | selector |",
+    "| - | --- | ---- | ----- | -------- |",
+    ...shotResult.marks.map(
+      (m) =>
+        `| ${m.n} | ${m.tag} | ${m.role ?? "-"} | ${m.label ?? "-"} | \`${m.selector}\` |`,
+    ),
+  ].join("\n");
+  writeFileSync(`${OUT_DIR}/som-3-marks.md`, md);
+  console.log("  📄 som-3-marks.md(marks 对照表)");
+
+  await target.close();
+  console.log(`\n✅ VERDICT: PASS(som)— 留档在 ${OUT_DIR}/`);
+}
+
 // ---- 启动 ----
 let { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
@@ -165,6 +390,13 @@ console.log("✅ 扩展:", extId);
 // --hints 只跑提示分层,不走主流程的 mock 路由注册
 if (HINTS_ONLY) {
   await runHints(browser, extId);
+  await browser.close();
+  process.exit(0);
+}
+
+// --som 只跑 SoM 视觉留档(自带 mock 路由)
+if (SOM_ONLY) {
+  await runSom(browser, extId, mock);
   await browser.close();
   process.exit(0);
 }

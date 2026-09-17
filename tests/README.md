@@ -94,6 +94,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 | `mcp` | `verify-mcp.mjs` | MCP 接入:工具注入与调用/现代协议头/旧版 initialize 握手/isError 回传/宕机隔离/设置页 UI |
 | `web-search` | `verify-web-search.mjs` | 搜索 tab 通道(fixture 解析/兜底切换/风控冷却/节流)/BYOK API 三家/web_fetch/开关门控/工具预算/取消(工具中) |
 | `vision` | `verify-vision.mjs` | 图片链路:门控/发送/持久化/历史回放 |
+| `screenshot` | `verify-screenshot.mjs` | 视觉通道:page_screenshot 主链路(SoM marks 表/捕获/带图 user 消息注入/images store 落库)/非视觉门控滤除/scroll_page 几何联动。headful 必须(xvfb-run) |
 | `cancel` | `verify-cancel.mjs` | 停止按钮链路(LLM 流中取消;与 web-search 的 H 场景互补) |
 | `llm-errors` | `verify-llm-errors.mjs` | LLM 端点异常路径:401 鉴权失败(明确错误不重试)/流中途错误帧(服务端文案透传)/网络层断连(Fetch.failRequest,重试耗尽)/finish_reason=length(截断上屏不报错) |
 | `interact` | `verify-interact.mjs` | 页面交互工具(独立 harness:esbuild 注入,不加载扩展;esbuild 为显式 devDep) |

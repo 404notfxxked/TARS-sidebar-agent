@@ -25,7 +25,11 @@ import {
   fillElement,
   findInteractive,
   normalizeRole,
+  pageGeometry,
+  scrollPage,
+  type ScrollOptions,
 } from "./interact";
+import { clearMarks, drawMarks } from "./screenshot";
 
 // 防重复注入:本脚本经 chrome.scripting.executeScript 按需注入(manifest 无
 // 静态注入),同一次 run 里多个工具并发首调都会走「发送失败 → 注入 → 重试」,
@@ -86,6 +90,10 @@ function summarizeResult(name: string, result: unknown): unknown {
       const r = result as { count?: number; returned?: number };
       return { count: r.count, returned: r.returned };
     }
+    case "screenshot_mark": {
+      const r = result as { marks?: unknown[] };
+      return { marks: r.marks?.length ?? 0 };
+    }
     default:
       return result;
   }
@@ -124,7 +132,17 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
         typeof a.limit === "number" && Number.isFinite(a.limit)
           ? a.limit
           : undefined;
-      return findInteractive(document, { text, role: role ?? undefined, limit });
+      return {
+        ...findInteractive(document, { text, role: role ?? undefined, limit }),
+        // 页面几何随观察一并返回:模型据此判断是否需要滚动/截图拍到哪段
+        page: pageGeometry(),
+      };
+    }
+
+    // 滚动:窗口按视口倍数滚,或把元素滚入视口。返回落点几何
+    case "scroll_page": {
+      const a = (args ?? {}) as ScrollOptions;
+      return scrollPage(a);
     }
 
     // 动作:点击(完整指针事件序列,等价真实鼠标点击)
@@ -159,6 +177,15 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
       }
       return { filled: sel, pressEnterAfter: a.pressEnterAfter === true };
     }
+
+    // 截图标记层:画/摘都是纯视觉操作。drawMarks 返回「号 → 元素」映射表,
+    // SW 据此组装工具结果;图像捕获发生在 SW(captureVisibleTab),
+    // 标记必须在捕获前画上、捕获后立即摘除(SW 侧负责时序)
+    case "screenshot_mark":
+      return { marks: drawMarks(), page: pageGeometry() };
+
+    case "screenshot_cleanup":
+      return clearMarks();
 
     default:
       throw new Error(`unknown content tool: ${name}`);

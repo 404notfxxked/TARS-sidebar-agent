@@ -43,13 +43,20 @@ export function shouldCompact(
   return baselineTokens > THRESHOLDS[level] * usable;
 }
 
+/** 系统注记 user 消息前缀(agent 循环给截图等工具附件用的注入文本)。
+ *  这类消息是前一个工具轮的附件,不是新的一轮 —— 切分时必须算作延续,
+ *  否则会把 assistant+toolCalls 和它的观察结果劈到摘要两侧 */
+export const SYSTEM_NOTE_PREFIX = "[System note:";
+
 /** 整轮分组:每轮 = 一条 user 起,到下一条 user 前。与 trim 同一单位,
  *  保证 assistant+toolCalls 和它的 tool 观察结果永远在同一侧,不会裁出
- *  「tool 消息悬空」的非法结构 */
+ *  「tool 消息悬空」的非法结构。系统注记(截图附件)不算轮起点 */
 function turnStarts(history: InternalMsg[]): number[] {
   const starts: number[] = [];
   history.forEach((m, i) => {
-    if (m.role === "user") starts.push(i);
+    if (m.role === "user" && !m.content.startsWith(SYSTEM_NOTE_PREFIX)) {
+      starts.push(i);
+    }
   });
   return starts;
 }

@@ -130,25 +130,31 @@ function buildSelector(el: Element): string {
   return path.join(" > ");
 }
 
-// role 别名表:把页面常见的冗余 role 归一到闭集,减少模型要处理的枚举
+// role 归一表:页面冗余 role 属性归一到闭集,同时是 find_elements 的
+// role 过滤参数校验表——模型会回显结果字段里的 role 值来查询,所以闭集
+// 本身必须逐值可直行(下面前 9 行),ARIA 别名只是额外便利;否则就会出现
+// 「报错说支持 input、传 input 却被拒」的自相矛盾(2026-09-17 真机踩中)
 const ROLE_ALIAS: Record<string, RoleName> = {
   button: "button",
   link: "link",
+  input: "input",
+  checkbox: "checkbox",
+  radio: "radio",
+  switch: "switch",
+  select: "select",
+  textarea: "textarea",
+  contenteditable: "contenteditable",
   textbox: "input",
   searchbox: "input",
   combobox: "select",
   listbox: "select",
   slider: "input",
   spinbutton: "input",
-  checkbox: "checkbox",
-  radio: "radio",
-  switch: "switch",
   menuitem: "button",
   menuitemcheckbox: "checkbox",
   menuitemradio: "radio",
   tab: "button",
   option: "select",
-  textarea: "textarea",
 };
 
 /** 参数字符串 → RoleName 闭集(用于 find_elements 的 role 过滤参数校验)。无效返回 null。 */
@@ -538,4 +544,68 @@ export function dispatchEnter(el: Element): void {
   el.dispatchEvent(make("keydown"));
   el.dispatchEvent(make("keypress")); // 已废弃但部分旧页监听;Enter 各引擎都保留
   el.dispatchEvent(make("keyup"));
+}
+
+// ---- 滚动 ----
+
+export type ScrollDirection = "up" | "down" | "top" | "bottom";
+
+export interface ScrollOptions {
+  direction?: ScrollDirection;
+  /** 滚动量,视口高的倍数(默认 1,上限 10) */
+  pages?: number;
+  /** 给定 selector:滚到该元素进视口(direction 被忽略) */
+  selector?: string;
+}
+
+/** 页面几何:滚动原语的返回,也是 find_elements 的观察字段 ——
+ *  模型据此判断「下面还有没有内容」「截图拍到的是哪一段」 */
+export interface PageGeometry {
+  scroll_y: number;
+  scroll_height: number;
+  viewport_height: number;
+  at_bottom: boolean;
+}
+
+export function pageGeometry(): PageGeometry {
+  const doc = document.documentElement;
+  const scrollY = Math.round(window.scrollY);
+  const scrollHeight = Math.max(doc?.scrollHeight ?? 0, document.body?.scrollHeight ?? 0);
+  const viewportHeight = window.innerHeight;
+  return {
+    scroll_y: scrollY,
+    scroll_height: scrollHeight,
+    viewport_height: viewportHeight,
+    at_bottom: scrollY + viewportHeight >= scrollHeight - 2,
+  };
+}
+
+/**
+ * 滚动。无 selector:window 按视口倍数滚(direction=up/down,top/bottom 跳转);
+ * 有 selector:该元素滚入视口中心(scrollIntoView 原生处理内滚容器)。
+ * 程序化滚动同步生效,返回时读到的就是落点几何。滚动监听器对程序化滚动
+ * 照常触发,惰性加载能被正确喂到。
+ */
+export function scrollPage(opts: ScrollOptions = {}): PageGeometry {
+  if (opts.selector) {
+    const el = document.querySelector(opts.selector);
+    if (!el) {
+      throw new Error(
+        `元素未找到:${opts.selector}。请用 find_elements 重新定位后再滚动到它。`,
+      );
+    }
+    el.scrollIntoView({ block: "center", inline: "center" });
+    return pageGeometry();
+  }
+  const dir: ScrollDirection = opts.direction ?? "down";
+  const pages = Math.max(1, Math.min(opts.pages ?? 1, 10));
+  const vh = window.innerHeight;
+  if (dir === "top") {
+    window.scrollTo(0, 0);
+  } else if (dir === "bottom") {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  } else {
+    window.scrollBy(0, (dir === "down" ? 1 : -1) * pages * vh);
+  }
+  return pageGeometry();
 }
