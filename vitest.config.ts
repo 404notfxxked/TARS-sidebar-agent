@@ -12,7 +12,7 @@ import { defineConfig } from "vitest/config";
 // 拉全局大门槛(现状必红,逼人写凑数用例)。
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     setupFiles: ["vitest.setup.ts"],
     environment: "node",
     coverage: {
