@@ -138,9 +138,9 @@ try {
     `卡片内容:${cardText}`,
   );
   assert("展示写入内容", cardText.includes("确认门测试写入内容"));
-  assert("展示回车提交提示", cardText.includes("回车提交"));
+  assert("展示回车提交提示", cardText.includes(zh.chat.confirmSubmitHint));
   assert("展示元素定位", cardText.includes("search-q"));
-  assert("展示目标页面", cardText.includes("目标页面"), `卡片内容:${cardText}`);
+  assert("展示目标页面", cardText.includes(zh.chat.confirmTarget.split("{")[0].trim()), `卡片内容:${cardText}`);
 
   await sidepanel.locator(denyBtn).click();
   await waitIdle();

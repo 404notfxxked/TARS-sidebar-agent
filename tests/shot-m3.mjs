@@ -521,9 +521,16 @@ if (ACCENTS_ONLY) {
   await sleep(800);
   await openMemoryPage();
   await shot(page, "memory-overflow-light");
-  const stats = await page.evaluate(() => ({
-    sub: [...document.querySelectorAll("p")].map((p) => p.textContent).find((t) => t?.includes("每轮注入")),
-  }));
+  // 定位统计行用键派生子串(取字典值「·」后、占位符前的稳定措辞段)
+  const statsNeedle = zh.memory.saved.split("·")[1]?.split("{")[0].trim() ?? "";
+  const stats = await page.evaluate(
+    (needle) => ({
+      sub: [...document.querySelectorAll("p")]
+        .map((p) => p.textContent)
+        .find((t) => t?.includes(needle)),
+    }),
+    statsNeedle,
+  );
   console.log("  超预算副标:", stats.sub);
   await page.keyboard.press("Escape");
   await sleep(300);

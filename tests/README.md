@@ -33,7 +33,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   vitest 优先读 vitest.config.ts,与扩展构建的 vite.config.js 互不干扰)。
   coverage 口径是 all:true 全量文件(默认只报被 import 的文件,数字虚高);
   thresholds 只钉已强区域防倒退,零覆盖区先出报告不设门槛
-- 现有九篇:src/background/agent/compaction.test.ts(窗口公式/档位/切分/
+- 现有十二篇:src/background/agent/compaction.test.ts(窗口公式/档位/切分/
   滚动合并/撞窗文案)、src/background/agent/toolBatch.test.ts(读写分组
   并行批次)、src/background/provider/openai.test.ts(SSE 脏形态/看门狗 +
   adapter 流式聚合:arguments 分片/多工具交错/name 分片/length 截断)、
@@ -43,7 +43,12 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   src/shared/configStore.test.ts(读时迁移:旧版供应商合成、搜索单槽
   弃用)、src/shared/i18n/index.test.ts(zh/en 键位+占位符一致、t() 行为)、
   src/shared/skills.test.ts(SKILL.md frontmatter 解析:嵌套元数据/块标量/
-  chomping/非法输入拒绝)
+  chomping/非法输入拒绝)、src/offscreen/pipeline.test.ts、
+  src/sidepanel/chat/greeting.test.ts,以及 2026-09-17 起的 UI 层三篇
+  (useRunSegments 段状态机 / ConfirmCard 内容组装与出口 / ModelPicker
+  键盘导航;`@testing-library/react` + jsdom + 每文件
+  `// @vitest-environment jsdom` 先例。注意 vitest 未开 globals:RTL
+  自动 cleanup 不生效,组件测试文件需手动 `afterEach(cleanup)`)
 - 只测「不碰 DOM/IDB/网络的模块」;交互与链路归 e2e
 
 ## UI 文案断言规范(强制,run.mjs 入口自动检查)
@@ -54,11 +59,21 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   招呼语池字面量与字典漂移出 flaky,此规范即其根治)。
 - 文案是有限选项集(时段问候 greetMorning~LateNight 这类)时,从字典
   显式列键取值拼「任一命中」正则,不手抄文案数组。
-- 字面量仅允许两类,且行内标注 `// i18n-ok`:①后端日志语义(后台文案
+- 含 `{n}`/`{query}` 插值的文案,断言用键值 `replace("{n}", 实参)` 填参
+  (比抄子串更强);只断言措辞片段时用键派生子串
+  `键值.split("{")[0].trim()` / `.split("·")[1]?.split("{")[0].trim()`。
+- 字面量仅允许标注 `// i18n-ok` 豁免的三类:①后端日志语义(后台文案
   硬编码于 agent.ts 等,与字典同文不同源,如 `msg.includes("失败")`);
-  ②子串选择器(断言含 `{n}` 插值的文案片段,如 `aria-label*="已写入"`)。
-- 强制手段:`check-test-strings.mjs` 扫描全部测试脚本,任何与字典值逐字
-  相等的字面量即 FAIL;`run.mjs` 每次入口先跑它。写新测试先 import
+  ②子串选择器/源码硬编码前缀(与源码同文不同源);③测试种子与 mock
+  内容(非 UI 断言,如 seedSessions 的会话标题)。
+- 强制手段:`check-test-strings.mjs` 扫描全部测试脚本(双/单引号 +
+  模板串静态段),命中三类漂移形态即 FAIL——A 逐字等于字典值;
+  B 字面量(≥3 字)是字典值的子串;C 字面量以含占位符字典值的首段
+  开头(插值填参形态)。2026-09-17 反转升级:旧规则只抓逐字相等,
+  插值填参与子串绑定全部漏放,本次评审实锤后收口。豁免:行内
+  `i18n-ok`,以及 check/ok/assert/fail/console.log 第一参(断言标签与
+  诊断横幅是人读输出,不是 UI 断言)。已知局限:跨行模板串、正则
+  字面量不在扫描范围。`run.mjs` 每次入口先跑它;写新测试先 import
   lib-i18n;拿不准键名查 `src/shared/i18n/locales/zh-CN.ts`。
 
 ## e2e 底座

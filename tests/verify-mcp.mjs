@@ -507,7 +507,8 @@ console.log("\n===== T5. 设置页:开关/添加/工具清单/测试连接 =====
     .first()
     .textContent();
   check(
-    !!connState && connState.includes("已连接"),
+    !!connState &&
+      connState.includes(zh.settings.testOk.split("{")[0].trim()),
     "T5-2 测试连接显示成功与工具数",
     `状态文案:${connState}`,
   );

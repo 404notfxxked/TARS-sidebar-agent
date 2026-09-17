@@ -609,7 +609,7 @@ console.log("\n===== T5. 记忆页:添加/编辑/置顶/删除 =====");
   await sidepanel.locator('[role="menuitem"]').click();
   check(
     (await sidepanel.locator('[role="menuitem"]').textContent())?.includes(
-      "再点一次",
+      zh.memory.confirmClearAll,
     ) === true,
     "T5-6 清空首点进入确认态",
   );
@@ -630,8 +630,8 @@ console.log("\n===== T8. 回复尾轻提示 =====");
   await waitForRunLog(sidepanel, (e) => e.msg === "run ended", "run ended");
   const text = await uiText();
   check(
-    text.includes("已写入 1 条记忆"),
-    "T8-1 保存后渲染轻提示「已写入 1 条记忆」",
+    text.includes(zh.chat.memorySavedLabel.replace("{n}", "1")),
+    "T8-1 保存后渲染轻提示(整条键值填参)",
     text.slice(-200),
   );
 

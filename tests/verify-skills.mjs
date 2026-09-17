@@ -280,7 +280,7 @@ console.log("\n===== T2. / 菜单与 <skill> 注入 =====");
   await chatInput().fill("/zzz");
   await sidepanel.locator(".skill-pop-note").waitFor({ timeout: 3000 });
   check(
-    (await uiText()).includes("没有匹配"),
+    (await uiText()).includes(zh.skills.menuNoMatch.replace("{query}", "zzz")),
     "T2-3 无匹配提示",
   );
 
