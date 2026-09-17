@@ -24,6 +24,7 @@ const SUITES = {
   "web-search": "verify-web-search.mjs",
   vision: "verify-vision.mjs",
   cancel: "verify-cancel.mjs",
+  "llm-errors": "verify-llm-errors.mjs",
   interact: "verify-interact.mjs",
   confirm: "verify-confirm.mjs",
   layout: "probe-layout.mjs", // 契约 6 悬浮层硬规则的断言防线
