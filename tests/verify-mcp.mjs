@@ -18,11 +18,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import {
-  launchWithCdp,
-  waitForRunLog,
-  sse,
-} from "./lib-cdp-mock.mjs";
+import { answerSSE, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,37 +55,8 @@ const json = (ctx, status, obj, extraHeaders = {}) =>
 const llm = { mode: "normal" }; // normal | call-mcp | call-mcp-error
 let lastAgentBody = null;
 
-const answer = (ctx, text) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      { choices: [{ delta: { content: text } }] },
-      { choices: [{ delta: {}, finish_reason: "stop" }] },
-    ),
-  });
-const toolCall = (ctx, name, args) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      {
-        choices: [
-          {
-            delta: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id: `call_${Math.random().toString(36).slice(2, 8)}`,
-                  type: "function",
-                  function: { name, arguments: JSON.stringify(args) },
-                },
-              ],
-            },
-          },
-        ],
-      },
-      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
-    ),
-  });
+const answer = answerSSE;
+const toolCall = toolCallSSE;
 
 const { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
@@ -237,11 +204,7 @@ const sidepanel = await browser.newPage();
 await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await new Promise((r) => setTimeout(r, 1000));
 
-const failures = [];
-function check(ok, label, detail = "") {
-  console.log(ok ? "✅" : "❌", label, ok ? "" : `\n   ${detail}`);
-  if (!ok) failures.push(label);
-}
+const check = makeChecker();
 
 await sidepanel.evaluate(() =>
   chrome.storage.local.set({
@@ -285,23 +248,7 @@ const mcpOn = {
 };
 
 /** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error */
-const runAsk = (sessionId, text) =>
-  sidepanel.evaluate(
-    ({ sessionId, text }) =>
-      new Promise((resolve, reject) => {
-        const port = chrome.runtime.connect({ name: "agent-port" });
-        const timer = setTimeout(() => reject(new Error("run 超时")), 60000);
-        port.onMessage.addListener((msg) => {
-          if (msg.type === "agent_done" || msg.type === "agent_error") {
-            clearTimeout(timer);
-            port.disconnect();
-            resolve(msg);
-          }
-        });
-        port.postMessage({ type: "user_message", payload: { text, sessionId } });
-      }),
-    { sessionId, text },
-  );
+const runAsk = (sessionId, text) => runAskViaPort(sidepanel, sessionId, text);
 
 // ---- T1. 总开关关 ----
 console.log("\n===== T1. 总开关关:无 mcp_ 工具、零 MCP 请求 =====");
@@ -532,8 +479,8 @@ console.log("\n===== T5. 设置页:开关/添加/工具清单/测试连接 =====
 
 // ---- 汇总 ----
 console.log("\n========================================");
-if (failures.length > 0) {
-  console.log("❌ VERDICT: FAIL —", failures.join("; "));
+if (check.failures.length > 0) {
+  console.log("❌ VERDICT: FAIL —", check.failures.join("; "));
   await browser.close();
   process.exit(1);
 }

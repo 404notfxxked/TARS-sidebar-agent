@@ -160,6 +160,13 @@ export async function launchWithCdp({ extDir, userDataDir, proxy } = {}) {
                 : {}),
           }),
         pass: () => sendFn("Fetch.continueRequest", { requestId: params.requestId }),
+        // 网络层失败注入(TCP 断连/DNS 失败形态):请求根本拿不到响应,
+        // 客户端走 fetch reject 路径(区别于 fulfill 的 HTTP 状态码)
+        failNetwork: () =>
+          sendFn("Fetch.failRequest", {
+            requestId: params.requestId,
+            errorReason: "Failed", // i18n-ok CDP 协议常量(Fetch.failRequest 枚举值),非 UI 文案
+          }),
         delay: (ms) => new Promise((r) => setTimeout(r, ms)),
       };
       try {
@@ -443,3 +450,118 @@ export async function seedSessions(page, rows) {
     });
   }, rows);
 }
+
+/**
+ * 断言助手工厂:check(ok,label,detail) 累积 failures,套件末尾统一判退出码。
+ * 各 verify-* 的近逐字重复实现收敛于此(2026-09 评审 T10)。
+ * 未统一:verify-persist/verify-vision 的 check(name,cond) 参数序相反。
+ */
+export function makeChecker() {
+  const failures = [];
+  const check = (ok, label, detail = "") => {
+    console.log(ok ? "✅" : "❌", label, ok ? "" : `\n   ${detail}`);
+    if (!ok) failures.push(label);
+    return ok;
+  };
+  check.failures = failures;
+  return check;
+}
+
+/** 裸 port 发消息并等本轮 run 结束(不经 UI;多场景聚合的套件共用) */
+export function runAskViaPort(page, sessionId, text) {
+  return page.evaluate(
+    ({ sessionId, text }) =>
+      new Promise((resolve, reject) => {
+        const port = chrome.runtime.connect({ name: "agent-port" });
+        const timer = setTimeout(() => reject(new Error("run 超时")), 60000);
+        port.onMessage.addListener((msg) => {
+          if (msg.type === "agent_done" || msg.type === "agent_error") {
+            clearTimeout(timer);
+            port.disconnect();
+            resolve(msg);
+          }
+        });
+        port.postMessage({ type: "user_message", payload: { text, sessionId } });
+      }),
+    { sessionId, text },
+  );
+}
+
+/** 读 tars 库某 store 全部行(断言落库用);store 不存在会抛,种子先行 */
+export function idbGetAll(page, store) {
+  return page.evaluate(
+    (store) =>
+      new Promise((done, fail) => {
+        const req = indexedDB.open("tars");
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction(store, "readonly");
+          const q = tx.objectStore(store).getAll();
+          q.onsuccess = () => {
+            db.close();
+            done(q.result);
+          };
+          q.onerror = () => fail(q.error);
+        };
+        req.onerror = () => fail(req.error);
+      }),
+    store,
+  );
+}
+
+/** 读 tars 库某 store 单行(按键) */
+export function idbGet(page, store, key) {
+  return page.evaluate(
+    ({ store, key }) =>
+      new Promise((done, fail) => {
+        const req = indexedDB.open("tars");
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction(store, "readonly");
+          const q = tx.objectStore(store).get(key);
+          q.onsuccess = () => {
+            db.close();
+            done(q.result);
+          };
+          q.onerror = () => fail(q.error);
+        };
+        req.onerror = () => fail(req.error);
+      }),
+    { store, key },
+  );
+}
+
+/** LLM 端点 SSE 应答:一条纯文本回答 + 指定 finish_reason(默认 stop) */
+export const answerSSE = (ctx, text, { finish = "stop" } = {}) =>
+  ctx.fulfill({
+    headers: { "Content-Type": "text/event-stream" },
+    body: sse(
+      { choices: [{ delta: { content: text } }] },
+      { choices: [{ delta: {}, finish_reason: finish }] },
+    ),
+  });
+
+/** LLM 端点 SSE 应答:一次工具调用(随机 call id)+ tool_calls 收尾 */
+export const toolCallSSE = (ctx, name, args) =>
+  ctx.fulfill({
+    headers: { "Content-Type": "text/event-stream" },
+    body: sse(
+      {
+        choices: [
+          {
+            delta: {
+              role: "assistant",
+              tool_calls: [
+                {
+                  id: `call_${Math.random().toString(36).slice(2, 8)}`,
+                  type: "function",
+                  function: { name, arguments: JSON.stringify(args) },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+    ),
+  });

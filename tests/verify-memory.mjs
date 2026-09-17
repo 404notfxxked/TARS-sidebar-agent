@@ -19,12 +19,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import {
-  launchWithCdp,
-  ask,
-  waitForRunLog,
-  sse,
-} from "./lib-cdp-mock.mjs";
+import { answerSSE, ask, idbGet, idbGetAll, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh, en } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -40,37 +35,8 @@ let lastAgentBody = null;
 /** replaceOf 的目标条目 id(T9 种入后设置) */
 let replaceTargetId = null;
 
-const answer = (ctx, text) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      { choices: [{ delta: { content: text } }] },
-      { choices: [{ delta: {}, finish_reason: "stop" }] },
-    ),
-  });
-const toolCall = (ctx, name, args) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      {
-        choices: [
-          {
-            delta: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id: `call_${Math.random().toString(36).slice(2, 8)}`,
-                  type: "function",
-                  function: { name, arguments: JSON.stringify(args) },
-                },
-              ],
-            },
-          },
-        ],
-      },
-      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
-    ),
-  });
+const answer = answerSSE;
+const toolCall = toolCallSSE;
 
 const { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
@@ -148,11 +114,7 @@ const sidepanel = await browser.newPage();
 await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await new Promise((r) => setTimeout(r, 1000));
 
-const failures = [];
-function check(ok, label, detail = "") {
-  console.log(ok ? "✅" : "❌", label, ok ? "" : `\n   ${detail}`);
-  if (!ok) failures.push(label);
-}
+const check = makeChecker();
 const uiText = () => sidepanel.locator("body").innerText();
 
 /** 模型配置(新 providers schema;SW 每次 run 现读) */
@@ -203,44 +165,10 @@ async function seedMemory(text, { pinned = false, ageMs = 0, id } = {}) {
 }
 
 /** 读全部记忆行 */
-const readMemories = () =>
-  sidepanel.evaluate(
-    () =>
-      new Promise((done, fail) => {
-        const req = indexedDB.open("tars");
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("memories", "readonly");
-          const q = tx.objectStore("memories").getAll();
-          q.onsuccess = () => {
-            db.close();
-            done(q.result);
-          };
-          q.onerror = () => fail(q.error);
-        };
-        req.onerror = () => fail(req.error);
-      }),
-  );
+const readMemories = () => idbGetAll(sidepanel, "memories");
 
 /** 读单个会话行(标题回归断言用) */
-const readSession = (sessionId) =>
-  sidepanel.evaluate(
-    (sessionId) =>
-      new Promise((done, fail) => {
-        const req = indexedDB.open("tars");
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("sessions", "readonly");
-          const q = tx.objectStore("sessions").get(sessionId);
-          q.onsuccess = () => {
-            db.close();
-            done(q.result);
-          };
-          q.onerror = () => fail(q.error);
-        };
-      }),
-    sessionId,
-  );
+const readSession = (sessionId) => idbGet(sidepanel, "sessions", sessionId);
 
 /** 读某会话消息行(虚拟注入断言用) */
 const readRows = (sessionId) =>
@@ -266,23 +194,7 @@ const readRows = (sessionId) =>
   );
 
 /** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error */
-const runAsk = (sessionId, text) =>
-  sidepanel.evaluate(
-    ({ sessionId, text }) =>
-      new Promise((resolve, reject) => {
-        const port = chrome.runtime.connect({ name: "agent-port" });
-        const timer = setTimeout(() => reject(new Error("run 超时")), 60000);
-        port.onMessage.addListener((msg) => {
-          if (msg.type === "agent_done" || msg.type === "agent_error") {
-            clearTimeout(timer);
-            port.disconnect();
-            resolve(msg);
-          }
-        });
-        port.postMessage({ type: "user_message", payload: { text, sessionId } });
-      }),
-    { sessionId, text },
-  );
+const runAsk = (sessionId, text) => runAskViaPort(sidepanel, sessionId, text);
 
 const setMemoryFlag = (on) =>
   sidepanel.evaluate((on) => chrome.storage.local.set({ memory: on }), on);
@@ -643,8 +555,8 @@ console.log("\n===== T8. 回复尾轻提示 =====");
 
 // ---- 汇总 ----
 console.log("\n========================================");
-if (failures.length > 0) {
-  console.log("❌ VERDICT: FAIL —", failures.join("; "));
+if (check.failures.length > 0) {
+  console.log("❌ VERDICT: FAIL —", check.failures.join("; "));
   await browser.close();
   process.exit(1);
 }

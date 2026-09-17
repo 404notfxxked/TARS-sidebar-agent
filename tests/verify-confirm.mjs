@@ -11,12 +11,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import {
-  launchWithCdp,
-  injectTestConfig,
-  readRunLogs,
-  sse,
-} from "./lib-cdp-mock.mjs";
+import { injectTestConfig, launchWithCdp, makeChecker, readRunLogs, sse } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -99,17 +94,8 @@ const denyBtn = `button[aria-label="${zh.chat.confirmDeny}"]`;
 const allowBtn = `button[aria-label="${zh.chat.confirmAllow}"]`;
 const card = '[role="alertdialog"]';
 
-let passCount = 0;
-let failCount = 0;
-const assert = (name, cond, detail = "") => {
-  if (cond) {
-    passCount++;
-    console.log(`  ✅ ${name}`);
-  } else {
-    failCount++;
-    console.log(`  ❌ ${name} ${detail}`);
-  }
-};
+const checker = makeChecker();
+const assert = (name, cond, detail = "") => checker(cond, `  ${name}`, detail);
 
 /** 发消息但不等 run 结束(确认门会让 run 挂起等答复) */
 async function sendOnly(text) {
@@ -126,8 +112,10 @@ const findToolLog = (entries, msgRe) =>
     (e) => `${e.ctx}/${e.tag}` === "bg/tool" && msgRe.test(e.msg),
   );
 
+let scene = null;
 try {
   // ---- 场景 1:默认开启 + 拒绝 ----
+  scene = "C1/C2 确认卡与拒绝";
   console.log("\n── C1/C2 确认卡与拒绝 ──");
   await sendOnly("帮我在搜索框填写内容并提交");
   await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
@@ -158,6 +146,7 @@ try {
   assert("面板记录拒绝答复", answered1);
 
   // ---- 场景 2:允许 ----
+  scene = "C3 允许放行";
   console.log("\n── C3 允许放行 ──");
   await sendOnly("再填一次");
   await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
@@ -189,6 +178,7 @@ try {
   }
 
   // ---- 场景 3:设置页开关存在(安全分节渲染) ----
+  scene = "安全分节";
   console.log("\n── 安全分节 ──");
   await sidepanel.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();
   await sidepanel
@@ -198,11 +188,12 @@ try {
     .waitFor({ timeout: 10000 });
   assert("设置页出现「安全」分节与确认开关", true);
 } catch (err) {
-  failCount++;
-  console.log("  ❌ 用例执行异常:", err.message);
+  // 场景名 + 完整堆栈:失败要能定位到哪个场景哪一行,而不是折成一个匿名红点
+  checker(false, `场景「${scene ?? "初始化"}」执行异常`, err.stack ?? String(err));
 } finally {
   await browser.close();
 }
 
-console.log(`\n结果:${passCount} 通过,${failCount} 失败`);
-process.exit(failCount > 0 ? 1 : 0);
+const passCount = checker.failures.length;
+console.log(`\n结果:异常断言 ${passCount} 条`);
+process.exit(passCount > 0 ? 1 : 0);

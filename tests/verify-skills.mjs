@@ -15,12 +15,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import {
-  launchWithCdp,
-  injectTestConfig,
-  waitForRunLog,
-  sse,
-} from "./lib-cdp-mock.mjs";
+import { injectTestConfig, launchWithCdp, makeChecker, runAskViaPort, sse, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -88,11 +83,7 @@ const sidepanel = await browser.newPage();
 await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await new Promise((r) => setTimeout(r, 1000));
 
-const failures = [];
-function check(ok, label, detail = "") {
-  console.log(ok ? "✅" : "❌", label, ok ? "" : `\n   ${detail}`);
-  if (!ok) failures.push(label);
-}
+const check = makeChecker();
 const uiText = () => sidepanel.locator("body").innerText();
 const chatInput = () => sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
 
@@ -119,23 +110,7 @@ const readSkills = () =>
   );
 
 /** 裸 port 跑一次 run(不经 UI) */
-const runAsk = (sessionId, text) =>
-  sidepanel.evaluate(
-    ({ sessionId, text }) =>
-      new Promise((resolve, reject) => {
-        const port = chrome.runtime.connect({ name: "agent-port" });
-        const timer = setTimeout(() => reject(new Error("run 超时")), 60000);
-        port.onMessage.addListener((msg) => {
-          if (msg.type === "agent_done" || msg.type === "agent_error") {
-            clearTimeout(timer);
-            port.disconnect();
-            resolve(msg);
-          }
-        });
-        port.postMessage({ type: "user_message", payload: { text, sessionId } });
-      }),
-    { sessionId, text },
-  );
+const runAsk = (sessionId, text) => runAskViaPort(sidepanel, sessionId, text);
 
 /** 裸 port 拉历史投影(LOAD_HISTORY → ChatRecord[]) */
 const loadHistory = (sessionId) =>
@@ -495,8 +470,8 @@ console.log("\n===== T8. 删除技能 =====");
 
 // ---- 汇总 ----
 console.log("\n========================================");
-if (failures.length > 0) {
-  console.log("❌ VERDICT: FAIL —", failures.join("; "));
+if (check.failures.length > 0) {
+  console.log("❌ VERDICT: FAIL —", check.failures.join("; "));
   await browser.close();
   process.exit(1);
 }
