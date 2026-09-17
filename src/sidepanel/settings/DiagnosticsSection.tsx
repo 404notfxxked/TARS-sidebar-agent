@@ -1,17 +1,16 @@
-// 设置页「诊断」分节:运行日志条数 + 复制/下载 JSONL + 清空(两段确认)。
-// 日志是排查问题的出口:下载后放进项目 .logs/ 目录给 TARS 分析。
+// 设置页「诊断」分节(极简形态):运行日志条数 + 复制/下载两个导出入口。
+// 面向普通用户:出问题时把日志随问题描述一并发出去;开发者自己排查走
+// DevTools console(logger 双写),不依赖这套 UI。
 
 import { useEffect, useState } from "react";
-import { clearAllLogs, readAllLogEntries, toJsonl } from "../../shared/logger";
-import { useConfirmReset, useCopyFlash, useT } from "../ui/hooks";
+import { readAllLogEntries, toJsonl } from "../../shared/logger";
+import { useCopyFlash, useT } from "../ui/hooks";
 import { SettingsSection } from "./parts";
 
 export default function DiagnosticsSection() {
   const t = useT();
   const [logCount, setLogCount] = useState<number | null>(null);
   const [copied, copyLogs] = useCopyFlash();
-  const [confirmClearLogs, armConfirmClearLogs, resetConfirmClearLogs] =
-    useConfirmReset<true>();
 
   useEffect(() => {
     readAllLogEntries()
@@ -33,17 +32,6 @@ export default function DiagnosticsSection() {
       .replace(/[:T]/g, "-")}.jsonl`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  // 清空与记忆/历史的两段确认同款(危险动作不单击直发)
-  const clearLogs = async () => {
-    if (!confirmClearLogs) {
-      armConfirmClearLogs(true);
-      return;
-    }
-    resetConfirmClearLogs();
-    await clearAllLogs();
-    setLogCount(0);
   };
 
   return (
@@ -69,13 +57,6 @@ export default function DiagnosticsSection() {
           </button>
           <button type="button" onClick={downloadLogs} className="btn-text">
             {t("settings.downloadLogs")}
-          </button>
-          <button
-            type="button"
-            onClick={clearLogs}
-            className="btn-text danger"
-          >
-            {confirmClearLogs ? t("common.confirmClear") : t("settings.clearLogs")}
           </button>
         </div>
       </SettingsSection>

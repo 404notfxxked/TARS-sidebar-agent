@@ -379,10 +379,9 @@ export const enUS = {
     // Diagnostics
     logs: "Runtime logs",
     logsUnit: "{n} entries",
-    copyJsonl: "Copy JSONL",
+    copyJsonl: "Copy logs",
     downloadLogs: "Download logs",
-    clearLogs: "Clear",
     diagFooter:
-      'Keeps the most recent 400 log and error entries per environment. To investigate an issue, click "Download logs" and place the file in the project\'s .logs/ directory for TARS to read and analyze.',
+      'Logs are stored only on this device (up to 400 entries per context). If something goes wrong, click "Copy logs" or "Download logs" and include them with your problem report.',
   },
 } as const satisfies Dict;

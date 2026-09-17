@@ -372,10 +372,9 @@ export const zhCN = {
     // 诊断
     logs: "运行日志",
     logsUnit: "{n} 条",
-    copyJsonl: "复制 JSONL",
+    copyJsonl: "复制日志",
     downloadLogs: "下载日志",
-    clearLogs: "清空",
     diagFooter:
-      "记录各环境最近 400 条执行日志与报错。排查问题时点击「下载日志」，把文件放入项目 .logs/ 目录，TARS 即可读取分析。",
+      "日志只保存在本机（每类最多 400 条）。出问题时点「复制日志」或「下载日志」，把内容随问题描述一并提供，方便定位原因。",
   },
 } as const;

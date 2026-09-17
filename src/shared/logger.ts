@@ -195,9 +195,3 @@ export async function readAllLogEntries(): Promise<LogEntry[]> {
 export function toJsonl(entries: LogEntry[]): string {
   return entries.map((e) => JSON.stringify(e)).join("\n");
 }
-
-export async function clearAllLogs(): Promise<void> {
-  const bag = await chrome.storage.local.get(null);
-  const keys = Object.keys(bag).filter((k) => k.startsWith("log:"));
-  if (keys.length > 0) await chrome.storage.local.remove(keys);
-}
