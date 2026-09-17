@@ -90,6 +90,24 @@ async function main() {
   assert("link 原样保留", norm2 === "link", `(got ${norm2})`);
   assert("未知角色 → null", norm3 === null, `(got ${norm3})`);
 
+  // 闭集逐值直行守卫:role 参数 schema enum 的 9 个值必须全部可归一——
+  // 报错文案/结果字段/schema enum 都用这套词,别名表漏直行就会出现
+  // 「报错说支持 input、传 input 却被拒」的自相矛盾(2026-09-17 真机踩中)
+  const CLOSED_SET = [
+    "button", "link", "input", "checkbox", "radio",
+    "switch", "select", "textarea", "contenteditable",
+  ];
+  const normClosed = await page.evaluate(
+    (roles) => roles.map((r) => window.__interact.normalizeRole(r)),
+    CLOSED_SET,
+  );
+  const broken = CLOSED_SET.filter((r, i) => normClosed[i] !== r);
+  assert(
+    "闭集 9 值逐一直行(报错文案承诺=校验现实)",
+    broken.length === 0,
+    `(不直行:${broken.join(",")})`,
+  );
+
   console.log("\n── findInteractive ──");
   const all = await page.evaluate(() => window.__interact.findInteractive(document, {}));
   assert("默认查找含按钮/链接/输入/select/textarea/checkbox", all.count >= 6, `(count=${all.count})`);

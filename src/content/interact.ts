@@ -130,25 +130,31 @@ function buildSelector(el: Element): string {
   return path.join(" > ");
 }
 
-// role 别名表:把页面常见的冗余 role 归一到闭集,减少模型要处理的枚举
+// role 归一表:页面冗余 role 属性归一到闭集,同时是 find_elements 的
+// role 过滤参数校验表——模型会回显结果字段里的 role 值来查询,所以闭集
+// 本身必须逐值可直行(下面前 9 行),ARIA 别名只是额外便利;否则就会出现
+// 「报错说支持 input、传 input 却被拒」的自相矛盾(2026-09-17 真机踩中)
 const ROLE_ALIAS: Record<string, RoleName> = {
   button: "button",
   link: "link",
+  input: "input",
+  checkbox: "checkbox",
+  radio: "radio",
+  switch: "switch",
+  select: "select",
+  textarea: "textarea",
+  contenteditable: "contenteditable",
   textbox: "input",
   searchbox: "input",
   combobox: "select",
   listbox: "select",
   slider: "input",
   spinbutton: "input",
-  checkbox: "checkbox",
-  radio: "radio",
-  switch: "switch",
   menuitem: "button",
   menuitemcheckbox: "checkbox",
   menuitemradio: "radio",
   tab: "button",
   option: "select",
-  textarea: "textarea",
 };
 
 /** 参数字符串 → RoleName 闭集(用于 find_elements 的 role 过滤参数校验)。无效返回 null。 */
