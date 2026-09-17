@@ -50,8 +50,15 @@ export interface ModelEntry {
   /** maxTokens 的请求字段名;缺省按模型名推断(见 inferMaxTokensField),仅 OpenAI
    *  推理模型等不认 max_tokens 的端点需要手动改 */
   maxTokensField?: "max_tokens" | "max_completion_tokens";
-  // 未来规划:推理模型标记。各家请求参数碎片化(reasoning_effort / enable_thinking /
-  // thinking.type / chat_template_kwargs),没有可移植语义,暂不引入
+  /** 推理(思考)模型标记,当前是纯元数据:预填(models.dev 目录 / id 启发式,
+   *  见 shared/modelCatalog 三层判定)+ 运行时观测回写 + 手动纠正。本字段
+   *  同时是总开关:true 时聊天输入行才显示思考程度选择器、请求才携带思考参数 */
+  reasoning?: boolean;
+  /** 思考程度(undefined = 跟随模型默认,不发参数):"off" = 请求关思考,
+   *  其余为目录档位 token(low/medium/high/xhigh/max…),wire 映射见
+   *  openai.ts thinkingParam(档位直传 reasoning_effort,off 按家族分派)。
+   *  仅在 reasoning 为 true 时由 agent 门控发送 */
+  reasoningEffort?: string;
 }
 
 /** 模型服务供应商:一份 OpenAI 兼容端点配置 + 它自己的模型列表 */
@@ -346,4 +353,19 @@ export async function savePrefs(
   >,
 ): Promise<void> {
   await chrome.storage.local.set(prefs);
+}
+
+/** 运行时观测回写(能力判定第 3 层):该模型真吐过推理内容而条目尚未标记
+ *  → 置位 true。只置位不撤销(不覆盖目录/手动的显式 false);供应商或模型
+ *  引用失效静默跳过。与设置页并发保存的竞态窗口极小且幂等,接受最后写入胜 */
+export async function markReasoningObserved(
+  providerId: string,
+  modelId: string,
+): Promise<void> {
+  const cfg = await loadConfig();
+  const p = cfg.providers.find((x) => x.id === providerId);
+  const m = p?.models.find((x) => x.id === modelId);
+  if (!p || !m || m.reasoning !== undefined) return;
+  m.reasoning = true;
+  await savePrefs({ providers: cfg.providers });
 }
