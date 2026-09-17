@@ -3,18 +3,29 @@
 # checks.yml 头注,这里只讲本文件独有的东西。
 #
 # 与 checks 的分工:e2e 要起 headful(带界面)浏览器跑真扩展流,单次约
-# 10 分钟——不适合每次 push 都跑。所以 on 里没有任何 push/PR 触发器,
-# 只留 workflow_dispatch(手动触发:仓库页 → Actions → 左侧选 e2e →
-# Run workflow),inputs 会变成页面上让你填的表单。
+# 10 分钟——不适合每次 push 都跑。触发器两个:
+#   ① workflow_dispatch 手动(仓库页 → Actions → 左侧选 e2e → Run
+#      workflow),inputs 会变成页面上让你填的表单;
+#   ② schedule nightly(UTC 19:00 = 北京 03:00,低峰时段)——慢套件纯
+#      手动意味着坏了要等下次想起来跑才发现,夜间全量让断裂最长 24h
+#      内暴露;失败时自动开 issue(见末尾 step),手动跑不开免得刷屏。
 name: e2e
 
 on:
+  schedule:
+    # 每天 UTC 19:00(北京 03:00);GitHub schedule 用的是 UTC,不是本地时区
+    - cron: "0 19 * * *"
   workflow_dispatch:
     inputs:
       domain:
         description: "要跑的域(run.mjs 域名,如 memory / web-search;留空 = 全量 --all)"
         required: false
         default: ""
+
+# nightly 失败自动开 issue 需要 issues 写权限
+permissions:
+  issues: write
+  contents: read
 
 jobs:
   e2e:
@@ -74,3 +85,23 @@ jobs:
           name: tars-m3-shots
           path: /tmp/tars-m3
           if-no-files-found: ignore
+
+      # nightly 失败自动开 issue:断裂在 24h 内暴露还要有人被通知才算数。
+      # 只在 schedule 触发的失败时开(手动跑失败是开发者本人在场,自己看);
+      # 已有未关闭的同名 issue 就跳过(--search),避免 nightly 连坏多日刷屏。
+      - name: Open issue on nightly failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="e2e nightly 失败:$(date -u +%F) run #${{ github.run_id }}"
+          EXISTS=$(gh issue list --state open --search "e2e nightly 失败" --json number --jq length)
+          if [ "$EXISTS" -gt 0 ]; then
+            echo "已有未关闭的 nightly 失败 issue,跳过新建"
+            exit 0
+          fi
+          gh issue create \
+            --title "$TITLE" \
+            --body "夜间全量 e2e 失败。运行详情:${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          截图 artifact 在该 run 页面底部(tars-m3-shots)。先看汇总里哪个域红,再按域本地复跑:
+          \`xvfb-run -a node tests/run.mjs <域>\`"

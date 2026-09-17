@@ -25,6 +25,7 @@ const SUITES = {
   vision: "verify-vision.mjs",
   screenshot: "verify-screenshot.mjs",
   cancel: "verify-cancel.mjs",
+  "llm-errors": "verify-llm-errors.mjs",
   interact: "verify-interact.mjs",
   confirm: "verify-confirm.mjs",
   layout: "probe-layout.mjs", // 契约 6 悬浮层硬规则的断言防线
@@ -92,6 +93,9 @@ if (newestSrc > distMtime) {
 }
 
 // ---- 顺序执行 ----
+// 单套件保险丝:浏览器僵死/WS 挂住时不至于无限等(本地没有 CI job 级
+// 45min 熔断)。默认 15 分钟,可用 RUN_SUITE_TIMEOUT_MS 覆盖。
+const SUITE_TIMEOUT_MS = Number(process.env.RUN_SUITE_TIMEOUT_MS ?? 15 * 60_000);
 const results = [];
 for (const domain of asked) {
   const script = SUITES[domain];
@@ -99,10 +103,16 @@ for (const domain of asked) {
   const startedAt = Date.now();
   const r = spawnSync("node", [join(__dirname, script)], {
     stdio: "inherit",
+    timeout: SUITE_TIMEOUT_MS,
+    killSignal: "SIGKILL",
   });
+  const timedOut = r.signal === "SIGKILL";
+  if (timedOut) {
+    console.error(`\n⏱️ ${domain} 超过 ${SUITE_TIMEOUT_MS / 1000}s 被强杀(疑似挂死),记 FAIL`);
+  }
   results.push({
     domain,
-    ok: r.status === 0,
+    ok: r.status === 0 && !timedOut,
     seconds: ((Date.now() - startedAt) / 1000).toFixed(1),
   });
 }

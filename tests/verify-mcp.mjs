@@ -18,11 +18,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import {
-  launchWithCdp,
-  waitForRunLog,
-  sse,
-} from "./lib-cdp-mock.mjs";
+import { answerSSE, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,37 +55,8 @@ const json = (ctx, status, obj, extraHeaders = {}) =>
 const llm = { mode: "normal" }; // normal | call-mcp | call-mcp-error
 let lastAgentBody = null;
 
-const answer = (ctx, text) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      { choices: [{ delta: { content: text } }] },
-      { choices: [{ delta: {}, finish_reason: "stop" }] },
-    ),
-  });
-const toolCall = (ctx, name, args) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      {
-        choices: [
-          {
-            delta: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id: `call_${Math.random().toString(36).slice(2, 8)}`,
-                  type: "function",
-                  function: { name, arguments: JSON.stringify(args) },
-                },
-              ],
-            },
-          },
-        ],
-      },
-      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
-    ),
-  });
+const answer = answerSSE;
+const toolCall = toolCallSSE;
 
 const { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
@@ -237,11 +204,7 @@ const sidepanel = await browser.newPage();
 await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await new Promise((r) => setTimeout(r, 1000));
 
-const failures = [];
-function check(ok, label, detail = "") {
-  console.log(ok ? "✅" : "❌", label, ok ? "" : `\n   ${detail}`);
-  if (!ok) failures.push(label);
-}
+const check = makeChecker();
 
 await sidepanel.evaluate(() =>
   chrome.storage.local.set({
@@ -285,23 +248,7 @@ const mcpOn = {
 };
 
 /** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error */
-const runAsk = (sessionId, text) =>
-  sidepanel.evaluate(
-    ({ sessionId, text }) =>
-      new Promise((resolve, reject) => {
-        const port = chrome.runtime.connect({ name: "agent-port" });
-        const timer = setTimeout(() => reject(new Error("run 超时")), 60000);
-        port.onMessage.addListener((msg) => {
-          if (msg.type === "agent_done" || msg.type === "agent_error") {
-            clearTimeout(timer);
-            port.disconnect();
-            resolve(msg);
-          }
-        });
-        port.postMessage({ type: "user_message", payload: { text, sessionId } });
-      }),
-    { sessionId, text },
-  );
+const runAsk = (sessionId, text) => runAskViaPort(sidepanel, sessionId, text);
 
 // ---- T1. 总开关关 ----
 console.log("\n===== T1. 总开关关:无 mcp_ 工具、零 MCP 请求 =====");
@@ -339,7 +286,7 @@ await setMcp(mcpOn);
 
   // 工具执行结果回填(log/tool 完成事件的 data 里带结果原文)
   try {
-    await waitForRunLog(
+    const logs = await waitForRunLog(
       sidepanel,
       (e) =>
         e.tag === "tool" &&
@@ -348,7 +295,11 @@ await setMcp(mcpOn);
       "mcp 工具结果日志",
       15000,
     );
-    check(true, "T2-3 tools/call 结果回填给模型");
+    check(
+      logs.some((e) => e.tag === "tool" && e.msg === `${WIRE_GET_ISSUE} 完成`),
+      "T2-3 tools/call 结果回填给模型",
+      `run 日志 ${logs.length} 条,未见 tool 完成事件`,
+    );
   } catch (err) {
     console.log("DEBUG 日志转储:\n", err.message);
     check(false, "T2-3 tools/call 结果回填给模型", "日志未找到");
@@ -488,12 +439,26 @@ console.log("\n===== T5. 设置页:开关/添加/工具清单/测试连接 =====
   await urlInput.fill(MODERN_URL);
   // 失焦落盘并触发工具清单拉取
   await urlInput.blur();
-  await sidepanel.locator('p:has-text("get_issue")').waitFor({ timeout: 15000 });
-  check(true, "T5-1 展开态自动拉取并展示工具清单");
+  const toolRow = sidepanel.locator('p:has-text("get_issue")');
+  await toolRow.waitFor({ timeout: 15000 });
+  const toolText = (await toolRow.first().textContent()) ?? "";
+  check(
+    toolText.includes("get_issue"),
+    "T5-1 展开态自动拉取并展示工具清单",
+    `渲染内容:${toolText}`,
+  );
 
   await sidepanel.locator(`button:has-text("${zh.settings.testConnection}")`).click();
-  await sidepanel.locator('span:has-text("已连接")').waitFor({ timeout: 15000 });
-  check(true, "T5-2 测试连接显示成功与工具数");
+  const connState = await sidepanel
+    .locator('span:has-text("已连接")')
+    .first()
+    .textContent();
+  check(
+    !!connState &&
+      connState.includes(zh.settings.testOk.split("{")[0].trim()),
+    "T5-2 测试连接显示成功与工具数",
+    `状态文案:${connState}`,
+  );
 
   // 落盘校验:storage 里 mcp 配置完整
   const saved = await sidepanel.evaluate(
@@ -514,8 +479,8 @@ console.log("\n===== T5. 设置页:开关/添加/工具清单/测试连接 =====
 
 // ---- 汇总 ----
 console.log("\n========================================");
-if (failures.length > 0) {
-  console.log("❌ VERDICT: FAIL —", failures.join("; "));
+if (check.failures.length > 0) {
+  console.log("❌ VERDICT: FAIL —", check.failures.join("; "));
   await browser.close();
   process.exit(1);
 }

@@ -13,7 +13,7 @@
 [![chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/develop/mv3/mv3-migration)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-<!-- TODO(release-plan 阶段 1)：补演示 GIF / 截图；Releases 挂 dist zip 后在快速开始加下载入口 -->
+<!-- TODO: 补演示 GIF / 截图 -->
 
 </div>
 
@@ -45,7 +45,17 @@ TARS 没有后端，谈不上「上传」：
 - 打开联网搜索后，搜索词会发给搜索引擎（或你配置的搜索服务）；启用 MCP 工具后，相关请求内容会发给对应服务器——两类能力都默认关闭、开启时界面明示
 - 源码即声明：一切请求路径都可以在代码里直接验证
 
-## 🚀 快速开始
+## 📦 安装
+
+**方式一：下载安装包**
+
+1. 到 [Releases](https://github.com/404notfxxked/TARS-sidebar-agent/releases) 下载最新版的 zip 并解压（解压得到一个含 `manifest.json` 的文件夹）
+2. 打开 `chrome://extensions`，开启右上角「开发者模式」
+3. 点「加载已解压的扩展程序」，选择解压出的文件夹
+4. 点工具栏图标打开侧栏，在设置里填入 Base URL 与 API Key（例如 `https://api.deepseek.com/v1`）
+5. 想让它读页面 / 联网 / 操作网页：到 设置 → 安全 点「授权页面与网络访问」；不需要读页问答的话，跳过这步也能正常聊天
+
+**方式二：从源码构建**
 
 要求 Node ≥ 20、pnpm ≥ 10。
 
@@ -56,10 +66,7 @@ pnpm install
 pnpm build        # 产物输出到 dist/
 ```
 
-1. 打开 `chrome://extensions`，开启右上角「开发者模式」
-2. 点「加载已解压的扩展程序」，选择本项目的 `dist/`
-3. 点工具栏图标打开侧栏，在设置里填入 Base URL 与 API Key（例如 `https://api.deepseek.com/v1`）
-4. 想让它读页面 / 联网 / 操作网页：到 设置 → 安全 点「授权页面与网络访问」；不需要读页问答的话，跳过这步也能正常聊天
+然后同方式一的第 2~5 步（第 3 步选择 `dist/` 目录）。
 
 「联网搜索」默认关闭：开启后默认走免 Key 抓取通道（质量随网络出口浮动），也可在设置里改选搜索服务并填入对应的 API Key。关闭状态下 TARS 只读当前页面，不发出任何联网请求。
 
@@ -94,12 +101,9 @@ MV3 的 service worker 没有 DOM 且随时休眠——解析放进 offscreen do
 - **确定性 E2E**：CDP Fetch 层拦截扩展上下文的真实网络请求，mock LLM 按脚本驱动真循环、断言锚定日志与实库；纯逻辑另有 vitest 单测层。跑法：`pnpm test`（单测）、`node tests/run.mjs <域>`（E2E 按域，明细见 [tests/README.md](tests/README.md)）
 - **无 UI 组件库**：Material 3 配色由单一源色生成，深浅色 × 8 套重点色共用一套设计令牌
 
-## 🗺 路线
+## 🤝 贡献
 
-- [ ] page_screenshot 视觉回传（让 agent 看见它操作的页面）
-- [ ] PDF 读取
-- [ ] 技能脚本（`scripts/`）执行
-- [ ] Chrome Web Store 上架（条件触发）
+问题与建议欢迎提 [Issues](https://github.com/404notfxxked/TARS-sidebar-agent/issues)。想动代码的话，先读 [AGENTS.md](AGENTS.md)（开发约定）与 [tests/README.md](tests/README.md)（测试地图），提交前跑通门禁：`pnpm lint && pnpm typecheck && pnpm test && pnpm build`。
 
 ## 📄 License
 

@@ -11,7 +11,7 @@ import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
-const USER_DATA_DIR = "/tmp/verify-quote-profile";
+const USER_DATA_DIR = "/tmp/probe-quote-profile";
 const OUT = "/tmp/tars-quote";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

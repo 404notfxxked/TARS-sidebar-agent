@@ -43,7 +43,7 @@ await seedSessions(
   page,
   Array.from({ length: 24 }, (_, i) => ({
     id: `s-${i}`,
-    title: `历史会话 ${i + 1}号`,
+    title: `历史会话 ${i + 1}号`, // i18n-ok 测试种子标题,非 UI 断言
     at: Date.now() - (i + 1) * DAY,
   })),
 );

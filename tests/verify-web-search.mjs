@@ -23,13 +23,7 @@
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import {
-  launchWithCdp,
-  injectTestConfig,
-  waitForRunLog,
-  ask,
-  sse,
-} from "./lib-cdp-mock.mjs";
+import { ask, injectTestConfig, launchWithCdp, makeChecker, sse, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -268,11 +262,7 @@ await sidepanel.reload();
 await new Promise((r) => setTimeout(r, 1500));
 
 const uiText = () => sidepanel.evaluate(() => document.body.innerText);
-const failures = [];
-function check(ok, label, detail = "") {
-  console.log(ok ? "✅" : "❌", label, ok ? "" : `\n   ${detail}`);
-  if (!ok) failures.push(label);
-}
+const check = makeChecker();
 async function toolLogs(name) {
   const logs = await waitForRunLog(sidepanel,
     (e) => e.tag === "tool" && e.msg.includes(`${name} 完成`), `${name} 完成`);
@@ -651,8 +641,8 @@ chain = [];
 
 // ---- 汇总 ----
 console.log("\n========================================");
-if (failures.length > 0) {
-  console.log("❌ VERDICT: FAIL —", failures.join("; "));
+if (check.failures.length > 0) {
+  console.log("❌ VERDICT: FAIL —", check.failures.join("; "));
   await browser.close();
   process.exit(1);
 }

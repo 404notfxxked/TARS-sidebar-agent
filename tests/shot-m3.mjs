@@ -1,12 +1,13 @@
 // M3 视觉验收脚本(非断言型:截图 + 少量回归检查;原 shot-accents /
-// probe-memory-ui / probe-mcp-ui 已并入,2026-09)
+// probe-memory-ui / probe-mcp-ui / probe-hints 已并入,2026-09)
 // 用法: pnpm build && node tests/shot-m3.mjs          # 全量:深浅色 × 对话/设置/历史/记忆/MCP + 模型弹层
 //       pnpm build && node tests/shot-m3.mjs --accents # 只跑 8 套重点色试色(对话+设置,浅色)
+//       pnpm build && node tests/shot-m3.mjs --hints   # 只跑提示分层留档(ⓘ 悬停/了解详情,中英)
 // 回归: 一轮真实 mock 对话(含 web_search 工具调用)驱动 气泡/markdown/过程卡 渲染,
 //       期间收集 pageerror/console error,结束时汇总。
 // 配置走旧版单供应商字段:顺带练习读时迁移路径。
 
-import { zh } from "./lib-i18n.mjs";
+import { zh, en } from "./lib-i18n.mjs";
 import { rmSync, mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -16,11 +17,12 @@ import {
   seedMemories,
   setTheme,
   sse,
+  injectTestConfig,
 } from "./lib-cdp-mock.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
-const USER_DATA_DIR = "/tmp/verify-m3-profile";
+const USER_DATA_DIR = "/tmp/probe-m3-profile";
 const OUT_DIR = "/tmp/tars-m3";
 
 rmSync(USER_DATA_DIR, { recursive: true, force: true });
@@ -28,6 +30,7 @@ rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 
 const ACCENTS_ONLY = process.argv.includes("--accents");
+const HINTS_ONLY = process.argv.includes("--hints");
 /** [id, 设置页色板 aria-label 名];id 清单对应 scripts/generate-m3.mjs 的
  *  ACCENTS,标签从字典取 —— 字典改色名断言自动跟随 */
 const ACCENTS = [
@@ -60,12 +63,111 @@ const openMemoryPage = async () => {
   await sleep(400);
 };
 
+// ---- 提示分层留档(原 probe-hints.mjs,2026-09 并入):瘦身设置页 +
+// 「了解详情」折叠展开 + ⓘ 悬停态,中英各一组;带 ok 健康检查,失败即抛 ──
+async function runHints(browser, extId) {
+  const ok = (cond, label) => {
+    if (!cond) throw new Error(`❌ ${label}`);
+    console.log(`  ✅ ${label}`);
+  };
+  const hpage = await browser.newPage({ deviceScaleFactor: 2 });
+  const errs = [];
+  hpage.on("pageerror", (e) => errs.push(e));
+  await hpage.setViewportSize({ width: 420, height: 740 });
+  await hpage.goto(`chrome-extension://${extId}/sidepanel.html`);
+  await sleep(500);
+  // 先注入旧版单供应商配置再重载:设置页挂载时才 loadConfig,注入必须在其前
+  await injectTestConfig(hpage);
+  await hpage.reload();
+  await sleep(800);
+
+  // ① 供应商卡片展开 → Base URL 的 ⓘ 悬停态(气泡弹出)
+  await hpage.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();
+  await sleep(400);
+  await hpage.locator(".model-row-head").first().click();
+  await sleep(300);
+  await hpage.locator(".info-tip-btn").first().hover();
+  await sleep(400);
+  ok(await hpage.locator(".info-tip-pop").first().isVisible(), "ⓘ 悬停弹出气泡");
+  await shot(hpage, "hints-1-zh-infotip");
+  await hpage.mouse.move(0, 0); // 移开鼠标取消悬停(不能 Esc:会关掉整个设置悬浮层)
+  await sleep(300);
+
+  // ② 联网:打开开关 → 第一枚折叠钮(联网区)展开
+  const webSwitch = hpage.locator("#settings-web-search");
+  if ((await webSwitch.getAttribute("aria-checked")) !== "true") {
+    await webSwitch.click();
+    await sleep(500);
+  }
+  const mores = hpage.locator(".hint-more-btn");
+  // DOM 序 = 分区序(Model/Appearance 无 HintMore):联网/MCP/记忆 +
+  // 安全区确认门告知(confirmActions 默认开,2026-09-15 加入)。这里只锁
+  // 「至少三处机制说明」;probe-hints 时代硬编码 ===3 曾被安全区新增打破
+  ok(
+    (await mores.count()) >= 3,
+    "联网/MCP/记忆的「了解详情」齐全",
+  );
+  await mores.nth(0).click();
+  await sleep(300);
+  ok(
+    (await hpage.locator(".field-hint").allTextContents()).some((s) =>
+      s.includes("DuckDuckGo"),
+    ),
+    "联网机制详情展开",
+  );
+  await hpage
+    .locator("h3", { hasText: zh.settings.sectionWeb })
+    .first()
+    .scrollIntoViewIfNeeded();
+  await sleep(300);
+  await shot(hpage, "hints-2-zh-web-more");
+
+  // ③ 记忆:展开态留档
+  await mores.nth(2).click();
+  await sleep(300);
+  await hpage
+    .locator("h3", { hasText: zh.settings.sectionMemory })
+    .first()
+    .scrollIntoViewIfNeeded();
+  await sleep(300);
+  await shot(hpage, "hints-3-zh-memory-more");
+
+  // ④ 英文:切语言后同一屏(联网折叠保持展开,文案即变)
+  await hpage.locator("#ui-locale").selectOption("en-US");
+  await sleep(500);
+  await hpage
+    .locator("h3", { hasText: en.settings.sectionWeb })
+    .first()
+    .scrollIntoViewIfNeeded();
+  await sleep(300);
+  ok(
+    (await hpage.locator(".field-hint").allTextContents()).some((s) =>
+      s.includes("DuckDuckGo"),
+    ),
+    "切英文后展开态文案跟随",
+  );
+  await shot(hpage, "hints-4-en-web-more");
+
+  if (errs.length > 0) {
+    console.log(`\n❌ VERDICT: hints 页面错误 ${errs.length} 条`);
+    throw new Error(`hints 页面错误:${errs[0]}`);
+  }
+  console.log(`\n✅ VERDICT: PASS(hints)— 截图在 ${OUT_DIR}/`);
+}
+
 // ---- 启动 ----
 let { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
   userDataDir: USER_DATA_DIR,
 });
 console.log("✅ 扩展:", extId);
+
+// --hints 只跑提示分层,不走主流程的 mock 路由注册
+if (HINTS_ONLY) {
+  await runHints(browser, extId);
+  await browser.close();
+  process.exit(0);
+}
 
 // LLM 剧本:"search"(主对话,web_search 过程卡)|"mcp"(MCP 过程卡);
 // 一次 mock 对话结束后切剧本,再驱动一轮 MCP 工具调用
@@ -419,9 +521,16 @@ if (ACCENTS_ONLY) {
   await sleep(800);
   await openMemoryPage();
   await shot(page, "memory-overflow-light");
-  const stats = await page.evaluate(() => ({
-    sub: [...document.querySelectorAll("p")].map((p) => p.textContent).find((t) => t?.includes("每轮注入")),
-  }));
+  // 定位统计行用键派生子串(取字典值「·」后、占位符前的稳定措辞段)
+  const statsNeedle = zh.memory.saved.split("·")[1]?.split("{")[0].trim() ?? "";
+  const stats = await page.evaluate(
+    (needle) => ({
+      sub: [...document.querySelectorAll("p")]
+        .map((p) => p.textContent)
+        .find((t) => t?.includes(needle)),
+    }),
+    statsNeedle,
+  );
   console.log("  超预算副标:", stats.sub);
   await page.keyboard.press("Escape");
   await sleep(300);

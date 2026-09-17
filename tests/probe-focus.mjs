@@ -13,7 +13,7 @@ import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
-const USER_DATA_DIR = "/tmp/verify-focus-profile";
+const USER_DATA_DIR = "/tmp/probe-focus-profile";
 const OUT = "/tmp/tars-focus";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

@@ -8,7 +8,7 @@ import { zh, en } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
-const USER_DATA_DIR = "/tmp/verify-en-profile";
+const USER_DATA_DIR = "/tmp/probe-en-tools-profile";
 const OUT = "/tmp/tars-en";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

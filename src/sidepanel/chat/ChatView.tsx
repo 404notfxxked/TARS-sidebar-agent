@@ -422,6 +422,9 @@ export default function ChatView({
       <div className="relative min-h-0 flex-1">
         <div
           ref={listRef}
+          role="log"
+          aria-live="polite"
+          aria-atomic="false"
           className="h-full space-y-3 overflow-y-auto px-4 pt-2 pb-8"
         >
         {(() => {
@@ -459,6 +462,16 @@ export default function ChatView({
               lastAssistantIdx = visible.length - 1;
             }
           }
+          // 错误重试挂点:与 lastAssistantIdx 同规则,只有末条就是错误气泡
+          // 才挂 —— 重试 = regenerate(截到末条 user 重跑),挂在中间错误上
+          // 会让重试范围看起来比实际大
+          let lastErrorIdx = -1;
+          if (runSegs.length === 0 && status === "idle") {
+            const last = visible[visible.length - 1];
+            if (last && last.role === "assistant" && last.error) {
+              lastErrorIdx = visible.length - 1;
+            }
+          }
           // 压缩分隔条插在第一条 seq 超过压缩点的记录之前;历史消息按 seq
           // 升序,所以命中第一条之后不再重复插
           let dividerPlaced = false;
@@ -473,9 +486,13 @@ export default function ChatView({
               m.role === "user" ? (
                 <UserBubble key={i} text={m.content} images={m.images} />
               ) : m.error ? (
-                <ErrorBubble key={i} text={m.content} />
+                <ErrorBubble
+                  key={i}
+                  text={m.content}
+                  onRetry={i === lastErrorIdx ? chat.regenerate : undefined}
+                />
               ) : m.notice ? (
-                <NoticeBubble key={i} />
+                <NoticeBubble key={i} kind={m.noticeKind} />
               ) : (
                 <AssistantBubble
                   key={i}
@@ -681,33 +698,31 @@ export default function ChatView({
               onPick={pickModel}
             />
           )}
-          {status === "idle" ? (
-            <button
-              type="submit"
-              disabled={!input.trim() && pendingImages.length === 0}
-              aria-label={t("chat.send")}
-              className="icon-btn-filled ml-auto h-8 w-8 text-[14px] leading-none"
+          {/* 发送/停止是同一个按钮:状态切换不换元素,焦点不掉(键盘用户
+              停止后 space 仍是同一颗键)。36px 与 settings-btn 同高 —— M3
+              Expressive 的研究实测更大的主动作键命中更快;箭头用 SVG 不用
+              「↑」字形,字形光学尺寸随平台字体漂移。图标以 key 触发 msg-in
+              轻浮升过渡,状态翻转有 250ms emphasized 的完成感 */}
+          <button
+            type={status === "idle" ? "submit" : "button"}
+            onClick={status === "idle" ? undefined : chat.cancel}
+            disabled={
+              status === "idle" &&
+              !input.trim() &&
+              pendingImages.length === 0
+            }
+            aria-label={status === "idle" ? t("chat.send") : t("chat.stop")}
+            className={`icon-btn-filled ml-auto h-9 w-9 ${
+              status === "idle" ? "" : "error"
+            }`}
+          >
+            <span
+              key={status}
+              className="msg-in flex items-center justify-center"
             >
-              ↑
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={chat.cancel}
-              aria-label={t("chat.stop")}
-              className="icon-btn-filled error ml-auto h-8 w-8"
-            >
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <rect x="1.5" y="1.5" width="7" height="7" rx="1.2" />
-              </svg>
-            </button>
-          )}
+              {status === "idle" ? <ArrowUpIcon /> : <StopIcon />}
+            </span>
+          </button>
         </div>
       </form>
     </div>
@@ -728,6 +743,41 @@ function PlusIcon() {
     >
       <line x1="8" y1="3" x2="8" y2="13" />
       <line x1="3" y1="8" x2="13" y2="8" />
+    </svg>
+  );
+}
+
+/** 发送箭头(填充圆底上光学居中:杆长略短于几何高) */
+function ArrowUpIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 13V3.8" />
+      <path d="m3.9 7.9 4.1-4.1 4.1 4.1" />
+    </svg>
+  );
+}
+
+/** 停止方砖(运行中):36px 圆底上取 13px,太小没有「可点停」的存在感 */
+function StopIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="1.5" y="1.5" width="7" height="7" rx="1.2" />
     </svg>
   );
 }

@@ -100,28 +100,34 @@ export default function SettingsView({
 
         {config && domain && (
           <>
-            {/* ── 模型服务 ── */}
+            {/* 分节顺序 = onboarding 叙事(README 快速开始的顺序):
+                必配(模型)→ 通行证(安全)→ 能力开关(联网/MCP/记忆/技能)→
+                进阶(压缩)→ 个性化(外观)→ 维护(数据/诊断)。
+                分组本身(一节一配置域)不动,2026-09-17 评审只调序 */}
+            {/* ── 模型服务:没它产品不工作,恒第一 ── */}
             <ModelSection
               domain={domain}
               onChange={setDomain}
               run={run}
             />
 
-            {/* ── 外观 ── */}
-            <AppearanceSection
-              initialTheme={config.theme}
-              initialAccent={config.accent}
-              initialQuote={config.quote}
+            {/* ── 安全:页面/网络授权是读页/搜索/读网页的总闸(onboarding
+                第 2 步),确认门决定 agent 自治程度 —— 曾排第 7,新用户
+                按快速开始走要滚过 5 张卡才找到授权入口 ── */}
+            <SecuritySection
+              initialConfirmActions={config.confirmActions}
+              initialNotifyDone={config.notifyDone}
               run={run}
             />
 
-            {/* ── 联网 ── */}
+            {/* ── 能力开关集群:这个 agent 能做什么 ── */}
+            {/* 联网 */}
             <WebSection initialWebSearch={config.webSearch} run={run} />
 
-            {/* ── MCP:总开关 + 服务器卡片 ── */}
+            {/* MCP:总开关 + 服务器卡片 */}
             <McpSection initial={config.mcp} run={run} />
 
-            {/* ── 记忆:开关 + 摘要入口行;条目管理在记忆整页(MemoryView)── */}
+            {/* 记忆:开关 + 摘要入口行;条目管理在记忆整页(MemoryView)*/}
             <MemorySection
               initialOn={config.memory}
               contextTokens={selectedContextTokens(config)}
@@ -129,39 +135,42 @@ export default function SettingsView({
               run={run}
             />
 
-            {/* ── 技能:开关 + 管理入口行;安装在技能整页(SkillView)── */}
+            {/* 技能:开关 + 管理入口行;安装在技能整页(SkillView)*/}
             <SkillSection
               initialOn={config.skills}
               onOpenSkills={onOpenSkills}
               run={run}
             />
 
-            {/* ── 安全:写操作确认门 + 任务完成通知 ── */}
-            <SecuritySection
-              initialConfirmActions={config.confirmActions}
-              initialNotifyDone={config.notifyDone}
-              run={run}
-            />
-
-            {/* ── 上下文压缩 ── */}
+            {/* ── 上下文压缩:模型行为调优,跟能力开关更近,不与维护项混排 ── */}
             <CompactionSection
               initialCompact={config.compact}
               initialRef={
                 config.compactProvider && config.compactModel
-                  ? `${config.compactProvider}||${config.compactModel}`
-                  : ""
+                  ? {
+                      providerId: config.compactProvider,
+                      modelId: config.compactModel,
+                    }
+                  : null
               }
               providers={domain.providers}
               run={run}
             />
 
-            {/* ── 数据 ── */}
+            {/* ── 外观:低频个性化,让位给功能分节(曾排第 2,打断能力集群)── */}
+            <AppearanceSection
+              initialTheme={config.theme}
+              initialAccent={config.accent}
+              initialQuote={config.quote}
+              run={run}
+            />
+
+            {/* ── 维护区:数据 / 诊断,恒底部 ── */}
             <DataSection
               initialRetentionDays={config.historyRetention}
               run={run}
             />
 
-            {/* ── 诊断 ── */}
             <DiagnosticsSection />
           </>
         )}

@@ -18,7 +18,6 @@ import {
 import {
   SYSTEM_NOTE_PREFIX,
   compactHistory,
-  isContextOverflow,
   shouldCompact,
   summaryToMsg,
   usableTokens,
@@ -26,6 +25,7 @@ import {
   THRESHOLDS,
   type CompactionOutcome,
 } from "./compaction";
+import { projectEmergency, shouldEmergencyCompact } from "./overflow";
 import { loadConfig, inferMaxTokensField } from "../../shared/configStore";
 import {
   grantableOriginOf,
@@ -48,7 +48,11 @@ import {
   saveCtx,
   saveHistory,
 } from "../sessions/sessionHistory";
-import { setToolExecutionContext } from "../tools/toolContext";
+import {
+  clearToolExecutionContext,
+  setToolExecutionContext,
+  type ToolExecutionContext,
+} from "../tools/toolContext";
 import {
   parseSkillInvocation,
   renderSkillBlock,
@@ -126,6 +130,17 @@ export async function runAgentLoop(
 
   /** 正在执行的轮次(作用域在 try 外,catch 里报错时要带上下文) */
   let turnNo = 0;
+
+  // 工具执行上下文:整 run 一个对象,提交时捕获 tabId / 会话 / 取消信号。
+  // dispatchToolCall 执行前重复 set 是并发 run 下重申归属(同一对象,
+  // lastOperatedTabId 的跨轮记忆不丢);清理只在 run 收口统一做 ——
+  // 1.2.0 只读工具并行后,per-call finally 置 null 会让先完成的工具
+  // 砸掉兄弟工具的后置读取(get_tabs 的 defaultTabId、确认门的 tabId 解析)
+  const toolCtx: ToolExecutionContext = {
+    tabId: payload.tabId,
+    sessionId: payload.sessionId ?? "",
+    signal,
+  };
 
   try {
     // 当前供应商与模型条目:providers 里按 modelProvider 引用取,模型条目再
@@ -378,34 +393,27 @@ export async function runAgentLoop(
     await persistNewMessages();
 
     // 工具分发:注册表里的工具统一在这里执行。
-    // 每次执行前注入 run 作用域上下文(提交时捕获的 tabId + 取消信号),
-    // 让内容工具读对页面、联网工具感知取消;执行后立即清理,避免上下文泄漏。
+    // 每次执行前重申 run 作用域上下文(提交时捕获的 tabId + 取消信号),
+    // 让内容工具读对页面、联网工具感知取消。执行后不清理:并行批次下
+    // 兄弟工具可能仍在读全局 ctx,清理由 run 收口的 finally 统一做
     const dispatchToolCall = async (
       name: string,
       args: unknown,
     ): Promise<unknown> => {
-      setToolExecutionContext({
-        tabId: payload.tabId,
-        sessionId: payload.sessionId ?? "",
-        signal,
-      });
-      try {
-        const tool = getTool(name);
-        if (!tool) throw new Error(`unknown tool: ${name}`);
-        // 写操作确认门:页面动作(点按/填写)默认逐次经面板确认(设置可关)。
-        // 拒绝/超时的文案作为工具错误回给模型 —— 让它改道而不是硬重试
-        if (config.confirmActions && CONFIRM_TOOLS.has(name)) {
-          const approved = await requestConfirmation(
-            port,
-            { name, displayName: tool.displayName, args },
-            signal,
-          );
-          if (!approved) throw new Error(CONFIRM_DENIED_MSG);
-        }
-        return await tool.execute(args);
-      } finally {
-        setToolExecutionContext(null);
+      setToolExecutionContext(toolCtx);
+      const tool = getTool(name);
+      if (!tool) throw new Error(`unknown tool: ${name}`);
+      // 写操作确认门:页面动作(点按/填写)默认逐次经面板确认(设置可关)。
+      // 拒绝/超时的文案作为工具错误回给模型 —— 让它改道而不是硬重试
+      if (config.confirmActions && CONFIRM_TOOLS.has(name)) {
+        const approved = await requestConfirmation(
+          port,
+          { name, displayName: tool.displayName, args },
+          signal,
+        );
+        if (!approved) throw new Error(CONFIRM_DENIED_MSG);
       }
+      return await tool.execute(args);
     };
 
     /** 循环是否以最终回答收束;false = 步数耗尽,循环外做收尾兜底 */
@@ -426,11 +434,7 @@ export async function runAgentLoop(
     ): Promise<ChatResult> => {
       const attempt = async () => {
         const base = emergency
-          ? [
-              messages[0],
-              emergency.summaryMsg,
-              ...messages.slice(emergency.afterIdx),
-            ]
+          ? projectEmergency(messages, emergency.summaryMsg, emergency.afterIdx)
           : messages;
         return provider.chat({
           messages: await projectForRequest([...base, ...extraMsgs]),
@@ -445,11 +449,7 @@ export async function runAgentLoop(
       try {
         return await attempt();
       } catch (err) {
-        if (
-          emergency !== null ||
-          !modelEntry?.contextTokens ||
-          !isContextOverflow(err)
-        )
+        if (!shouldEmergencyCompact(err, emergency, modelEntry?.contextTokens))
           throw err;
         log.warn("agent", "请求超出上下文窗口,紧急压缩后重试", {
           turn: turnNo,
@@ -745,6 +745,10 @@ export async function runAgentLoop(
       stack: err instanceof Error ? err.stack : undefined,
     });
     port.postMessage({ type: MSG.AGENT_ERROR, error: message });
+  } finally {
+    // run 收口清理工具上下文:仅当全局仍是本 run 的对象(并发 run 下
+    // 已被后来者覆盖时不越权清别人的)
+    clearToolExecutionContext(toolCtx);
   }
 }
 

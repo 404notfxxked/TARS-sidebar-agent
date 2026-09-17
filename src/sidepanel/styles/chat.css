@@ -154,6 +154,8 @@
   .trace-status {
     font-size: 11px;
     font-feature-settings: "tnum";
+    /* on-surface-variant 而非 outline:11px 小字对 4.5:1 的 AA 要求,
+       outline 在浅色 surface 上只有 4.27:1(视觉评审 2026-09 实测) */
     color: var(--md-sys-color-on-surface-variant);
   }
   .trace-row[data-status="error"] .trace-status {
@@ -268,7 +270,8 @@
   }
   .trace-sec {
     margin: 5px 0 2px;
-    font-size: 10px;
+    /* 11px 下限:10px 中文笔画黏连(评审 2026-09);弱化靠颜色不靠再小 */
+    font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.06em;
     color: var(--md-sys-color-on-surface-variant);
@@ -278,7 +281,7 @@
     margin: 3px 0 2px;
     padding: 2px 8px;
     border-radius: var(--radius-full);
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 500;
     color: var(--md-sys-color-primary);
     transition: background 150ms var(--ease-emphasized);
@@ -506,6 +509,33 @@
 .quote-block:hover .quote-source,
 .quote-block:focus-within .quote-source {
   opacity: 1;
+}
+
+/* 错误气泡内联重试:胶囊形态同 trace-copy-btn,文字用 on-error-container
+   (在 error-container 底上对比度充足),状态层按同一色 8%/12% */
+.error-retry-btn {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-error-container);
+  transition: background 150ms var(--ease-emphasized);
+}
+.error-retry-btn:hover {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-error-container) 8%,
+    transparent
+  );
+}
+.error-retry-btn:active {
+  background: color-mix(
+    in srgb,
+    var(--md-sys-color-on-error-container) 12%,
+    transparent
+  );
 }
 
 /* 消息动作行(复制/重新生成):悬停气泡或键盘聚焦时显形,复制反馈期间保持。

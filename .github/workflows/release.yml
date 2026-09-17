@@ -1,0 +1,87 @@
+# 发版工作流:推 v* tag 即自动走完「构建 → 全量门禁 → 打包 → 发布」。
+# 基础概念(动作/runner/失败语义)见 checks.yml 头注;e2e 环境搭建步骤
+# (playwright/xvfb/CJK 字体)与 e2e.yml 同源,这里只讲本文件独有的东西。
+#
+# 与 checks / e2e 的分工:checks 管 push/PR 秒~分钟级反馈;e2e 管手动与
+# nightly;release 只在发版时刻跑一次,贵一点无妨——它把 release-plan 的
+# 发版纪律固化成机器门禁:单测绿 + 构建门禁(check-version/check-i18n)+
+# tag 三方校验 + 全量 e2e --all 全绿,才允许 Release 出街。
+#
+# 人机分工:人负责判断——manifest/package.json bump、CHANGELOG 定版
+# ([Unreleased] 移入 [x.y.z],另开空段)、打 tag 推送;机器负责重复——
+# 构建、zip(naming 与 .gitignore 的 /tars-v*.zip 及已发历史包一致)、
+# 发布说明(extract-changelog.mjs 抽 CHANGELOG 对应段,缺段即拦)。
+#
+# 失败处理:e2e 红 → 重跑本工作流即可(flake)或本地按域排查;发错了 →
+# 删 Release + 删 tag 修复后重打(GitHub 端旧附件随 Release 删除)。
+# 历史版本(v1.1.0 / v1.2.0)发布于本工作流存在之前,由本地 zip 手动补发。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+# gh release create 需要写 contents;其余保持默认最小化
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # 版本不写死,读 package.json 的 packageManager(理由见 checks.yml)
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tag push 不触发 checks(main 分支过滤),门禁在这里全部补齐
+      - name: Unit tests (vitest)
+        run: pnpm test
+
+      # build 串 tsc --noEmit + check-version + check-i18n 门禁 + vite 产物
+      - name: Build
+        run: pnpm build
+
+      # 打 zip 前最后一道:tag 必须与包版本一致,发错包在这里拦下
+      - name: Verify tag matches package version
+        run: node scripts/check-version.mjs "$GITHUB_REF_NAME"
+
+      # 发版纪律里的「回归全绿」:全量 e2e 是发版专属门禁,环境步骤与
+      # e2e.yml 同源(说明见彼处);run.mjs 自带单套件超时保险丝
+      - name: Install Playwright Chromium(含系统依赖)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install CJK fonts(截图可读)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+
+      - name: Run full e2e
+        run: xvfb-run -a node tests/run.mjs --all
+
+      # dist 内容平铺在 zip 根(与手动发的 tars-v1.1.0/1.2.0.zip 同构,
+      # 用户解压即得含 manifest.json 的文件夹,加载已解压的扩展程序即可)
+      - name: Pack dist
+        run: cd dist && zip -qr "../tars-${GITHUB_REF_NAME}.zip" .
+
+      # 发布说明来自 CHANGELOG 对应版本段(Keep a Changelog 纪律的产物);
+      # 段缺失/为空时脚本非零退出,发布中止
+      - name: Extract release notes
+        run: node scripts/extract-changelog.mjs "$GITHUB_REF_NAME" > release-notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "tars-${GITHUB_REF_NAME}.zip" \
+            --title "TARS ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md

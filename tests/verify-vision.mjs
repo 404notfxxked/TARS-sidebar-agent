@@ -214,7 +214,7 @@ await ask(sidepanel, "再问一次");
     users.filter((m) => m.content.includes("当前模型不支持视觉识别")).length === 2,
   );
   const hint = await sidepanel
-    .getByText("图片不会随本次提问发送")
+    .getByText(zh.chat.visionModelFallback)
     .first()
     .isVisible()
     .catch(() => false);

@@ -8,7 +8,7 @@ import { launchWithCdp } from "./lib-cdp-mock.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
-const USER_DATA_DIR = "/tmp/verify-locale-profile";
+const USER_DATA_DIR = "/tmp/probe-locale-profile";
 const OUT = "/tmp/tars-locale";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

@@ -14,7 +14,7 @@ const SRC = resolve(__dirname, "..", "src", "sidepanel");
 
 // ---- 1) 收集键:按命名空间扫描全部字符串字面量(覆盖 t() 直呼与
 //         KEY_MAP 字面量映射两种写法) ----
-const NS = /^(common|chat|sessions|memory|settings)(\.[A-Za-z0-9_]+)+$/;
+const NS = /^(common|chat|sessions|memory|skills|security|notify|settings)(\.[A-Za-z0-9_]+)+$/;
 const staticKeys = new Set();
 const dynamicUsages = [];
 const walk = (dir) => {
