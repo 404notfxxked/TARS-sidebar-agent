@@ -27,13 +27,16 @@ await sleep(600);
 
 // 空态标题按时段定档(早/中/下午/晚/深夜 5 档),断言「任一档可见」;
 // 键位语义化后从字典显式取值,文案改动断言自动跟随
-const EN_GREET_RE = new RegExp(
-  "^(?:" +
-    ["greetMorning", "greetNoon", "greetAfternoon", "greetEvening", "greetLateNight"]
-      .map((k) => escapeRegExp(en.chat[k]))
-      .join("|") +
-    ")$",
-);
+const greetRe = (dict) =>
+  new RegExp(
+    "^(?:" +
+      ["greetMorning", "greetNoon", "greetAfternoon", "greetEvening", "greetLateNight"]
+        .map((k) => escapeRegExp(dict.chat[k]))
+        .join("|") +
+      ")$",
+  );
+const EN_GREET_RE = greetRe(en);
+const ZH_GREET_RE = greetRe(zh);
 
 const ok = (cond, label) => {
   if (!cond) throw new Error(`❌ ${label}`);
@@ -59,11 +62,22 @@ await sleep(300);
 ok(await page.getByText(EN_GREET_RE).isVisible(), "回到首页,空态为英文时段问候之一");
 await page.screenshot({ path: `${OUT}/3-chat-en.png` });
 
-// ── 重载:语言从配置恢复,仍是英文 ──
+// ── 首页语言钮:切回简体中文(首页自救路径,反向验证;面板此刻是英文,
+//    触发钮 aria 是英文名 —— 恰好证明英文用户找得到它) ──
+await page.locator(`button[aria-label="${en.chat.switchLanguage}"]`).click();
+await sleep(200);
+await page
+  .locator('[role="menuitemradio"]', { hasText: zh.settings.languageZh })
+  .click();
+await sleep(300);
+ok(await page.getByText(ZH_GREET_RE).isVisible(), "首页语言钮切换后,空态回中文时段问候");
+await page.screenshot({ path: `${OUT}/4-chat-zh-home-menu.png` });
+
+// ── 重载:首页入口的选择同样落盘,仍是中文 ──
 await page.reload();
 await sleep(800);
-ok(await page.getByText(EN_GREET_RE).isVisible(), "重载后仍为英文(时段问候任一,语言已落盘)");
-await page.screenshot({ path: `${OUT}/4-chat-en-reload.png` });
+ok(await page.getByText(ZH_GREET_RE).isVisible(), "重载后仍为中文(首页入口已落盘)");
+await page.screenshot({ path: `${OUT}/5-chat-zh-reload.png` });
 
 console.log("\n✅ VERDICT: PASS — 截图在 /tmp/tars-locale/");
 await browser.close();

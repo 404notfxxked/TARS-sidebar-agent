@@ -50,6 +50,7 @@ export const zhCN = {
     regenerate: "重新生成",
     retry: "重试",
     openSettings: "打开设置",
+    switchLanguage: "切换语言",
     busySessionsHint: "当前回复结束后可查看历史会话",
     busyNewChatHint: "当前回复结束后可开始新对话",
     selectModel: "选择模型",

@@ -53,6 +53,7 @@ export const enUS = {
     regenerate: "Regenerate",
     retry: "Retry",
     openSettings: "Open settings",
+    switchLanguage: "Switch language",
     busySessionsHint: "You can view chat history once the current reply finishes",
     busyNewChatHint: "You can start a new chat once the current reply finishes",
     selectModel: "Select a model",

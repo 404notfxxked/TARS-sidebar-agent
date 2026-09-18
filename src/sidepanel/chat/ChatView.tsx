@@ -40,6 +40,7 @@ import {
   UserBubble,
 } from "./bubbles";
 import ModelPicker from "./ModelPicker";
+import LanguageMenu from "./LanguageMenu";
 import ThinkingPicker from "./ThinkingPicker";
 import SkillMenu from "./SkillMenu";
 import { ConfirmCard } from "./ConfirmCard";
@@ -454,14 +455,17 @@ export default function ChatView({
             </div>
           );
         })()}
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label={t("chat.openSettings")}
-          className="icon-btn"
-        >
-          <SettingsIcon />
-        </button>
+        <div className="flex gap-1">
+          <LanguageMenu />
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label={t("chat.openSettings")}
+            className="icon-btn"
+          >
+            <SettingsIcon />
+          </button>
+        </div>
       </header>
 
       {/* 消息列表 + 悬浮层锚点:滚离底部时右下角浮现「回到最新」 */}

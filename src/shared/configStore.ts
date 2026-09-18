@@ -14,6 +14,14 @@ export type ThemePref = "system" | "light" | "dark";
 /** 面板 UI 语言(字典见 shared/locales);缺省 zh-CN,存量用户行为不变 */
 export type LocalePref = "zh-CN" | "en-US";
 
+/** 首开语言探测:存储值缺席时按浏览器语言落默认。
+ *  zh 开头(含 zh-TW/zh-HK 等变体)→ zh-CN;探测不到保持 zh-CN(缺省兼容);
+ *  其余语言回落 en-US。纯函数:测试直接喂 language 串,不依赖 navigator */
+export function detectLocale(language?: string): LocalePref {
+  if (language && !language.toLowerCase().startsWith("zh")) return "en-US";
+  return "zh-CN";
+}
+
 /** 重点色(配色方案):generate-m3.mjs 里 ACCENTS 的 id,green = 默认源色 */
 export type AccentPref =
   | "green"
@@ -218,7 +226,13 @@ export async function loadConfig(): Promise<AppConfig> {
     accent: ACCENT_IDS.includes(l.accent as AccentPref)
       ? (l.accent as AccentPref)
       : "green",
-    locale: l.locale === "en-US" ? "en-US" : "zh-CN",
+    // 显式存储过的 locale 永远尊重;缺席(首开)按浏览器语言探测一次
+    locale:
+      l.locale === "en-US" || l.locale === "zh-CN"
+        ? l.locale
+        : detectLocale(
+            typeof navigator !== "undefined" ? navigator.language : undefined,
+          ),
     // 联网搜索 BYOK 化后缺省关闭:开关显式打开 + 配好 key 才对模型可用
     webSearch: l.webSearch === true,
     // 长期记忆缺省开启(记忆为空时除工具 schema 外无成本;关 = 彻底无痕)

@@ -2,8 +2,12 @@
 // 串 key 的弃用策略 / 非法输入回落缺省。迁移是「读时进行、不写回」,
 // 所以直接喂 chrome.storage 桩再 loadConfig,断言返回的投影。
 
-import { describe, expect, it } from "vitest";
-import { loadConfig, normalizeSearch } from "./configStore";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { detectLocale, loadConfig, normalizeSearch } from "./configStore";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 type Bag = Record<string, unknown>;
 const storage = () =>
@@ -134,6 +138,8 @@ describe("loadConfig 读时迁移", () => {
   });
 
   it("缺省值:联网关、记忆开、保留 7 天、standard 档、zh-CN、green", async () => {
+    // navigator 缺席(无法探测)时 locale 落缺省 zh-CN,存量行为不变
+    vi.stubGlobal("navigator", {});
     const cfg = await loadConfig();
     expect(cfg.webSearch).toBe(false);
     expect(cfg.memory).toBe(true);
@@ -143,5 +149,23 @@ describe("loadConfig 读时迁移", () => {
     expect(cfg.accent).toBe("green");
     expect(cfg.theme).toBe("system");
     expect(cfg.providers).toEqual([]);
+  });
+
+  it("首开语言探测:浏览器语言非 zh → en-US,zh 变体与缺席 → zh-CN", async () => {
+    expect(detectLocale(undefined)).toBe("zh-CN");
+    expect(detectLocale("")).toBe("zh-CN");
+    expect(detectLocale("zh-CN")).toBe("zh-CN");
+    expect(detectLocale("zh-TW")).toBe("zh-CN");
+    expect(detectLocale("en-US")).toBe("en-US");
+    expect(detectLocale("fr")).toBe("en-US");
+
+    vi.stubGlobal("navigator", { language: "en-US" });
+    expect((await loadConfig()).locale).toBe("en-US");
+  });
+
+  it("显式存储的 locale 永远尊重,不被浏览器语言探测覆盖", async () => {
+    await storage().set({ locale: "zh-CN" });
+    vi.stubGlobal("navigator", { language: "en-US" });
+    expect((await loadConfig()).locale).toBe("zh-CN");
   });
 });
