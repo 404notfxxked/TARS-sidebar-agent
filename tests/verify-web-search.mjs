@@ -243,10 +243,31 @@ mock.setRoutes([
   },
   {
     match: (url) => url.includes("mock.test/gbk"),
-    handle: (ctx) =>
+    handle: async (ctx) =>
       ctx.fulfill({
         headers: { "Content-Type": "text/html; charset=gbk" },
         bodyBase64: gbkFixtureB64,
+      }),
+  },
+  // 场景 R:白名单内域 302 重定向到私网(评审追加的重定向绕行链路)。
+  // 私网落点也给 mock 响应 —— 拦截必须发生在「读正文之前」,若实现漏了
+  // 复核,正文标记会进上下文,断言即红
+  {
+    match: (url) => url.includes("mock.test/redir"),
+    handle: async (ctx) =>
+      ctx.fulfill({
+        status: 302,
+        headers: { Location: "http://10.0.0.5/private-admin" },
+        body: "",
+      }),
+  },
+  {
+    match: (url) => url.includes("10.0.0.5"),
+    handle: async (ctx) =>
+      ctx.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+        body: "<html><head><title>内部系统</title></head><body>INTRANET-MARKER 内网正文</body></html>",
       }),
   },
 ]);
@@ -547,6 +568,11 @@ chain = ["web_fetch", "web_fetch"];
   check(secondData.includes("MARKER-MIDDLE-99"), "E3 第二窗按 offset 读到中段标记", secondData.slice(0, 200));
   const text = await uiText();
   check(text.includes("FETCH_OK:GLM 侧栏使用手册"), "E4 终答引用网页标题", text.slice(-300));
+  // 来源域白名单:URL 出自用户消息 → 命中 → 全程不弹确认卡(两跳都直抓)
+  check(
+    (await sidepanel.locator('[role="alertdialog"]').count()) === 0,
+    "E5 白名单内抓取不弹确认卡(用户消息 URL 直接入集)",
+  );
 }
 
 // ---- 场景 E2:GBK 编码页解码 ----
@@ -571,6 +597,28 @@ chain = ["web_fetch"];
   const data = first?.data ?? "";
   check(data.includes("Example Domain") || data.includes("example.com"),
     "F1 实网页面读取成功", data.slice(0, 260));
+}
+
+// ---- 场景 R:重定向复核(白名单内域 302 → 私网) ----
+console.log("\n===== R. 重定向到私网被拦截 =====");
+fetchUrl = "https://mock.test/redir";
+fetchArgs = {};
+chain = ["web_fetch"];
+{
+  await ask(sidepanel, "读一下 https://mock.test/redir 这篇文档");
+  // 落点是私网:fetchHtml 在读正文前抛模型可读错误 —— 工具日志是「失败」
+  const logs = await waitForRunLog(sidepanel,
+    (e) => e.tag === "tool" && e.msg.includes("web_fetch 失败"), "web_fetch 重定向拦截");
+  const failLog = logs.find((e) => e.msg.includes("web_fetch 失败"));
+  const data = failLog?.data ?? "";
+  check(data.includes("重定向到了私网地址"), "R1 私网落点被拦,错误回给模型", data.slice(0, 300));
+  check(data.includes("10.0.0.5"), "R2 错误带落点地址(用户可决断是否明示抓取)", data.slice(0, 300));
+  check(
+    !logs.some((e) => e.msg.includes("web_fetch 完成")),
+    "R3 正文未读取(无完成日志,内网标记不可能进上下文)",
+  );
+  const text = await uiText();
+  check(text.includes("FETCH_OK"), "R4 run 正常收口(拒绝是转告不是崩溃)", text.slice(-200));
 }
 
 // ---- 场景 J:工具结果预算 ----

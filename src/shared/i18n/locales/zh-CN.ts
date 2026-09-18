@@ -92,6 +92,13 @@ export const zhCN = {
     confirmFillText: "将写入：{text}",
     confirmSubmitHint: "写入后将回车提交",
     confirmSelectorLabel: "定位：{selector}",
+    confirmMemorySaveTitle: "请求写入长期记忆",
+    confirmMemoryDeleteTitle: "请求删除长期记忆",
+    confirmWebFetchTitle: "请求读取外部链接",
+    confirmMemorySaveText: "将记住：{text}",
+    confirmMemoryDeleteText: "将删除匹配「{match}」的记忆",
+    confirmWebFetchUrl: "链接：{url}",
+    confirmWebFetchQuery: "查询串 {n} 字符，参数内容不逐字展示",
     trace: {
       thinking: "思考中",
       reasoning: "思考过程",
@@ -221,10 +228,10 @@ export const zhCN = {
     hostAccessGrant: "授权页面与网络访问",
     hostAccessRevoke: "撤销授权",
     hostAccessOn: "已授权",
-    confirmActions: "页面操作需确认",
-    confirmActionsHint: "AI 点击、填写网页前先弹出确认卡，由你决定是否执行；这是默认推荐的安全设置。",
+    confirmActions: "敏感操作需确认",
+    confirmActionsHint: "AI 点击、填写网页、写入或删除长期记忆、读取内网或陌生链接前，先弹出确认卡由你决定；这是默认推荐的安全设置。",
     confirmActionsDetail:
-      "覆盖「点击元素」与「填写输入」两个写操作：确认卡展示目标页面与写入内容，2 分钟未答复按拒绝处理。网页内容可能包含诱导性指令，确认是最后一道人审防线；关闭后 AI 将直接执行页面动作，请仅在可信场景下关闭。",
+      "覆盖页面写操作（点击元素/填写输入）、长期记忆的写入与删除、以及 web_fetch 对私网地址和会话来源域之外链接的读取：确认卡展示目标页面与操作内容，2 分钟未答复按拒绝处理。会话来源域 = 你消息里给出的链接、搜索结果、以及本次会话已抓取过的域；首次抓取任何新域会询问一次，批准后本会话内不再重复询问。网页内容可能包含诱导性指令，确认是最后一道人审防线；关闭后 AI 将直接执行这些动作，请仅在可信场景下关闭。",
     notifyDone: "任务完成通知",
     notifyDoneHint:
       "面板不可见时（窗口最小化或切走），任务结束或失败会发一条系统通知；点按通知回到浏览器窗口。",

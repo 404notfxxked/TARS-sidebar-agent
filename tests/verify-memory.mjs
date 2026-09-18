@@ -19,7 +19,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { answerSSE, ask, idbGet, idbGetAll, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
+import { idbGet, idbGetAll, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, answerSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh, en } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -193,8 +193,11 @@ const readRows = (sessionId) =>
     sessionId,
   );
 
-/** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error */
-const runAsk = (sessionId, text) => runAskViaPort(sidepanel, sessionId, text);
+/** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error。
+ *  autoConfirm:记忆工具 2026-09 起过确认门,裸 port 无 UI,自动应答放行;
+ *  门本身的交互断言归 verify-confirm(卡内容/拒绝路径) */
+const runAsk = (sessionId, text) =>
+  runAskViaPort(sidepanel, sessionId, text, { autoConfirm: true });
 
 const setMemoryFlag = (on) =>
   sidepanel.evaluate((on) => chrome.storage.local.set({ memory: on }), on);
@@ -538,7 +541,21 @@ console.log("\n===== T5. 记忆页:添加/编辑/置顶/删除 =====");
 console.log("\n===== T8. 回复尾轻提示 =====");
 {
   llm.mode = "save-fresh";
-  await ask(sidepanel, "记住我喜欢用列表整理信息");
+  // memory_save 过确认门,不能走 ask()(run 等卡片答复、ask 等 run,死锁):
+  // 手动发送 → 卡片弹出后断言记忆族标题并放行 → 等 run 收口
+  const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
+  await input.waitFor({ timeout: 5000 });
+  await input.fill("记住我喜欢用列表整理信息");
+  await sidepanel.locator(`button[aria-label="${zh.chat.send}"]`).click();
+  const allowBtn = sidepanel.locator(`button[aria-label="${zh.chat.confirmAllow}"]`);
+  await allowBtn.waitFor({ timeout: 20000 });
+  check(
+    (await sidepanel.locator('[role="alertdialog"]').innerText()).includes(
+      zh.chat.confirmMemorySaveTitle,
+    ),
+    "T8-0 确认卡为记忆族标题",
+  );
+  await allowBtn.click();
   await waitForRunLog(sidepanel, (e) => e.msg === "run ended", "run ended");
   const text = await uiText();
   check(

@@ -1,7 +1,15 @@
 // web_fetch 工具执行体(service worker 侧):抓取 + 编排。
 // 与 web_search 同一套分工:网络抓取在 SW(host_permissions 覆盖,含内网
-// http 页面;不做私网地址拦截,读取内网系统是设计内能力),HTML 解析与
-// 缓存在 offscreen(fetch_read / fetch_build 协议,见 offscreen/fetchDoc.ts)。
+// http 页面),HTML 解析与缓存在 offscreen(fetch_read / fetch_build 协议,
+// 见 offscreen/fetchDoc.ts)。
+// 出站判定(2026-09 评审 S1,见 web/outboundGuard.ts + fetchAllowlist.ts):
+// 私网/内网目标、或会话来源域白名单(用户消息 URL / 搜索结果 / 已成功抓取)
+// 未命中的链接,先经面板确认再抓 —— 读取内网仍是设计内能力,但属「用户该
+// 知情放行」的出口;白名单命中直抓,任意新域首次抓取确认一次。
+// 重定向复核:确认门只判入口 URL,而 fetch 默认跟随重定向 —— 落点换 host
+// 时在 fetchHtml 内重跑私网判定(私网落点拦截、公开落点放行但不回填最终
+// URL,白名单不学习重定向带来的新域)。头注排除项「不拦 DNS 解析到私网」
+// 不涵盖 HTTP 重定向 —— 那是代码看得见的落点变化。
 //
 // 流程:先试 fetch_read(缓存命中 = 一次往返直达);offscreen 报 NOT_CACHED
 // 才走「抓取 → 入库 → 再读」。工具在 agent 循环里串行执行,build 与 read
@@ -13,6 +21,7 @@ import { callOffscreenParser, ensureOffscreenDocument } from "../../shared/docBr
 import { hasOriginAccess } from "../../shared/hostAccess";
 import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext";
 import { createLogger } from "../../shared/logger";
+import { reviewRedirectTarget, hostKey } from "./outboundGuard";
 
 const log = createLogger({ ctx: "bg" });
 
@@ -121,11 +130,21 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
           "只能读取网页文本,PDF/图片/下载文件等请直接打开链接",
       );
     }
+    // 重定向复核:响应头已到手、正文一个字节未读 —— 落点换 host 就重跑
+    // 私网判定(私网落点抛错,公开落点放行但不回填最终 URL),并留一条
+    // 只含 host 的日志(不带完整 URL,查询串可能是模型编码的外泄负载)
+    const finalUrl = reviewRedirectTarget(url, res.url || url);
+    if (finalUrl !== (res.url || url)) {
+      log.info("webfetch", "redirect host changed", {
+        from: hostKey(new URL(url).hostname),
+        to: hostKey(new URL(res.url).hostname),
+      });
+    }
     const buf = await res.arrayBuffer();
     if (buf.byteLength > MAX_HTML_BYTES) {
       throw new Error(`Page too large (~${Math.round(buf.byteLength / 1024)} KB, limit 2 MB)`);
     }
-    return { html: decodeBody(buf, contentType), finalUrl: res.url || url };
+    return { html: decodeBody(buf, contentType), finalUrl };
   } finally {
     cleanup();
   }

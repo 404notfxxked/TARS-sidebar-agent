@@ -24,35 +24,56 @@ import { zh } from "./lib-i18n.mjs";
 
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
 
+/** 测试配置的默认模型端点 origin(zero flavor 只授权它,LLM mock 可达) */
+export const TEST_ENDPOINT_ORIGIN = "https://api.test.example.com";
+
 /**
- * E2E 专用的 manifest flavor:生产 manifest 已把站点授权改为 optional
- * (安装零警告),而 chrome.permissions.request 的授权弹窗是原生对话框,
- * 自动化无法确认(实测:CDP userGesture 也不行;Secure Preferences 种子
- * 会被 MAC 校验重置)。这里把 dist 拷进固定临时目录并还原「静态授权」形态:
- * 回填 host_permissions + content_scripts。
+ * E2E manifest flavor:生产 manifest 已把站点授权改为 optional(安装零警告),
+ * 而 chrome.permissions.request 的授权弹窗是原生对话框,自动化无法确认
+ * (实测:CDP userGesture 也不行;Secure Preferences 种子会被 MAC 校验重置
+ * —— 覆盖范围见 tests/README「e2e 不覆盖什么」)。按套件选形态:
+ * - granted(缺省):静态全站授权 + 静态 content script,既有套件的形态;
+ * - zero:只授权模型端点域,页面工具/搜索通道/web_fetch 全部未授权 ——
+ *   验证拒绝路径的可行动指引(verify-host-access);
+ * - dynamic:静态全站授权但无静态 content script —— 生产唯一的注入路径
+ *   (sendMessage 失败 → executeScript → 重试)在授权态下被真实执行。
  * 权限门代码不含测试分叉 —— chrome.permissions.contains 对静态授权同样
  * 返回 true,生产与测试走同一条判定路径,只差授权的「来源」。
- * 路径必须确定性(按 extDir 哈希,非每次随机):未打包扩展 ID = 路径哈希,
- * verify-persist 等套件跨浏览器重启对比存储,路径一变 ID 就变,存储全丢。
- * 并行跑多个套件会共享同一 flavor 目录,请按 run.mjs 的既有约定串行执行。
+ * 路径必须确定性(按 extDir+flavor 哈希,非每次随机):未打包扩展 ID = 路径
+ * 哈希,verify-persist 等套件跨浏览器重启对比存储,路径一变 ID 就变,存储
+ * 全丢。并行跑多个套件会共享同一 flavor 目录,请按 run.mjs 约定串行执行。
  */
-function prepareTestExtension(extDir) {
-  const hash = createHash("sha256").update(resolve(extDir)).digest("hex").slice(0, 12);
+const FLAVORS = {
+  granted: {
+    hostPermissions: ["<all_urls>"],
+    contentScripts: [
+      { matches: ["<all_urls>"], js: ["content.js"], run_at: "document_idle", all_frames: false },
+    ],
+  },
+  zero: { hostPermissions: [`${TEST_ENDPOINT_ORIGIN}/*`], contentScripts: [] },
+  dynamic: { hostPermissions: ["<all_urls>"], contentScripts: [] },
+};
+
+function prepareTestExtension(extDir, flavor = "granted") {
+  const shape = FLAVORS[flavor] ?? FLAVORS.granted;
+  const hash = createHash("sha256").update(`${resolve(extDir)}:${flavor}`).digest("hex").slice(0, 12);
   const dir = resolve(tmpdir(), `tars-e2e-ext-${hash}`);
   rmSync(dir, { recursive: true, force: true });
   cpSync(extDir, dir, { recursive: true });
   const manifestPath = resolve(dir, "manifest.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  manifest.host_permissions = ["<all_urls>"];
-  manifest.content_scripts = [
-    { matches: ["<all_urls>"], js: ["content.js"], run_at: "document_idle", all_frames: false },
-  ];
+  manifest.host_permissions = shape.hostPermissions;
+  if (shape.contentScripts.length > 0) {
+    manifest.content_scripts = shape.contentScripts;
+  } else {
+    delete manifest.content_scripts;
+  }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   return dir;
 }
 
-export async function launchWithCdp({ extDir, userDataDir, proxy } = {}) {
-  extDir = prepareTestExtension(extDir);
+export async function launchWithCdp({ extDir, userDataDir, proxy, flavor = "granted" } = {}) {
+  extDir = prepareTestExtension(extDir, flavor);
   const args = [
     `--disable-extensions-except=${extDir}`,
     `--load-extension=${extDir}`,
@@ -467,14 +488,26 @@ export function makeChecker() {
   return check;
 }
 
-/** 裸 port 发消息并等本轮 run 结束(不经 UI;多场景聚合的套件共用) */
-export function runAskViaPort(page, sessionId, text) {
+/**
+ * 裸 port 发消息并等本轮 run 结束(不经 UI;多场景聚合的套件共用)。
+ * autoConfirm:自动应答写操作确认门(2026-09 起记忆工具也过门)——
+ * 走 UI 断言确认卡交互的套件不要开,走「门后链路」的套件开它穿过。
+ */
+export function runAskViaPort(page, sessionId, text, { autoConfirm = false } = {}) {
   return page.evaluate(
-    ({ sessionId, text }) =>
+    ({ sessionId, text, autoConfirm }) =>
       new Promise((resolve, reject) => {
         const port = chrome.runtime.connect({ name: "agent-port" });
         const timer = setTimeout(() => reject(new Error("run 超时")), 60000);
         port.onMessage.addListener((msg) => {
+          if (autoConfirm && msg.type === "agent_confirm_request") {
+            port.postMessage({
+              type: "confirm_response",
+              requestId: msg.requestId,
+              approved: true,
+            });
+            return;
+          }
           if (msg.type === "agent_done" || msg.type === "agent_error") {
             clearTimeout(timer);
             port.disconnect();
@@ -483,7 +516,7 @@ export function runAskViaPort(page, sessionId, text) {
         });
         port.postMessage({ type: "user_message", payload: { text, sessionId } });
       }),
-    { sessionId, text },
+    { sessionId, text, autoConfirm },
   );
 }
 

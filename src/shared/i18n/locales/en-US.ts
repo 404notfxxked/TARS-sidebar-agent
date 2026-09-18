@@ -97,6 +97,14 @@ export const enUS = {
     confirmFillText: "Will type: {text}",
     confirmSubmitHint: "Presses Enter to submit after typing",
     confirmSelectorLabel: "Target element: {selector}",
+    confirmMemorySaveTitle: "wants to save a long-term memory",
+    confirmMemoryDeleteTitle: "wants to delete long-term memories",
+    confirmWebFetchTitle: "wants to read an external link",
+    confirmMemorySaveText: "Will remember: {text}",
+    confirmMemoryDeleteText: "Will delete memories matching \"{match}\"",
+    confirmWebFetchUrl: "Link: {url}",
+    confirmWebFetchQuery:
+      "{n} chars of query string; parameters are not shown verbatim",
     trace: {
       thinking: "Thinking",
       reasoning: "Reasoning",
@@ -227,11 +235,11 @@ export const enUS = {
     hostAccessGrant: "Grant page & network access",
     hostAccessRevoke: "Revoke",
     hostAccessOn: "Granted",
-    confirmActions: "Confirm page actions",
+    confirmActions: "Confirm sensitive actions",
     confirmActionsHint:
-      "Before clicking or typing on a web page, TARS shows a confirmation card and waits for your decision. This is the recommended default.",
+      "Before clicking or typing on a web page, saving or deleting long-term memories, or reading private-network / unfamiliar links, TARS shows a confirmation card and waits for your decision. This is the recommended default.",
     confirmActionsDetail:
-      "Covers the two write actions, click_element and fill_input: the card shows the target page and what will be typed, and no reply within 2 minutes counts as a denial. Web content can contain injection-style instructions, so this gate is the final human review; turn it off only when you trust the scenario — TARS will then act on pages immediately.",
+      "Covers page writes (click_element / fill_input), memory save and delete, and web_fetch of private-network addresses and links outside the session's source domains: the card shows the target page and the action, and no reply within 2 minutes counts as a denial. Source domains = links you typed in messages, search results, and domains already fetched this session; the first fetch of any new domain asks once, and approving it keeps the domain quiet for the rest of the session. Web content can contain injection-style instructions, so this gate is the final human review; turn it off only when you trust the scenario — TARS will then perform these actions immediately.",
     notifyDone: "Task completion notifications",
     notifyDoneHint:
       "When the panel is not visible (window minimized or switched away), a system notification is posted when a task finishes or fails; click it to return to the browser window.",

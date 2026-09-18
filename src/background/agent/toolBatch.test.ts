@@ -63,3 +63,50 @@ describe("partitionToolBatches", () => {
     ).toEqual([[{ name: "find_elements" }, { name: "page_read" }]]);
   });
 });
+
+describe("partitionToolBatches 屏障谓词(确认门单槽约束)", () => {
+  const withArgs = (...specs: [name: string, gated: boolean][]) =>
+    specs.map(([name, gated], i) => ({
+      name,
+      args: { url: `https://x.test/${i}` },
+      gated,
+    }));
+  const barrier = (c: { gated: boolean }) => c.gated;
+
+  it("屏障调用自成单批:同轮两个过门 fetch 不并批", () => {
+    const list = withArgs(["web_fetch", true], ["web_fetch", true]);
+    expect(partitionToolBatches(list, barrier)).toEqual([[list[0]], [list[1]]]);
+  });
+
+  it("屏障打断相邻只读工具的并批:确认应答之间不夹带并发副作用", () => {
+    const list = withArgs(
+      ["web_search", false],
+      ["web_fetch", true],
+      ["page_read", false],
+      ["web_fetch", true],
+      ["web_search", false],
+    );
+    expect(partitionToolBatches(list, barrier)).toEqual([
+      [list[0]],
+      [list[1]],
+      [list[2]],
+      [list[3]],
+      [list[4]],
+    ]);
+  });
+
+  it("未过门的同族调用不受屏障牵连:全开时照常并批", () => {
+    const allOpen = withArgs(["web_fetch", false], ["web_fetch", false]);
+    expect(partitionToolBatches(allOpen, barrier)).toEqual([allOpen]);
+  });
+
+  it("过门与未过门交错时各自成批(按 args 判定,不按工具名)", () => {
+    const list = withArgs(["web_fetch", true], ["web_fetch", false]);
+    expect(partitionToolBatches(list, barrier)).toEqual([[list[0]], [list[1]]]);
+  });
+
+  it("谓词缺省时行为与只按并行集划分完全一致(向后兼容)", () => {
+    const list = withArgs(["web_fetch", true], ["web_fetch", true]);
+    expect(partitionToolBatches(list)).toEqual([list]);
+  });
+});

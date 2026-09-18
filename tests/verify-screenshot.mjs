@@ -73,6 +73,17 @@ mock.setRoutes([
       }),
   },
   {
+    // 诱饵页:纯饱和蓝。SS4 用它做「用户正看着的页」——若截图误抓活动 tab,
+    // 采到的像素就是蓝色,回归一测便知
+    match: (url) => url.includes("mock.test/decoy"),
+    handle: async (ctx) =>
+      ctx.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+        body: `<html><head><meta charset="utf-8"></head><body style="margin:0;background:#0000ff;height:3000px"></body></html>`,
+      }),
+  },
+  {
     match: (url) => url.includes("/chat/completions"),
     handle: async (ctx) => {
       const body = JSON.parse(ctx.params.request.postData ?? "{}");
@@ -287,6 +298,102 @@ await ask(sidepanel, "换个问法");
     "非视觉门控不影响其它工具(page_read/scroll_page 仍在)",
     names.includes("page_read") && names.includes("scroll_page"),
   );
+}
+
+// ---- SS4 目标对齐:目标 ≠ 活动 tab,必须截目标页且截完恢复 ----
+console.log("\nSS4 截图目标对齐(激活目标 → 截图 → 恢复活动)");
+{
+  // 打开诱饵页(新开 tab 即成为活动 tab),用户此刻「看着」蓝色页
+  const decoy = await browser.newPage();
+  await decoy.goto("https://mock.test/decoy", { waitUntil: "load" });
+  await sleep(400);
+  const decoyTabId = await sidepanel.evaluate(
+    () =>
+      new Promise((resolve) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) =>
+          resolve(tabs[0]?.id ?? -1),
+        );
+      }),
+  );
+  check(
+    "诱饵页是当前活动 tab(且不同于截图目标)",
+    decoyTabId > 0 && decoyTabId !== targetTabId,
+    `decoy=${decoyTabId} target=${targetTabId}`,
+  );
+
+  // mock 的调用推进按「全会话累计 assistant tool_calls」计数(SS1 已消耗 3 次),
+  // SS4 的脚本要补齐占位才会轮到截图这一拍
+  chain = [
+    { name: "get_tabs", args: {} },
+    { name: "get_tabs", args: {} },
+    { name: "get_tabs", args: {} },
+    { name: "page_screenshot", args: { tabId: targetTabId } },
+  ];
+  await ask(sidepanel, "截一下刚才那个页面");
+
+  // 活动 tab 应恢复为诱饵页(截图不该把用户的浏览位置留在目标页)
+  const activeNow = await sidepanel.evaluate(
+    () =>
+      new Promise((resolve) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) =>
+          resolve(tabs[0]?.id ?? -1),
+        );
+      }),
+  );
+  check("截图后活动 tab 恢复为用户所在页", activeNow === decoyTabId, `active=${activeNow}`);
+
+  // 像素断言:逐张检查 images store 的截图中心像素,任何一张都不该是诱饵蓝
+  // (回归前误抓活动 tab → 必有纯蓝帧)。IDB getAll 按主键序返回、与写入
+  // 顺序无关,因此全量检查而不是只看「最后一张」
+  const pixels = await sidepanel.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const rq = indexedDB.open("tars");
+        rq.onsuccess = () => {
+          const db = rq.result;
+          const tx = db.transaction("images", "readonly");
+          const q = tx.objectStore("images").getAll();
+          q.onsuccess = async () => {
+            db.close();
+            try {
+              const out = [];
+              for (const row of q.result) {
+                const blob = new Blob([row.bytes], { type: "image/jpeg" });
+                const bmp = await createImageBitmap(blob);
+                const canvas = new OffscreenCanvas(1, 1);
+                const c2d = canvas.getContext("2d");
+                c2d.drawImage(
+                  bmp,
+                  Math.floor(bmp.width / 2),
+                  Math.floor(bmp.height / 2),
+                  1,
+                  1,
+                  0,
+                  0,
+                  1,
+                  1,
+                );
+                const d = c2d.getImageData(0, 0, 1, 1).data;
+                out.push({ r: d[0], g: d[1], b: d[2] });
+                bmp.close();
+              }
+              resolve(out);
+            } catch (e) {
+              reject(e);
+            }
+          };
+          q.onerror = () => reject(q.error);
+        };
+        rq.onerror = () => reject(rq.error);
+      }),
+  );
+  const isDecoyBlue = (p) => p.b > 180 && p.r < 120 && p.g < 120;
+  check(
+    "截图像素来自目标页(无诱饵蓝帧)",
+    pixels.length >= 2 && pixels.every((p) => !isDecoyBlue(p)),
+    JSON.stringify(pixels),
+  );
+  await decoy.close();
 }
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);

@@ -32,6 +32,10 @@ import {
   markReasoningObserved,
 } from "../../shared/configStore";
 import {
+  allowlistDomainOf,
+} from "../web/outboundGuard";
+import { deriveFetchAllowlist } from "../web/fetchAllowlist";
+import {
   defaultThinkingEffort,
   loadCatalog,
 } from "../../shared/modelCatalog";
@@ -69,9 +73,10 @@ import { getEnabledSkillByName } from "../skills/skillStore";
 import { partitionToolBatches } from "./toolBatch";
 import {
   CONFIRM_DENIED_MSG,
-  CONFIRM_TOOLS,
+  needsConfirmation,
   requestConfirmation,
 } from "./confirmations";
+import { redactToolArgsForLog } from "./toolLog";
 
 const log = createLogger({ ctx: "bg" });
 
@@ -272,6 +277,11 @@ export async function runAgentLoop(
     });
 
     const history = await loadHistory(payload.sessionId ?? "");
+    // 会话来源域白名单:web_fetch 的确认门判定用(用户消息 URL / 搜索结果 /
+    // 已成功抓取的域直抓,其余确认)。从落盘全量历史推导,SW 被杀不丢;
+    // 本轮用户原文显式传入(此刻尚未落盘),本轮内批准的新域在确认门处
+    // 追加进集合,同 run 后续抓取不再重复问
+    const fetchAllowlist = deriveFetchAllowlist(history, payload.text ?? "");
     // 追加写的两个锚点:persistedSeqs = 库里已有条数(新消息起始 seq);
     // persistedInCtx = 本轮 prompt 里携带的旧内容条数(新消息在领域数组里的
     // 起始下标)。溢出裁剪与压缩摘要都会让 prompt 前缀变短,使两者错开 ——
@@ -422,15 +432,26 @@ export async function runAgentLoop(
       setToolExecutionContext(toolCtx);
       const tool = getTool(name);
       if (!tool) throw new Error(`unknown tool: ${name}`);
-      // 写操作确认门:页面动作(点按/填写)默认逐次经面板确认(设置可关)。
+      // 写操作确认门:页面动作(点按/填写)、记忆写入/删除,以及 web_fetch
+      // 的出口判定(私网目标 / 白名单未命中)默认逐次经面板确认(设置可关)。
       // 拒绝/超时的文案作为工具错误回给模型 —— 让它改道而不是硬重试
-      if (config.confirmActions && CONFIRM_TOOLS.has(name)) {
+      if (config.confirmActions && needsConfirmation(name, args, fetchAllowlist)) {
         const approved = await requestConfirmation(
           port,
           { name, displayName: tool.displayName, args },
           signal,
         );
         if (!approved) throw new Error(CONFIRM_DENIED_MSG);
+        // 批准即知情:同 run 内该域后续抓取不再重复确认(跨 run 由下一轮
+        // 从历史里的成功抓取结果推导)
+        if (name === "web_fetch") {
+          const domain = allowlistDomainOf(
+            typeof (args as { url?: unknown } | null)?.url === "string"
+              ? ((args as { url: string }).url as string)
+              : "",
+          );
+          if (domain) fetchAllowlist.add(domain);
+        }
       }
       return await tool.execute(args);
     };
@@ -604,8 +625,12 @@ export async function runAgentLoop(
         });
 
         // 批次执行:相邻只读工具批内并行,写工具/MCP 工具自成单批串行。
+        // 需过确认门的调用(含 web_fetch 的私网/白名单未命中判定)是批次屏障:
+        // 确认卡在面板是单槽,同批并发派发会让先到的确认请求不可见。
         // 「调用中」事件先整批发(面板过程卡同时亮起),结果按原始顺序回填
-        for (const batch of partitionToolBatches(result.toolCalls)) {
+        for (const batch of partitionToolBatches(result.toolCalls, (tc) =>
+          config.confirmActions && needsConfirmation(tc.name, tc.args, fetchAllowlist),
+        )) {
           for (const tc of batch) {
             port.postMessage({
               type: MSG.AGENT_TOOL_CALL,
@@ -629,7 +654,7 @@ export async function runAgentLoop(
                 const toolResult = shot ? stripScreenshot(raw) : raw;
                 log.info("tool", `${tc.name} 完成`, {
                   ms: Date.now() - startedAt,
-                  args: tc.args,
+                  args: redactToolArgsForLog(tc.name, tc.args),
                   result: stringifyResult(toolResult),
                 });
                 return { tc, toolResult, shot, ok: true };
@@ -639,7 +664,7 @@ export async function runAgentLoop(
                   // 但留一条工具侧证据:取消发生在哪个工具、什么参数
                   log.warn("tool", `${tc.name} 失败(取消)`, {
                     ms: Date.now() - startedAt,
-                    args: tc.args,
+                    args: redactToolArgsForLog(tc.name, tc.args),
                     error: "cancelled by user",
                   });
                   throw err;
@@ -647,7 +672,7 @@ export async function runAgentLoop(
                 const errMsg = err instanceof Error ? err.message : String(err);
                 log.error("tool", `${tc.name} 失败`, {
                   ms: Date.now() - startedAt,
-                  args: tc.args,
+                  args: redactToolArgsForLog(tc.name, tc.args),
                   error: errMsg,
                 });
                 return { tc, toolResult: `Error: ${errMsg}`, shot: null, ok: false };
