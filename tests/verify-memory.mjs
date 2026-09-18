@@ -564,10 +564,16 @@ console.log("\n===== T8. 回复尾轻提示 =====");
     text.slice(-200),
   );
 
-  // 点击轻提示 → 直通记忆管理页
+  // 点击轻提示 → 直通记忆管理页;来路是聊天,返回钮文案必须随来路
   await sidepanel.locator('button[aria-label*="已写入"]').click();
   await sidepanel.locator(`h2:has-text("${zh.memory.entryTitle}")`).waitFor({ timeout: 5000 });
-  check(true, "T8-2 点击轻提示直通记忆管理页");
+  check(
+    (await sidepanel.locator(`button[aria-label="${zh.common.backToChat}"]`).count()) === 1,
+    "T8-2 轻提示进入记忆页,返回钮为「返回对话」",
+  );
+  await sidepanel.keyboard.press("Escape");
+  await input.waitFor({ state: "visible", timeout: 5000 });
+  check(await input.isVisible(), "T8-3 Esc 回到聊天视图");
 }
 
 // ---- 汇总 ----

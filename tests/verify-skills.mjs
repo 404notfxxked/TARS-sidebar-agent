@@ -421,8 +421,13 @@ console.log("\n===== T6. 历史回放:<skill> 块不进显示层 =====");
 console.log("\n===== T7. 编辑技能 =====");
 {
   await openSkillPage();
+  check(
+    (await sidepanel.locator(`button[aria-label="${zh.skills.backToSettings}"]`).count()) === 1,
+    "T7-0 设置页进入,返回钮为「返回设置」",
+  );
   const row = sidepanel.locator("li").filter({ hasText: "/test-skill" });
-  await row.locator("button").first().click();
+  // 编辑入口是行尾悬停显形的铅笔钮(整行文本不再承载点击)
+  await row.locator(`button[aria-label="${zh.skills.edit}"]`).click();
   const editor = sidepanel.locator(`textarea[aria-label="${zh.skills.edit}"]`);
   await editor.waitFor({ timeout: 5000 });
   // textarea 挂载即通过 waitFor,但值经 SKILL_RAW 异步回填(~百 ms 量级,

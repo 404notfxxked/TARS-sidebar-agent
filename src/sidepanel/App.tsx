@@ -8,13 +8,14 @@ import SettingsView from "./settings/SettingsView";
 import SessionsView from "./sessions/SessionsView";
 import MemoryView from "./memory/MemoryView";
 import SkillView from "./skills/SkillView";
-import { useLocale } from "./ui/hooks";
+import { useLocale, useT } from "./ui/hooks";
 
 type Overlay = null | "settings" | "sessions" | "memory" | "skills";
 
 export default function App() {
   // 语言订阅:t() 非响应式,切换语言后靠这里触发整棵树重渲染
   useLocale();
+  const t = useT();
   const [overlay, setOverlay] = useState<Overlay>(null);
   // 输入框 ref 由这里持有:悬浮层收起后把焦点还给输入框,继续打字不用再点
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -98,10 +99,20 @@ export default function App() {
           ) : overlay === "memory" ? (
             <MemoryView
               onBack={() => setOverlay(memoryFrom === "settings" ? "settings" : null)}
+              backLabel={
+                memoryFrom === "settings"
+                  ? t("memory.backToSettings")
+                  : t("common.backToChat")
+              }
             />
           ) : (
             <SkillView
               onBack={() => setOverlay(skillFrom === "settings" ? "settings" : null)}
+              backLabel={
+                skillFrom === "settings"
+                  ? t("skills.backToSettings")
+                  : t("common.backToChat")
+              }
             />
           )}
         </div>

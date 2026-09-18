@@ -24,7 +24,14 @@ import { TrashIcon } from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
-export default function MemoryView({ onBack }: { onBack: () => void }) {
+export default function MemoryView({
+  onBack,
+  backLabel,
+}: {
+  onBack: () => void;
+  /** 返回钮文案随来路:设置页入口「返回设置」,聊天入口由 App 传「返回对话」 */
+  backLabel?: string;
+}) {
   const t = useT();
   const [memories, setMemories] = useState<MemoryItem[] | null>(null);
   // 当前模型的上下文窗口:注入预算按它动态缩放(与后台注入同源)
@@ -129,7 +136,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
       <SubPageHeader
         title={t("memory.entryTitle")}
         onBack={onBack}
-        backLabel={t("memory.backToSettings")}
+        backLabel={backLabel ?? t("memory.backToSettings")}
       >
         {/* 溢出菜单:清空全部(两段确认;菜单收起即复位)。
             Esc 在此拦下先关菜单,不冒泡到 App 层关整页(容器本身非交互元素,焦点在内部按钮上) */}

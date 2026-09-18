@@ -1,7 +1,8 @@
 // 技能管理整页:安装(粘贴/导入 SKILL.md)、编辑(重组原文回填)、启停、删除。
-// 结构沿用记忆页范式:吸顶头部 + 添加区 + 行悬停操作 + 两段确认删除;
+// 结构对齐记忆页范式:吸顶头部 + 常驻胶囊添加条 + 行悬停操作 + 两段确认删除;
 // 数据经 SKILL_* 消息走后台(skillClient),本视图不碰 IDB。
-// 与记忆页的差异:技能正文较大,编辑走「展开行 → textarea」而非行内单行输入。
+// 与记忆页的差异:技能正文较大,编辑走「展开行 → textarea」而非行内单行输入;
+// 编辑入口是行尾悬停显形的铅笔钮 —— 整行可点会与同区的开关/删除误触。
 
 import { useEffect, useRef, useState } from "react";
 import { createLogger } from "../../shared/logger";
@@ -10,21 +11,30 @@ import { MSG, type SkillInfo } from "../../shared/messages";
 import { useConfirmReset, useT } from "../ui/hooks";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
-import { TrashIcon } from "../ui/icons";
+import { PencilIcon, TrashIcon } from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
-export default function SkillView({ onBack }: { onBack: () => void }) {
+export default function SkillView({
+  onBack,
+  backLabel,
+}: {
+  onBack: () => void;
+  /** 返回钮文案随来路:设置页入口「返回设置」,聊天入口由 App 传「返回对话」 */
+  backLabel?: string;
+}) {
   const t = useT();
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
-  // 添加区:收起态只显示按钮;展开后是 SKILL.md 粘贴编辑器(导入文件同入口)
+  // 添加区:常驻胶囊条,点击展开 SKILL.md 粘贴编辑器(导入文件收在编辑器内)
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
-  // 行内编辑:点行展开,取回重组原文;保存失败错误就地展示
+  // 行内编辑:点铅笔展开,取回重组原文;保存失败错误就地展示
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
+  // 原文经 SKILL_RAW 异步取回,取回前 textarea 呈加载态(不留空窗闪帧)
+  const [editLoading, setEditLoading] = useState(false);
   const [confirmDelId, armConfirmDel, resetConfirmDel] =
     useConfirmReset<string>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -59,6 +69,7 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
     setEditingId(s.id);
     setEditError(null);
     setEditDraft("");
+    setEditLoading(true);
     try {
       const { raw } = await skillRawReq(s.id);
       if (raw === undefined) {
@@ -68,6 +79,8 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
       setEditDraft(raw);
     } catch {
       setEditError(t("skills.gone"));
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -132,31 +145,42 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
       <SubPageHeader
         title={t("skills.title")}
         onBack={onBack}
-        backLabel={t("skills.backToSettings")}
+        backLabel={backLabel ?? t("skills.backToSettings")}
       />
 
-      {/* 添加区:紧凑双钮(主动作 tonal + 次动作 outlined,左对齐不拉伸——
-          桌面指针不需要移动端动作条的半宽大靶心)+ 可展开的粘贴编辑器 */}
+      {/* 添加区:常驻胶囊条(范式同记忆页添加条),点击展开粘贴编辑器 */}
       <div className="px-3 pb-1 pt-1">
         {!adding ? (
-          <div className="flex items-center gap-2">
+          <div className="relative">
             <button
               type="button"
+              aria-label={t("skills.add")}
               onClick={() => {
                 setAdding(true);
                 setAddError(null);
               }}
-              className="settings-btn tonal"
+              className="memory-add block cursor-pointer text-left"
             >
-              {t("skills.add")}
+              <span className="opacity-65">{t("skills.placeholder")}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="settings-btn"
+            {/* 装饰性加号:与记忆页添加钮同位同形;整条已可点,不单独交互 */}
+            <span
+              aria-hidden="true"
+              className="icon-btn-filled pointer-events-none absolute right-[5px] top-1/2 h-[26px] w-[26px] -translate-y-1/2"
             >
-              {t("skills.importFile")}
-            </button>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M8 3.5v9M3.5 8h9" />
+              </svg>
+            </span>
           </div>
         ) : (
           <div className="settings-card">
@@ -172,7 +196,15 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
               className="field-input block w-full resize-y font-mono text-[12px] leading-5"
             />
             {addError && <p className="field-hint text-error">{addError}</p>}
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex items-center gap-2 pt-1">
+              {/* 导入文件是添加的次动作:收进编辑器左侧,不与主动作并排裸放 */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-text muted mr-auto"
+              >
+                {t("skills.importFile")}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -206,11 +238,6 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
             e.target.value = ""; // 重置:同一文件可再次选择
           }}
         />
-        {skills !== null && skills.length > 0 && (
-          <p className="mb-0 mt-1.5 px-1 text-[12px] leading-4 text-on-surface-variant">
-            {t("skills.countLine", { n: skills.length })}
-          </p>
-        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
@@ -226,6 +253,7 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
                 skill={s}
                 editing={editingId === s.id}
                 editDraft={editingId === s.id ? editDraft : ""}
+                editLoading={editLoading}
                 editError={editingId === s.id ? editError : null}
                 confirming={confirmDelId === s.id}
                 onEditStart={() => void startEdit(s)}
@@ -252,6 +280,7 @@ function SkillRow({
   skill: s,
   editing,
   editDraft,
+  editLoading,
   editError,
   confirming,
   onEditStart,
@@ -264,6 +293,7 @@ function SkillRow({
   skill: SkillInfo;
   editing: boolean;
   editDraft: string;
+  editLoading: boolean;
   editError: string | null;
   confirming: boolean;
   onEditStart: () => void;
@@ -277,12 +307,8 @@ function SkillRow({
   return (
     <li className="skill-row-in">
       <div className="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors duration-150 hover:bg-on-surface/8">
-        <button
-          type="button"
-          onClick={onEditStart}
-          title={t("skills.clickToEdit")}
-          className="min-w-0 flex-1 cursor-pointer text-left"
-        >
+        {/* 名称与描述是纯展示:编辑走右侧铅笔,整行可点会误触展开编辑器 */}
+        <div className="min-w-0 flex-1">
           <span className="block font-mono text-[13px] leading-5 text-on-surface">
             /{s.name}
             {!s.enabled && (
@@ -290,11 +316,17 @@ function SkillRow({
             )}
           </span>
           <span className="skill-desc">{s.description}</span>
-          <span className="skill-desc opacity-70">
-            {t("skills.chars", { n: s.chars })}
-          </span>
-        </button>
+        </div>
         <span className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            aria-label={t("skills.edit")}
+            title={t("skills.edit")}
+            onClick={onEditStart}
+            className="icon-btn text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-on-surface"
+          >
+            <PencilIcon />
+          </button>
           <button
             type="button"
             role="switch"
@@ -336,6 +368,8 @@ function SkillRow({
             value={editDraft}
             onChange={(e) => onEditDraft(e.target.value)}
             aria-label={t("skills.edit")}
+            placeholder={editLoading ? t("skills.editLoading") : undefined}
+            disabled={editLoading}
             spellCheck={false}
             rows={10}
             // biome-ignore lint/a11y/noAutofocus: 点「编辑」即展开即改,自动聚焦是产品语义

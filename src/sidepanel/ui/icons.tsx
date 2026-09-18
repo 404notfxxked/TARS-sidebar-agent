@@ -1,6 +1,25 @@
 // 跨视图复用的图标。视图私有的图标留在各自文件里,别为「可能复用」上移。
 
 /** 垃圾桶(删除动作):记忆行/会话行同款 */
+export function PencilIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="block"
+    >
+      <path d="M11.1 2.6a1.7 1.7 0 0 1 2.4 2.4l-7.6 7.6-3.2.8.8-3.2 7.6-7.6Z" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return (
     <svg
