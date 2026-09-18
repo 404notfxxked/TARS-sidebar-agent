@@ -1,8 +1,8 @@
 // 技能管理整页:安装(粘贴/导入 SKILL.md)、编辑(重组原文回填)、启停、删除。
-// 结构对齐记忆页范式:吸顶头部 + 常驻胶囊添加条 + 行悬停操作 + 两段确认删除;
-// 数据经 SKILL_* 消息走后台(skillClient),本视图不碰 IDB。
-// 与记忆页的差异:技能正文较大,编辑走「展开行 → textarea」而非行内单行输入;
-// 编辑入口是行尾悬停显形的铅笔钮 —— 整行可点会与同区的开关/删除误触。
+// 结构:吸顶头部 + 直接铺开的技能列表 + 右下角悬浮球;点悬浮球(或行内「编辑」)
+// 弹出底部浮层填写/保存。数据经 SKILL_* 消息走后台(skillClient),不碰 IDB。
+// 行内布局:开关独占行尾(最高频操作),「编辑/删除」在行内独立动作行常驻显示
+// —— 悬停才显形的操作在桌面端可发现性差,与开关挤同区也会误触。
 
 import { useEffect, useRef, useState } from "react";
 import { createLogger } from "../../shared/logger";
@@ -15,6 +15,9 @@ import { PencilIcon, TrashIcon } from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
+/** 浮层形态:添加(空草稿)/ 编辑(取回重组原文回填)共用同一张卡 */
+type SkillEditor = { mode: "add" } | { mode: "edit"; id: string };
+
 export default function SkillView({
   onBack,
   backLabel,
@@ -25,15 +28,11 @@ export default function SkillView({
 }) {
   const t = useT();
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
-  // 添加区:常驻胶囊条,点击展开 SKILL.md 粘贴编辑器(导入文件收在编辑器内)
-  const [adding, setAdding] = useState(false);
+  // 浮层(添加/编辑共用):draft 为 SKILL.md 原文,editorError 就地展示
+  const [editor, setEditor] = useState<SkillEditor | null>(null);
   const [draft, setDraft] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
-  // 行内编辑:点铅笔展开,取回重组原文;保存失败错误就地展示
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState("");
-  const [editError, setEditError] = useState<string | null>(null);
-  // 原文经 SKILL_RAW 异步取回,取回前 textarea 呈加载态(不留空窗闪帧)
+  const [editorError, setEditorError] = useState<string | null>(null);
+  // 编辑态原文经 SKILL_RAW 异步取回,取回前 textarea 呈加载态(不留空窗闪帧)
   const [editLoading, setEditLoading] = useState(false);
   const [confirmDelId, armConfirmDel, resetConfirmDel] =
     useConfirmReset<string>();
@@ -45,62 +44,54 @@ export default function SkillView({
       .catch(() => setSkills([])); // 加载失败按空列表呈现,重开页面重试
   }, []);
 
-  const saveAdd = async () => {
-    if (!draft.trim()) return;
-    try {
-      const r = await skillReq({ type: MSG.SKILL_ADD, raw: draft });
-      setSkills(r.skills);
-      if (r.error) {
-        setAddError(r.error);
-        return;
-      }
-      setDraft("");
-      setAddError(null);
-      setAdding(false);
-    } catch (e) {
-      log.error("skills", "技能导入请求失败", { err: String(e) });
-      setAddError(String(e));
-    }
+  const startAdd = () => {
+    setDraft("");
+    setEditorError(null);
+    setEditor({ mode: "add" });
   };
 
   const startEdit = async (s: SkillInfo) => {
-    if (editingId === s.id) return;
-    setAdding(false);
-    setEditingId(s.id);
-    setEditError(null);
-    setEditDraft("");
+    setDraft("");
+    setEditorError(null);
+    setEditor({ mode: "edit", id: s.id });
     setEditLoading(true);
     try {
       const { raw } = await skillRawReq(s.id);
       if (raw === undefined) {
-        setEditError(t("skills.gone"));
+        setEditorError(t("skills.gone"));
         return;
       }
-      setEditDraft(raw);
+      setDraft(raw);
     } catch {
-      setEditError(t("skills.gone"));
+      setEditorError(t("skills.gone"));
     } finally {
       setEditLoading(false);
     }
   };
 
-  const saveEdit = async () => {
-    if (!editingId) return;
+  const closeEditor = () => {
+    setEditor(null);
+    setDraft("");
+    setEditorError(null);
+  };
+
+  const save = async () => {
+    if (!editor || !draft.trim()) return;
+    const req =
+      editor.mode === "add"
+        ? { type: MSG.SKILL_ADD, raw: draft }
+        : { type: MSG.SKILL_UPDATE, id: editor.id, raw: draft };
     try {
-      const r = await skillReq({
-        type: MSG.SKILL_UPDATE,
-        id: editingId,
-        raw: editDraft,
-      });
+      const r = await skillReq(req);
       setSkills(r.skills);
       if (r.error) {
-        setEditError(r.error);
+        setEditorError(r.error);
         return;
       }
-      setEditingId(null);
-      setEditError(null);
+      closeEditor();
     } catch (e) {
-      setEditError(String(e));
+      log.error("skills", "技能保存请求失败", { err: String(e) });
+      setEditorError(String(e));
     }
   };
 
@@ -123,7 +114,7 @@ export default function SkillView({
       return;
     }
     resetConfirmDel();
-    if (editingId === id) setEditingId(null);
+    if (editor?.mode === "edit" && editor.id === id) closeEditor();
     setSkills((list) => list?.filter((s) => s.id !== id) ?? list);
     skillReq({ type: MSG.SKILL_DELETE, id })
       .then((r) => setSkills(r.skills))
@@ -133,112 +124,19 @@ export default function SkillView({
   const importFile = async (file: File) => {
     try {
       setDraft(await file.text());
-      setAddError(null);
-      setAdding(true);
+      setEditorError(null);
     } catch {
-      setAddError(t("skills.readFailed"));
+      setEditorError(t("skills.readFailed"));
     }
   };
 
   return (
-    <div className="view-in flex min-h-0 flex-1 flex-col">
+    <div className="view-in relative flex min-h-0 flex-1 flex-col">
       <SubPageHeader
         title={t("skills.title")}
         onBack={onBack}
         backLabel={backLabel ?? t("skills.backToSettings")}
       />
-
-      {/* 添加区:常驻胶囊条(范式同记忆页添加条),点击展开粘贴编辑器 */}
-      <div className="mx-auto w-full max-w-[560px] px-3 pb-1 pt-1">
-        {!adding ? (
-          <div className="relative">
-            <button
-              type="button"
-              aria-label={t("skills.add")}
-              onClick={() => {
-                setAdding(true);
-                setAddError(null);
-              }}
-              className="memory-add block cursor-pointer text-left"
-            >
-              <span className="opacity-65">{t("skills.placeholder")}</span>
-            </button>
-            {/* 装饰性加号:与记忆页添加钮同位同形;整条已可点,不单独交互 */}
-            <span
-              aria-hidden="true"
-              className="icon-btn-filled pointer-events-none absolute right-[5px] top-1/2 h-[26px] w-[26px] -translate-y-1/2"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M8 3.5v9M3.5 8h9" />
-              </svg>
-            </span>
-          </div>
-        ) : (
-          <div className="settings-card">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={t("skills.placeholder")}
-              aria-label={t("skills.add")}
-              spellCheck={false}
-              rows={8}
-              // biome-ignore lint/a11y/noAutofocus: 点「添加技能」即展开即写,自动聚焦是产品语义
-              autoFocus
-              className="field-input block w-full resize-y font-mono text-[12px] leading-5"
-            />
-            {addError && <p className="field-hint text-error">{addError}</p>}
-            <div className="flex items-center gap-2 pt-1">
-              {/* 导入文件是添加的次动作:收进编辑器左侧,不与主动作并排裸放 */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="btn-text muted mr-auto"
-              >
-                {t("skills.importFile")}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAdding(false);
-                  setDraft("");
-                  setAddError(null);
-                }}
-                className="btn-text muted"
-              >
-                {t("skills.cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void saveAdd()}
-                disabled={!draft.trim()}
-                className="btn-text"
-              >
-                {t("skills.save")}
-              </button>
-            </div>
-          </div>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".md,text/markdown,text/plain"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void importFile(f);
-            e.target.value = ""; // 重置:同一文件可再次选择
-          }}
-        />
-      </div>
 
       <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
         {skills === null ? (
@@ -251,18 +149,8 @@ export default function SkillView({
               <SkillRow
                 key={s.id}
                 skill={s}
-                editing={editingId === s.id}
-                editDraft={editingId === s.id ? editDraft : ""}
-                editLoading={editLoading}
-                editError={editingId === s.id ? editError : null}
                 confirming={confirmDelId === s.id}
                 onEditStart={() => void startEdit(s)}
-                onEditDraft={setEditDraft}
-                onEditSave={() => void saveEdit()}
-                onEditCancel={() => {
-                  setEditingId(null);
-                  setEditError(null);
-                }}
                 onToggle={() => void toggle(s)}
                 onRemove={() => remove(s.id)}
               />
@@ -270,6 +158,101 @@ export default function SkillView({
           </ul>
         )}
       </div>
+
+      {/* 悬浮球:页内唯一「添加技能」入口;浮层打开期间让位隐藏 */}
+      {!editor && (
+        <button
+          type="button"
+          aria-label={t("skills.add")}
+          onClick={startAdd}
+          className="icon-btn-filled absolute right-4 bottom-4 z-20 h-10 w-10 shadow-2"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <path d="M8 3.5v9M3.5 8h9" />
+          </svg>
+        </button>
+      )}
+
+      {/* 添加/编辑浮层:底部锚定卡 + 垫层,Esc/垫层点击/取消都可关 */}
+      {editor && (
+        <>
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: 浮层垫层(scrim),标准模式 */}
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: 垫层仅服务指针,键盘经 Esc 关闭(见下) */}
+          <div className="fixed inset-0 z-10" onClick={closeEditor} />
+          <div
+            role="dialog"
+            aria-label={editor.mode === "add" ? t("skills.add") : t("skills.edit")}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                closeEditor();
+              }
+            }}
+            className="settings-card absolute inset-x-3 bottom-3 z-20 shadow-2"
+          >
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={editLoading ? t("skills.editLoading") : t("skills.placeholder")}
+              aria-label={editor.mode === "add" ? t("skills.add") : t("skills.edit")}
+              disabled={editLoading}
+              spellCheck={false}
+              rows={8}
+              // biome-ignore lint/a11y/noAutofocus: 点「添加/编辑」即弹出即写,自动聚焦是产品语义
+              autoFocus
+              className="field-input block w-full resize-y font-mono text-[12px] leading-5"
+            />
+            {editorError && <p className="field-hint text-error">{editorError}</p>}
+            <div className="flex items-center gap-2 pt-1">
+              {editor.mode === "add" && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="btn-text muted mr-auto"
+                >
+                  {t("skills.importFile")}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={closeEditor}
+                className={`btn-text muted ${editor.mode === "add" ? "" : "ml-auto"}`}
+              >
+                {t("skills.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={!draft.trim()}
+                className="btn-text"
+              >
+                {t("skills.save")}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".md,text/markdown,text/plain"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void importFile(f);
+          e.target.value = ""; // 重置:同一文件可再次选择
+        }}
+      />
     </div>
   );
 }
@@ -278,74 +261,59 @@ export default function SkillView({
 
 function SkillRow({
   skill: s,
-  editing,
-  editDraft,
-  editLoading,
-  editError,
   confirming,
   onEditStart,
-  onEditDraft,
-  onEditSave,
-  onEditCancel,
   onToggle,
   onRemove,
 }: {
   skill: SkillInfo;
-  editing: boolean;
-  editDraft: string;
-  editLoading: boolean;
-  editError: string | null;
   confirming: boolean;
   onEditStart: () => void;
-  onEditDraft: (v: string) => void;
-  onEditSave: () => void;
-  onEditCancel: () => void;
   onToggle: () => void;
   onRemove: () => void;
 }) {
   const t = useT();
   return (
     <li className="skill-row-in">
-      <div className="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors duration-150 hover:bg-on-surface/8">
-        {/* 名称与描述是纯展示:编辑走右侧铅笔,整行可点会误触展开编辑器 */}
-        <div className="min-w-0 flex-1">
-          <span className="block font-mono text-[13px] leading-5 text-on-surface">
+      <div className="rounded-md px-2 py-2 transition-colors duration-150 hover:bg-on-surface/8">
+        {/* 首行:名称 + 开关独占行尾(最高频操作,不需悬停) */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate font-mono text-[13px] leading-5 text-on-surface">
             /{s.name}
             {!s.enabled && (
               <span className="skill-badge">{t("common.disabled")}</span>
             )}
           </span>
-          <span className="skill-desc">{s.description}</span>
-        </div>
-        <span className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            aria-label={t("skills.edit")}
-            title={t("skills.edit")}
-            onClick={onEditStart}
-            className="icon-btn text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-on-surface"
-          >
-            <PencilIcon />
-          </button>
           <button
             type="button"
             role="switch"
             aria-checked={s.enabled}
-            aria-label={
-              s.enabled ? t("skills.disable") : t("skills.enable")
-            }
+            aria-label={s.enabled ? t("skills.disable") : t("skills.enable")}
             title={s.enabled ? t("skills.disable") : t("skills.enable")}
             onClick={onToggle}
             className="switch"
           >
             <span className="switch-knob" />
           </button>
+        </div>
+        <span className="skill-desc">{s.description}</span>
+        {/* 动作行:编辑/删除常驻显示,与开关分区分行(悬停显形已废弃) */}
+        <div className="mt-0.5 flex items-center gap-1">
+          <button
+            type="button"
+            aria-label={t("skills.edit")}
+            onClick={onEditStart}
+            className="model-row-action gap-1"
+          >
+            <PencilIcon />
+            {t("skills.edit")}
+          </button>
           {confirming ? (
             <button
               type="button"
               aria-label={t("common.confirmDelete")}
               onClick={onRemove}
-              className="btn-text danger px-2 text-[12px]"
+              className="model-row-action model-row-action-danger gap-1 font-semibold"
             >
               {t("common.confirmDelete")}
             </button>
@@ -353,45 +321,15 @@ function SkillRow({
             <button
               type="button"
               aria-label={t("skills.deleteOne")}
-              title={t("skills.deleteOne")}
               onClick={onRemove}
-              className="icon-btn text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-error"
+              className="model-row-action model-row-action-danger gap-1"
             >
               <TrashIcon />
+              {t("skills.deleteOne")}
             </button>
           )}
-        </span>
-      </div>
-      {editing && (
-        <div className="settings-card mt-1">
-          <textarea
-            value={editDraft}
-            onChange={(e) => onEditDraft(e.target.value)}
-            aria-label={t("skills.edit")}
-            placeholder={editLoading ? t("skills.editLoading") : undefined}
-            disabled={editLoading}
-            spellCheck={false}
-            rows={10}
-            // biome-ignore lint/a11y/noAutofocus: 点「编辑」即展开即改,自动聚焦是产品语义
-            autoFocus
-            className="field-input block w-full resize-y font-mono text-[12px] leading-5"
-          />
-          {editError && <p className="field-hint text-error">{editError}</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onEditCancel} className="btn-text muted">
-              {t("skills.cancel")}
-            </button>
-            <button
-              type="button"
-              onClick={onEditSave}
-              disabled={!editDraft.trim()}
-              className="btn-text"
-            >
-              {t("skills.save")}
-            </button>
-          </div>
         </div>
-      )}
+      </div>
     </li>
   );
 }
