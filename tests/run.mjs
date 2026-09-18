@@ -28,6 +28,7 @@ const SUITES = {
   "llm-errors": "verify-llm-errors.mjs",
   interact: "verify-interact.mjs",
   confirm: "verify-confirm.mjs",
+  "host-access": "verify-host-access.mjs",
   layout: "probe-layout.mjs", // 契约 6 悬浮层硬规则的断言防线
   locale: "probe-locale.mjs", // 语言切换行为(带断言)
   focus: "probe-focus.mjs", // 焦点流(autofocus/悬浮层回归/运行中可输入)+ 回到底部 + 模型键盘导航

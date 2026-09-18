@@ -80,8 +80,21 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 
 - `lib-cdp-mock.mjs` — CDP Fetch 拦截 + 环形日志断言(readLogs/waitForRunLog)
   + ask/sse + seedSessions/seedMemories/setTheme;所有套件的地基,新链路照
-  verify-*.mjs 模式加套件(并在 run.mjs SUITES 登记)
+  verify-*.mjs 模式加套件(并在 run.mjs SUITES 登记)。
+  **manifest flavor**(`launchWithCdp({ flavor })`,缺省 `granted`):
+  `granted` = 静态全站授权 + 静态 content script(既有套件);`zero` = 只授权
+  模型端点域,页面全部未授权(拒绝路径);`dynamic` = 全站授权但无静态
+  content script(生产按需注入路径)
 - `fixtures/` — 搜索结果页/读页 HTML(verify-web-search 专用)
+
+### e2e 不覆盖什么(避免误读「全绿」)
+
+- **授权动作本身**:`chrome.permissions.request` 的原生弹窗无法自动化
+  (实测 CDP userGesture 无效;Secure Preferences 种子会被 MAC 校验重置)。
+  e2e 用 flavor 静态模拟授权的「结果」,判定路径(chrome.permissions.contains)
+  与生产一致,但「点弹窗授权」这一步只有人工验证
+- **零授权的运行态**:既有套件都跑在 `granted` flavor 上;拒绝路径
+  (工具给可行动指引)只由 `host-access` 套件的 zero/dynamic 两个 flavor 覆盖
 
 ## e2e 断言套件(verify-*,按功能域一一对应;node tests/run.mjs <域名>)
 
@@ -98,7 +111,8 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 | `cancel` | `verify-cancel.mjs` | 停止按钮链路(LLM 流中取消;与 web-search 的 H 场景互补) |
 | `llm-errors` | `verify-llm-errors.mjs` | LLM 端点异常路径:401 鉴权失败(明确错误不重试)/流中途错误帧(服务端文案透传)/网络层断连(Fetch.failRequest,重试耗尽)/finish_reason=length(截断上屏不报错) |
 | `interact` | `verify-interact.mjs` | 页面交互工具(独立 harness:esbuild 注入,不加载扩展;esbuild 为显式 devDep) |
-| `confirm` | `verify-confirm.mjs` | 写操作确认门(安全 V1):确认卡内容(目标页/写入/回车/定位)/拒绝 declined 回给模型/允许放行到内容层/设置页安全分节;断言用 readRunLogs(run 窗口),mock 环境整轮 <100ms 时间窗会串 |
+| `confirm` | `verify-confirm.mjs` | 写操作确认门(安全 V1):确认卡内容(目标页/写入/回车/定位;记忆族/外链族标题与内容)/拒绝 declined 回给模型/允许放行到内容层/web_fetch 出口判定(私网必卡/白名单命中直抓/白名单外逐个出卡 + 批准后同域复用)/设置页安全分节;断言用 readRunLogs(run 窗口),mock 环境整轮 <100ms 时间窗会串 |
+| `host-access` | `verify-host-access.mjs` | 权限拒绝路径与生产注入路径(zero/dynamic flavor):未授权工具给可行动指引且 run 正常收口(find_elements / web_fetch)/授权态无静态 content script 时按需注入真实执行(sendMessage 失败 → executeScript → 重试) |
 | `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),契约 6 硬规则的自动化防线 |
 | `locale` | `probe-locale.mjs` | 语言切换:整树刷新/回首页/重载持久化 |
 | `focus` | `probe-focus.mjs` | 焦点与滚动体验:面板 autofocus/悬浮层关闭焦点回归/运行中输入框可编辑/「回到最新」出现-回底-消失/模型选择键盘导航(↑↓/Home/End/Enter/Tab/Esc)/历史搜索 autofocus |
