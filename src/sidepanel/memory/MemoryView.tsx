@@ -205,7 +205,7 @@ export default function MemoryView({
       </SubPageHeader>
 
       {/* 添加条:胶囊输入 + 圆形添加钮(回车同效) */}
-      <div className="px-3 pb-1 pt-1">
+      <div className="mx-auto w-full max-w-[560px] px-3 pb-1 pt-1">
         <div className="relative">
           <input
             id="memory-new-input"
@@ -263,7 +263,7 @@ export default function MemoryView({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
+      <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
         {memories === null ? (
           <SkeletonRows widths={[80, 62, 71, 55]} />
         ) : memories.length === 0 ? (

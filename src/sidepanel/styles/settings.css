@@ -25,6 +25,36 @@
     animation: page-in 250ms var(--ease-emphasized);
   }
 
+  /* ── 保存反馈胶囊(顶栏右缘):自动保存的轻确认。
+     空间常驻只做透明度过渡,顶栏布局不跳;error 态常驻到下次成功 ── */
+  .save-flash {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: var(--radius-full);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 200ms var(--ease-emphasized);
+  }
+  .save-flash.show,
+  .save-flash.error {
+    opacity: 1;
+  }
+  .save-flash.error {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+  }
+  .save-flash svg {
+    width: 12px;
+    height: 12px;
+  }
+
   /* ---- 历史会话页 ---- */
   /* 日期组头:滚动时吸顶。吸顶元素的间距必须进自身 padding(底色盖得住),
      用 margin 会留一条缝,行会从字上穿过;滚动容器顶部也不留 padding,

@@ -168,7 +168,7 @@ export default function SessionsView({
       </SubPageHeader>
 
       {/* 搜索:输入内 Esc 先清词(冒泡被拦下,不关页面) */}
-      <div className="px-3 pb-1 pt-1">
+      <div className="mx-auto w-full max-w-[560px] px-3 pb-1 pt-1">
         <div className="relative">
           <svg
             width="13"
@@ -206,7 +206,7 @@ export default function SessionsView({
       </div>
 
       {/* 顶部不留 padding:组头吸顶后若上方有缝,行会从缝里露出来(间距在组头自身 padding 里) */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+      <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {sessions === null ? (
           <SkeletonRows widths={[72, 55, 63, 46]} />
         ) : sessions.length === 0 ? (

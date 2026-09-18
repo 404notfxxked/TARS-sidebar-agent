@@ -149,7 +149,7 @@ export default function SkillView({
       />
 
       {/* 添加区:常驻胶囊条(范式同记忆页添加条),点击展开粘贴编辑器 */}
-      <div className="px-3 pb-1 pt-1">
+      <div className="mx-auto w-full max-w-[560px] px-3 pb-1 pt-1">
         {!adding ? (
           <div className="relative">
             <button
@@ -240,7 +240,7 @@ export default function SkillView({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
+      <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
         {skills === null ? (
           <SkeletonRows widths={[76, 58, 68]} />
         ) : skills.length === 0 ? (

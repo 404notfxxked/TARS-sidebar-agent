@@ -12,6 +12,7 @@ import {
 } from "../../shared/configStore";
 import { useT } from "../ui/hooks";
 import SubPageHeader from "../ui/SubPageHeader";
+import { CheckIcon } from "../ui/icons";
 import ModelSection, { type ModelDomain } from "./ModelSection";
 import AppearanceSection from "./AppearanceSection";
 import WebSection from "./WebSection";
@@ -47,7 +48,7 @@ export default function SettingsView({
   const pingSaved = useCallback(() => {
     setSavedFlash(true);
     if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => setSavedFlash(false), 1600);
+    flashTimer.current = window.setTimeout(() => setSavedFlash(false), 1200);
   }, []);
 
   /** 统一落盘出口:成功闪「已保存」,失败亮红提示。经 props 下发全部分节 */
@@ -81,23 +82,19 @@ export default function SettingsView({
   return (
     <div className="view-in flex min-h-0 flex-1 flex-col">
       <SubPageHeader title={t("settings.title")} onBack={onBack} className="px-4">
+        {/* 保存反馈胶囊:自动保存的轻确认。空间常驻只做透明度过渡,
+            顶栏不跳;连续改动由 1.2s 去抖只闪一次;失败态常驻到下次成功,
+            且挂在顶栏(滚动区顶部的提示会随滚动离开视口,看不见) */}
         <span
           aria-live="polite"
-          className={`ml-auto pr-1 text-[12px] text-primary transition-opacity duration-300 ${
-            savedFlash ? "opacity-100" : "opacity-0"
-          }`}
+          className={`save-flash ml-auto ${saveError ? "error" : savedFlash ? "show" : ""}`}
         >
-          {t("settings.saved")}
+          {!saveError && <CheckIcon />}
+          {saveError ? t("settings.saveFailed") : t("settings.saved")}
         </span>
       </SubPageHeader>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        {saveError && (
-          <p className="mb-1 mt-2 text-[12px] text-error">
-            {t("settings.saveFailed")}
-          </p>
-        )}
-
+      <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         {config && domain && (
           <>
             {/* 分节顺序 = onboarding 叙事(README 快速开始的顺序):

@@ -475,8 +475,10 @@ export default function ChatView({
           role="log"
           aria-live="polite"
           aria-atomic="false"
-          className="h-full space-y-3 overflow-y-auto px-4 pt-2 pb-8"
+          className="h-full overflow-y-auto px-4 pt-2 pb-8"
         >
+          {/* 内容列:面板拖宽后封顶 560px 居中,窄面板不变 */}
+          <div className="mx-auto w-full max-w-[560px] space-y-3">
         {(() => {
           const visible = messages.filter(
             (m) => m.sessionId === currentSession,
@@ -590,6 +592,7 @@ export default function ChatView({
             <ArchiveIcon /> {t("chat.memorySavedLabel", { n: memorySaved })}
           </button>
         )}
+          </div>
         </div>
         {(() => {
           // 上翻回看后流式仍在推进/内容很长时,给一个单跳回底的入口
@@ -621,7 +624,7 @@ export default function ChatView({
           e.preventDefault();
           submit();
         }}
-        className="relative mx-3 mb-3 rounded-lg bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
+        className="relative mx-auto mb-3 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
       >
         {pendingImages.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3.5 pt-2">
