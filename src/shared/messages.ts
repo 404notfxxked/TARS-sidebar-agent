@@ -212,6 +212,9 @@ export type AgentEvent =
   | { type: typeof MSG.AGENT_ERROR; error: string }
   | {
       type: typeof MSG.HISTORY;
+      /** 该份历史所属会话:面板据此做「响应会话 == 当前会话」新鲜度判定,
+       *  快速切会话时迟到的旧回包不得盖上新会话的 id */
+      sessionId: string;
       messages: ChatRecord[];
       /** 该会话存在压缩时带上:面板在压缩点渲染分隔条 */
       compaction?: CompactionMark | null;

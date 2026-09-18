@@ -311,11 +311,14 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
       case MSG.LOAD_HISTORY: {
         // 从历史列表切回某会话时,把该会话消息回给前端渲染;
         // 有压缩时带上压缩点,面板据此渲染分隔条(历史本身始终全量)。
-        // resync = 断连重同步,原样回显给面板走「按库替换」分支
+        // resync = 断连重同步,原样回显给面板走「按库替换」分支。
+        // sessionId 必须回带:面板按「响应会话 == 当前会话」判定新鲜度,
+        // 缺了它,快速切会话时旧回包会把 A 的转写盖上 B 的 id(评审 §5.2)
         const history = await loadHistory(msg.sessionId);
         const compaction = await getCompactionMark(msg.sessionId);
         port.postMessage({
           type: MSG.HISTORY,
+          sessionId: msg.sessionId,
           messages: toChatRecords(history),
           ...(compaction ? { compaction } : {}),
           ...(msg.resync ? { resync: true } : {}),

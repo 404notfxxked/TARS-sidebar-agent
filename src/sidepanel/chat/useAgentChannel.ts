@@ -80,7 +80,6 @@ export function useAgentChannel({
   const [currentSession, setCurrentSession] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const sessionRef = useRef("");
-  const historyReqRef = useRef("");
   // 最近一次已加载历史的会话,防重复请求
   const lastLoadedSessionRef = useRef("");
   // status 的 ref 镜像:port 监听器只注册一次,断连处理等闭包读不到最新 state
@@ -187,10 +186,16 @@ export function useAgentChannel({
         case MSG.HISTORY:
           // 断连重同步:run 期间后台被杀过 → 按库替换本地视图(库是全量
           // 真相,本地可能停在截断处)。请求发出后发生过任何本地动作
-          // (提交/重答/切会话)→ 本地更新鲜,迟到的响应作废。
+          // (提交/重答/切会话)→ 本地更新鲜,迟到的响应作废;
+          // 响应会话 != 当前会话(请求后切走过)同样作废。
           // 内容无差异(断连时本来就空闲收尾)→ 不换不打扰
           if (evt.resync) {
-            if (resyncSeqRef.current !== actionSeqRef.current) break;
+            if (
+              evt.sessionId !== sessionRef.current ||
+              resyncSeqRef.current !== actionSeqRef.current
+            ) {
+              break;
+            }
             const sid = sessionRef.current;
             setMessages((ms) => {
               const sig = (arr: ChatMsg[]) =>
@@ -224,18 +229,17 @@ export function useAgentChannel({
             setCompaction(evt.compaction ?? null);
             break;
           }
-          // 后端回的历史 → 填入该会话。
-          // 仅当该会话在本地面板尚无记录时才填(本地有记录 = 本地更新过/正在用,保留本地);
-          // 否则 idempotent,避免覆盖面板里已有的新消息。
-          // 发起请求后会话已变(用户切走/抢先提交)则不切换 currentSession。
-          if (historyReqRef.current === sessionRef.current) {
+          // 后端回的历史 → 填入该会话。回包自带 sessionId:只认「响应会话 ==
+          // 当前会话」的包 —— 快速切会话时先到的旧回包不能盖上新会话的 id
+          // (曾因回包无 sessionId、靠「最后请求 == 当前会话」推断而串台)。
+          // 本地已有该会话记录则保留本地(本地更新过/正在用),idempotent。
+          if (evt.sessionId === sessionRef.current) {
             setMessages((ms) => {
-              const sid = historyReqRef.current;
-              if (ms.some((m) => m.sessionId === sid)) return ms;
-              return evt.messages.map((m) => ({ ...m, sessionId: sid }));
+              if (ms.some((m) => m.sessionId === evt.sessionId)) return ms;
+              return evt.messages.map((m) => ({ ...m, sessionId: evt.sessionId }));
             });
             setCompaction(evt.compaction ?? null);
-            setCurrentSession(historyReqRef.current);
+            setCurrentSession(evt.sessionId);
           }
           break;
         case MSG.IMAGE_DATA:
@@ -280,7 +284,6 @@ export function useAgentChannel({
       const sid = sessionRef.current;
       if (sid && statusRef.current === "idle") {
         resyncSeqRef.current = actionSeqRef.current;
-        historyReqRef.current = sid;
         port.postMessage({ type: MSG.LOAD_HISTORY, sessionId: sid, resync: true });
       }
     }
@@ -302,7 +305,6 @@ export function useAgentChannel({
   // 加载某会话历史到面板(去重:同一会话不重复请求)
   const loadSessionHistory = (sessionId: string) => {
     if (sessionId === lastLoadedSessionRef.current) return;
-    historyReqRef.current = sessionId;
     lastLoadedSessionRef.current = sessionId;
     connect().postMessage({ type: MSG.LOAD_HISTORY, sessionId });
   };
@@ -324,10 +326,8 @@ export function useAgentChannel({
     setCurrentSession(sessionId);
     sessionRef.current = sessionId;
     if (sessionId) {
-      historyReqRef.current = sessionId;
       loadSessionHistory(sessionId);
     } else {
-      historyReqRef.current = "";
       lastLoadedSessionRef.current = "";
     }
   };
@@ -428,7 +428,6 @@ export function useAgentChannel({
     setCurrentSession("");
     // 重置所有会话游标,保证下一次加载历史 / 提交都从空会话开始
     sessionRef.current = "";
-    historyReqRef.current = "";
     lastLoadedSessionRef.current = "";
   };
 
