@@ -7,8 +7,9 @@
 // (灰源色经 CAM16 会偏蓝,按 M3 monochrome 规范用 neutral 色调生成)。
 //
 // 画布中性化:surface 七角色(surface/dim/container 五级)不取各重点色自己的
-// neutral 色板,统一用固定暖源色(SURFACE_SOURCE)派生的 neutral 色板 ——
-// 背景画布只有暖白 / 柔炭灰两套,不随重点色漂移,重点色只落在交互角色上。
+// neutral 色板,统一用纯中性灰阶(chroma 0)—— 背景画布只有浅灰/深灰两套,
+// 不随重点色漂移、不带任何色相倾向(带暖相的画布与绿/蓝系重点色互相打架,
+// 评审 2026-09-18),重点色只落在交互角色上。
 // 暗色 ramp 相比 M3 官方 tone 整体抬高(surface 6→10),不再刺黑。
 //
 // 注:@material/material-color-utilities 锁 0.3.0(0.4.x 的 ESM 打包缺扩展名,Node 无法加载)。
@@ -20,7 +21,6 @@ import {
   hexFromArgb,
   argbFromHex,
   TonalPalette,
-  Hct,
 } from "@material/material-color-utilities";
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -97,14 +97,9 @@ const SURFACE_TONES = {
   },
 };
 
-/** 画布专用 neutral 色板:固定暖源色派生,所有重点色共用。取珊瑚橙的色相、
- *  chroma 压到 3(官方 neutral 是 4):暖意读作「米白/暖灰」而非粉米,
- *  浅色是暖象牙白、暗色是带暖意的炭灰 */
-const SURFACE_SOURCE = "#ea580c";
-const surfaceNeutral = TonalPalette.fromHueAndChroma(
-  Hct.fromInt(argbFromHex(SURFACE_SOURCE)).hue,
-  3,
-);
+/** 画布专用 neutral 色板:纯中性灰阶(chroma 0),所有重点色共用。
+ *  暖相画布与绿/蓝系重点色打架(评审 2026-09-18),色相倾向归零 */
+const surfaceNeutral = TonalPalette.fromHueAndChroma(0, 0);
 
 // ---- 生成 ----
 const themes = ACCENTS.map((a) => ({
@@ -192,8 +187,8 @@ const darkBlocks = [
 
 const css = `/* ---- M3 scheme(生成文件,勿手改)----
    由 scripts/generate-m3.mjs 从 ACCENTS 各源色经 material-color-utilities 生成。
-   surface 七角色用固定暖源色(${SURFACE_SOURCE})派生的共用 neutral 色板:
-   浅色 = 暖象牙白,暗色 = 柔炭灰(整体抬亮),背景画布不随重点色漂移;
+   surface 七角色用共用的纯中性灰阶色板(chroma 0):
+   浅色 = 浅灰,暗色 = 柔炭灰(整体抬亮),背景画布不随重点色漂移;
    其余角色(交互色/文字/描边)按各重点色生成。
    默认青绿 = :root / [data-theme="dark"];其余重点色 = [data-accent] 与
    [data-theme="dark"][data-accent](深浅各一套,深浅切换 + 重点色切换全生效)。
