@@ -251,7 +251,10 @@ export async function appendMessages(
 }
 
 /** 截掉 seq >= fromSeq 的消息行并回拨会话 msgCount(重新生成用)。
- *  压缩元数据与 token 基线透传不动:压缩只涉更早的 seq,基线只是估算启发 */
+ *  压缩元数据与 token 基线透传不动:压缩只涉更早的 seq,基线只是估算启发。
+ *  TODO(regenerate 图片回收):截断段消息引用的图片行暂不回收(字节留在
+ *  images store 至会话级删除),见 design/tech-review-2026-09-18.md §5.1;
+ *  修法需按截断段收集图片 id 一并删,与消息行同事务 */
 export async function deleteMessagesFrom(
   sessionId: string,
   fromSeq: number,
@@ -314,8 +317,13 @@ export async function clearAllRows(): Promise<void> {
   await settled(tx);
 }
 
+// 会话前缀范围删:上界必须是「数组天花板」而非 Infinity。messages 第二键是
+// 数字(seq),images 第二键是字符串(uuid),而 IDB 键序里 number < string ——
+// [id, Infinity] 罩不住 [id, "uuid…"](曾致删会话永远漏删图片字节,见
+// design/tech-review-2026-09-18.md §5.1);[id, []] 比任何 [id, 二键] 都大
+// (同前缀时短数组在前),两类 store 通吃
 function sessionRange(id: string): IDBKeyRange {
-  return IDBKeyRange.bound([id, -Infinity], [id, Infinity]);
+  return IDBKeyRange.bound([id], [id, []]);
 }
 
 // ---- 长期记忆(memories store,独立于会话生命周期) ----

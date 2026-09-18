@@ -103,6 +103,61 @@ async function ageSession(page, titlePrefix, days) {
   }
 }
 
+/** 给指定会话种图片行(images store,主键 [sessionId, 字符串 id]):
+ *  键序回归钉子 —— 删会话/保留期清理必须级联回收字符串主键的图片字节 */
+async function seedImages(page, sessionId, ids) {
+  await page.evaluate(
+    ({ sessionId, ids }) =>
+      new Promise((resolve, reject) => {
+        const rq = indexedDB.open("tars");
+        rq.onsuccess = () => {
+          const db = rq.result;
+          const tx = db.transaction("images", "readwrite");
+          const store = tx.objectStore("images");
+          for (const id of ids) {
+            store.put({
+              sessionId,
+              id,
+              mime: "image/jpeg",
+              w: 2,
+              h: 2,
+              bytes: new Uint8Array([1, 2, 3]),
+            });
+          }
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onabort = () => reject(tx.error);
+          tx.onerror = () => reject(tx.error);
+        };
+        rq.onerror = () => reject(rq.error);
+      }),
+    { sessionId, ids },
+  );
+}
+
+/** images store 概览:只回 sessionId 集合,不搬运字节 */
+async function imageSnapshot(page) {
+  return page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const rq = indexedDB.open("tars");
+        rq.onsuccess = () => {
+          const db = rq.result;
+          const tx = db.transaction("images", "readonly");
+          const q = tx.objectStore("images").getAll();
+          q.onsuccess = () => {
+            db.close();
+            resolve(q.result.map((r) => r.sessionId));
+          };
+          q.onerror = () => reject(q.error);
+        };
+        rq.onerror = () => reject(rq.error);
+      }),
+  );
+}
+
 /** 重启扩展 SW(关 target;下次事件自动唤醒并重跑启动逻辑) */
 async function restartSW(cdpSend, extId) {
   const { targetInfos } = await cdpSend("Target.getTargets");
@@ -222,15 +277,22 @@ await sleep(300);
 // ---- S2 删除单条 ----
 console.log("\nS2 删除单个会话");
 {
+  // 键序回归:images 主键是 [sessionId, 字符串 id],删会话必须级联回收
+  const snap = await idbSnapshot(sidepanel);
+  const legacy = snap.rows.find((r) => r.title.startsWith("旧会话迁移测试"));
+  await seedImages(sidepanel, legacy.id, ["img-legacy-1", "img-legacy-2"]);
+  check("删除前 images store 有 2 行", (await imageSnapshot(sidepanel)).length === 2);
+
   const row = sidepanel.locator("li", { hasText: "旧会话迁移测试" });
   await row.locator('button[aria-label^="删除会话"]').click();
   await row.locator(`button:has-text("${zh.common.confirmDelete}")`).click();
   await sleep(600);
   const gone = (await row.count()) === 0;
   check("列表行已消失", gone);
-  const snap = await idbSnapshot(sidepanel);
-  check("IDB 剩 2 会话 4 消息", snap.rows.length === 2 && snap.msgTotal === 4,
-    JSON.stringify({ n: snap.rows.length, total: snap.msgTotal }));
+  const after = await idbSnapshot(sidepanel);
+  check("IDB 剩 2 会话 4 消息", after.rows.length === 2 && after.msgTotal === 4,
+    JSON.stringify({ n: after.rows.length, total: after.msgTotal }));
+  check("图片字节随会话级联删除(键序回归)", (await imageSnapshot(sidepanel)).length === 0);
 }
 await sidepanel.locator(`button[aria-label="${zh.common.backToChat}"]`).click();
 
@@ -280,6 +342,16 @@ await sleep(800);
 
 // ---- S4 保留期清理 ----
 console.log("\nS4 保留期清理(默认 7 天)");
+let keptSessionId = null;
+{
+  // 键序回归(保留期路径):过期会话的图片字节一并回收,活跃会话的保留
+  const snap = await idbSnapshot(sidepanel);
+  const expired = snap.rows.find((r) => r.title.startsWith("第一条测试消息"));
+  const kept = snap.rows.find((r) => r.title.startsWith("第二条测试消息"));
+  keptSessionId = kept.id;
+  await seedImages(sidepanel, expired.id, ["img-expired-1"]);
+  await seedImages(sidepanel, kept.id, ["img-kept-1"]);
+}
 await ageSession(sidepanel, "第一条测试消息", 8);
 await browser.close();
 ({ browser, extId } = await launchWithCdp({
@@ -297,6 +369,12 @@ await sleep(300);
     titles.some((t) => t.includes("第二条测试消息")) &&
       !titles.some((t) => t.includes("第一条测试消息")),
     JSON.stringify(titles),
+  );
+  const imgs = await imageSnapshot(sidepanel);
+  check(
+    "保留期清理级联回收过期会话图片,活跃会话图片保留(键序回归)",
+    imgs.length === 1 && imgs[0] === keptSessionId,
+    JSON.stringify({ imgs, keptSessionId }),
   );
 }
 
