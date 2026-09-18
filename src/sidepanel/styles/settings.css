@@ -2,7 +2,12 @@
    页面底 = surface-container(悬浮层是另一目的地,色调分层示意方位);
    分组卡 = surface-container-lowest 填充卡 + lg 圆角(Android 系统设置形态,
    无边框无阴影,海拔靠色调);控件 = M3 形态(开关 52×32、连体分段、胶囊按钮)。
-   状态层约定:on-surface / primary / error 的 8%(hover)与 12%(按下) */
+   状态层约定:on-surface / primary / error 的 8%(hover)与 12%(按下)
+   ── 按钮档位 canon(同角色同尺寸,新增按钮对号入座)──
+   · 36px/13px  页面级动作(settings-btn / btn-text / 发送钮)
+   · 30px/12.5px 行内紧凑动作(model-row-action)
+   · 32px 图标钮(icon-btn);28px 消息动作行;26px 输入内嵌(eye)
+   · 字号下限:说明文字 12px,徽标/meta/等宽小字 11.5px,正文 13px */
 
 /* 整页切入:轻右移淡入(退出即卸载,不做对称动画) */
 @keyframes page-in {
@@ -58,7 +63,7 @@
     margin-top: 1px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11.5px;
+    font-size: 12px;
     line-height: 1.5;
     color: var(--md-sys-color-on-surface-variant);
   }
@@ -70,7 +75,7 @@
     border-radius: var(--radius-full);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
-    font-size: 11px;
+    font-size: 11.5px;
     line-height: 1.6;
     vertical-align: 1px;
   }
@@ -97,7 +102,7 @@
     border-radius: var(--radius-full);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
-    font-size: 11px;
+    font-size: 11.5px;
     line-height: 1.6;
     vertical-align: 1px;
   }
@@ -294,7 +299,7 @@
   }
   .field-hint {
     margin: 6px 0 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.45;
     color: var(--md-sys-color-on-surface-variant);
   }
@@ -341,7 +346,7 @@
     border-radius: var(--radius-xs);
     background: var(--md-sys-color-surface-container);
     box-shadow: var(--shadow-2);
-    font-size: 11.5px;
+    font-size: 12px;
     line-height: 1.5;
     color: var(--md-sys-color-on-surface);
     text-align: start;
@@ -376,7 +381,7 @@
     gap: 3px;
     padding: 0;
     border-radius: 4px;
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--md-sys-color-primary);
     cursor: pointer;
@@ -446,14 +451,14 @@
     margin-top: 1px;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 11.5px;
     line-height: 1.4;
     color: var(--md-sys-color-on-surface-variant);
   }
   .skill-pop-note {
     margin: 0;
     padding: 6px 12px;
-    font-size: 11.5px;
+    font-size: 12px;
     line-height: 1.5;
     color: var(--md-sys-color-on-surface-variant);
   }
@@ -463,7 +468,7 @@
     gap: 3px;
     margin: 2px 12px 6px;
     padding: 0;
-    font-size: 11.5px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--md-sys-color-primary);
     cursor: pointer;
@@ -670,7 +675,7 @@
   /* 分组脚注 */
   .settings-group-footer {
     margin: 6px 2px 0;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.45;
     color: var(--md-sys-color-on-surface-variant);
   }
@@ -717,7 +722,7 @@
     border-radius: var(--radius-full);
     background: var(--md-sys-color-secondary-container);
     color: var(--md-sys-color-on-secondary-container);
-    font-size: 10.5px;
+    font-size: 11.5px;
     line-height: 1.4;
     font-weight: 500;
   }
@@ -766,7 +771,7 @@
   .model-row-id {
     margin: 4px 0 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 11px;
+    font-size: 11.5px;
     color: var(--md-sys-color-on-surface-variant);
     overflow: hidden;
     text-overflow: ellipsis;

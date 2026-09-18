@@ -164,7 +164,7 @@ export default function ModelPicker({
             <div key={p.id} role="group" aria-label={p.name}>
               <div
                 aria-hidden="true"
-                className="px-3 pb-0.5 pt-2 text-[10.5px] font-medium uppercase tracking-wide text-on-surface-variant/70 first:pt-1.5"
+                className="px-3 pb-0.5 pt-2 text-[11.5px] font-medium uppercase tracking-wide text-on-surface-variant/70 first:pt-1.5"
               >
                 {p.name || new URL(p.baseUrl).hostname}
               </div>

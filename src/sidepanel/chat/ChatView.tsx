@@ -617,7 +617,7 @@ export default function ChatView({
           e.preventDefault();
           submit();
         }}
-        className="relative mx-3 mb-3 rounded-xl bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
+        className="relative mx-3 mb-3 rounded-lg bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
       >
         {pendingImages.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3.5 pt-2">
@@ -626,7 +626,7 @@ export default function ChatView({
                 <img
                   src={p.url}
                   alt={t("chat.pendingImageAlt", { w: p.w, h: p.h })}
-                  className="h-14 w-14 rounded-lg object-cover"
+                  className="h-14 w-14 rounded-md object-cover"
                 />
                 <button
                   type="button"
@@ -641,7 +641,7 @@ export default function ChatView({
           </div>
         )}
         {attachHint && (
-          <p className="px-3.5 pt-1.5 text-[11.5px] text-on-surface-variant">
+          <p className="px-3.5 pt-1.5 text-[12px] text-on-surface-variant">
             {attachHint}
           </p>
         )}

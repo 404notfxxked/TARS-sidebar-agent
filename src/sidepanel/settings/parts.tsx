@@ -59,7 +59,7 @@ export function ExpandCard({
           {badge}
         </span>
         {meta != null && (
-          <span className="ml-auto shrink-0 pr-1 text-[11px] text-on-surface-variant">
+          <span className="ml-auto shrink-0 pr-1 text-[11.5px] text-on-surface-variant">
             {meta}
           </span>
         )}

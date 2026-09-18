@@ -47,7 +47,7 @@ export default function SecuritySection({
         {pageAccess !== null &&
           (pageAccess ? (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-on-surface-variant">
+              <span className="text-[12px] text-on-surface-variant">
                 {t("security.hostAccessOn")}
               </span>
               <button

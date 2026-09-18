@@ -83,7 +83,7 @@ export default function SettingsView({
       <SubPageHeader title={t("settings.title")} onBack={onBack} className="px-4">
         <span
           aria-live="polite"
-          className={`ml-auto pr-1 text-[11px] text-primary transition-opacity duration-300 ${
+          className={`ml-auto pr-1 text-[12px] text-primary transition-opacity duration-300 ${
             savedFlash ? "opacity-100" : "opacity-0"
           }`}
         >

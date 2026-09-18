@@ -90,54 +90,54 @@ export function ConfirmCard({
     <div
       role="alertdialog"
       aria-label={t(titleKey)}
-      className="mx-3 mb-2 rounded-xl bg-surface-container-high p-3 shadow-2"
+      className="mx-3 mb-2 rounded-lg bg-surface-container-high p-3 shadow-2"
     >
       <p className="flex items-center gap-1.5 text-[13px] font-medium text-on-surface">
         <ConfirmIcon />
         {toolLabel(t, req.name, req.displayName)} · {t(titleKey)}
       </p>
       {targetLabel && (
-        <p className="mt-1 truncate text-[11.5px] text-on-surface-variant">
+        <p className="mt-1 truncate text-[12px] text-on-surface-variant">
           {t("chat.confirmTarget", { title: targetLabel })}
         </p>
       )}
       {fillText && (
-        <p className="mt-1 break-all text-[11.5px] text-on-surface-variant">
+        <p className="mt-1 break-all text-[12px] text-on-surface-variant">
           {t("chat.confirmFillText", { text: fillText })}
           {args.text && args.text.length > 80 ? "…" : ""}
         </p>
       )}
       {isFill && args.pressEnterAfter && (
-        <p className="mt-1 text-[11.5px] text-error">
+        <p className="mt-1 text-[12px] text-error">
           {t("chat.confirmSubmitHint")}
         </p>
       )}
       {memSaveText && (
-        <p className="mt-1 break-all text-[11.5px] text-on-surface-variant">
+        <p className="mt-1 break-all text-[12px] text-on-surface-variant">
           {t("chat.confirmMemorySaveText", { text: memSaveText })}
           {(args.content?.length ?? 0) > 80 ? "…" : ""}
         </p>
       )}
       {memDeleteMatch && (
-        <p className="mt-1 break-all text-[11.5px] text-on-surface-variant">
+        <p className="mt-1 break-all text-[12px] text-on-surface-variant">
           {t("chat.confirmMemoryDeleteText", { match: memDeleteMatch })}
         </p>
       )}
       {fetchRawUrl && (
         <>
-          <p className="mt-1 break-all font-mono text-[11px] text-on-surface-variant">
+          <p className="mt-1 break-all font-mono text-[11.5px] text-on-surface-variant">
             {t("chat.confirmWebFetchUrl", { url: fetchLabel })}
             {fetchTruncated ? "…" : ""}
           </p>
           {fetchTarget && fetchQueryChars > 0 && (
-            <p className="mt-1 break-all text-[11.5px] text-on-surface-variant">
+            <p className="mt-1 break-all text-[12px] text-on-surface-variant">
               {t("chat.confirmWebFetchQuery", { n: String(fetchQueryChars) })}
             </p>
           )}
         </>
       )}
       {typeof args.selector === "string" && args.selector && (
-        <p className="mt-1 truncate font-mono text-[11px] text-on-surface-variant">
+        <p className="mt-1 truncate font-mono text-[11.5px] text-on-surface-variant">
           {t("chat.confirmSelectorLabel", { selector: args.selector })}
         </p>
       )}
@@ -154,7 +154,7 @@ export function ConfirmCard({
           type="button"
           onClick={() => onAnswer(true)}
           aria-label={t("chat.confirmAllow")}
-          className="icon-btn-filled ml-2 h-8 px-3 text-[12px] font-medium leading-none"
+          className="icon-btn-filled ml-2 h-9 px-3 font-medium leading-none"
         >
           {t("chat.confirmAllow")}
         </button>

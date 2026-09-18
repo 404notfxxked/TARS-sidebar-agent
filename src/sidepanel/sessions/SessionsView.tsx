@@ -275,12 +275,12 @@ function SessionRow({
               {s.title}
             </span>
             {active && (
-              <span className="shrink-0 rounded-full bg-primary px-2 py-px text-[10.5px] font-medium text-on-primary">
+              <span className="shrink-0 rounded-full bg-primary px-2 py-px text-[11.5px] font-medium text-on-primary">
                 {t("sessions.activeBadge")}
               </span>
             )}
           </span>
-          <span className="mt-0.5 block text-[11px] text-on-surface-variant">
+          <span className="mt-0.5 block text-[11.5px] text-on-surface-variant">
             {shortTime(t, s.updatedAt)} · {t("sessions.msgCount", { n: s.msgCount })}
           </span>
         </button>
@@ -294,7 +294,7 @@ function SessionRow({
           }
           className={`shrink-0 rounded-full p-1.5 transition-colors duration-150 ${
             confirming
-              ? "text-[11px] font-medium leading-none text-error"
+              ? "text-[12px] font-medium leading-none text-error"
               : "text-on-surface-variant opacity-0 hover:bg-error/8 hover:text-error focus-visible:opacity-100 group-hover:opacity-100"
           }`}
         >

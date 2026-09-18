@@ -241,7 +241,7 @@ export default function MemoryView({ onBack }: { onBack: () => void }) {
           </button>
         </div>
         {memories !== null && memories.length > 0 && (
-          <p className="mb-0 mt-1.5 px-1 text-[11px] leading-4 tabular-nums text-on-surface-variant">
+          <p className="mb-0 mt-1.5 px-1 text-[12px] leading-4 tabular-nums text-on-surface-variant">
             {t("memory.saved", {
               n: memories.length,
               used: usedTokens,
@@ -388,7 +388,7 @@ function MemoryRow({
               type="button"
               aria-label={t("common.confirmDelete")}
               onClick={onRemove}
-              className="btn-text danger px-2 text-[11px]"
+              className="btn-text danger px-2 text-[12px]"
             >
               {t("common.confirmDelete")}
             </button>
@@ -449,7 +449,7 @@ function EmptyState() {
         <path d="M9 11h6" />
       </svg>
       <p className="m-0 text-[13px] text-on-surface-variant">{t("memory.empty")}</p>
-      <p className="m-0 text-[11.5px] leading-4 text-on-surface-variant/80">
+      <p className="m-0 text-[12px] leading-4 text-on-surface-variant/80">
         {t("memory.emptyHint")}
       </p>
     </div>

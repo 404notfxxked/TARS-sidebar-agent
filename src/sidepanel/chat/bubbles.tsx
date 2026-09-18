@@ -82,7 +82,7 @@ export function UserBubble({
         </div>
       )}
       {text && (
-        <div className="whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
+        <div className="whitespace-pre-wrap break-words rounded-md rounded-br-sm bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
           {text}
         </div>
       )}
@@ -150,7 +150,7 @@ export function ErrorBubble({
 }) {
   const t = useT();
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-error-container px-3.5 py-2.5 text-[13px] leading-relaxed text-on-error-container">
+    <div className="msg-in flex w-full items-start gap-2 rounded-md bg-error-container px-3.5 py-2.5 text-[13px] leading-relaxed text-on-error-container">
       <WarnIcon />
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
         {text}
@@ -172,7 +172,7 @@ export function NoticeBubble({ kind }: { kind?: "max-turns" | "disconnected" }) 
       ? t("chat.disconnectNotice")
       : t("chat.maxTurnsNotice");
   return (
-    <div className="msg-in flex w-full items-start gap-2 rounded-lg bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
+    <div className="msg-in flex w-full items-start gap-2 rounded-md bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
       <InfoIcon />
       <span className="min-w-0 flex-1">{text}</span>
     </div>
@@ -214,14 +214,14 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
   }, [meta.id, url]);
   if (failed) {
     return (
-      <div className="flex h-20 w-28 items-center justify-center rounded-lg bg-surface-container-high text-[11px] text-on-surface-variant">
+      <div className="flex h-20 w-28 items-center justify-center rounded-md bg-surface-container-high text-[12px] text-on-surface-variant">
         {t("chat.imageExpired")}
       </div>
     );
   }
   if (!url) {
     return (
-      <div className="h-20 w-28 animate-pulse rounded-lg bg-surface-container-high" />
+      <div className="h-20 w-28 animate-pulse rounded-md bg-surface-container-high" />
     );
   }
   return (
@@ -229,7 +229,7 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
       <img
         src={url}
         alt={t("chat.imageAlt", { w: meta.w, h: meta.h })}
-        className="max-h-48 rounded-lg object-contain"
+        className="max-h-48 rounded-md object-contain"
       />
     </a>
   );

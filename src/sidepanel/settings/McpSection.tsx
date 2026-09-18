@@ -369,7 +369,7 @@ function McpServerCard({
                     {tool.name}
                   </p>
                   <p
-                    className="m-0 text-[11.5px] leading-snug text-on-surface-variant"
+                    className="m-0 text-[12px] leading-snug text-on-surface-variant"
                     title={tool.description}
                   >
                     {tool.description.slice(0, 120)}

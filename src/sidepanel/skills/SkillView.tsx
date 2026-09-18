@@ -180,7 +180,7 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
                   setDraft("");
                   setAddError(null);
                 }}
-                className="btn-text muted text-[12px]"
+                className="btn-text muted"
               >
                 {t("skills.cancel")}
               </button>
@@ -188,7 +188,7 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
                 type="button"
                 onClick={() => void saveAdd()}
                 disabled={!draft.trim()}
-                className="btn-text text-[12px]"
+                className="btn-text"
               >
                 {t("skills.save")}
               </button>
@@ -207,7 +207,7 @@ export default function SkillView({ onBack }: { onBack: () => void }) {
           }}
         />
         {skills !== null && skills.length > 0 && (
-          <p className="mb-0 mt-1.5 px-1 text-[11px] leading-4 text-on-surface-variant">
+          <p className="mb-0 mt-1.5 px-1 text-[12px] leading-4 text-on-surface-variant">
             {t("skills.countLine", { n: skills.length })}
           </p>
         )}
@@ -313,7 +313,7 @@ function SkillRow({
               type="button"
               aria-label={t("common.confirmDelete")}
               onClick={onRemove}
-              className="btn-text danger px-2 text-[11px]"
+              className="btn-text danger px-2 text-[12px]"
             >
               {t("common.confirmDelete")}
             </button>
@@ -344,14 +344,14 @@ function SkillRow({
           />
           {editError && <p className="field-hint text-error">{editError}</p>}
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={onEditCancel} className="btn-text muted text-[12px]">
+            <button type="button" onClick={onEditCancel} className="btn-text muted">
               {t("skills.cancel")}
             </button>
             <button
               type="button"
               onClick={onEditSave}
               disabled={!editDraft.trim()}
-              className="btn-text text-[12px]"
+              className="btn-text"
             >
               {t("skills.save")}
             </button>
@@ -385,7 +385,7 @@ function EmptyState() {
         <path d="M9 13h7M9 17h5" />
       </svg>
       <p className="m-0 text-[13px] text-on-surface-variant">{t("skills.empty")}</p>
-      <p className="m-0 text-[11.5px] leading-4 text-on-surface-variant/80">
+      <p className="m-0 text-[12px] leading-4 text-on-surface-variant/80">
         {t("skills.emptyHint")}
       </p>
     </div>
