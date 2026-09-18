@@ -6,14 +6,21 @@
 // 组合(特异性 0,2,0,同时存在两属性时必然胜出)。石墨是手工 monochrome
 // (灰源色经 CAM16 会偏蓝,按 M3 monochrome 规范用 neutral 色调生成)。
 //
+// 画布中性化:surface 七角色(surface/dim/container 五级)不取各重点色自己的
+// neutral 色板,统一用固定暖源色(SURFACE_SOURCE)派生的 neutral 色板 ——
+// 背景画布只有暖白 / 柔炭灰两套,不随重点色漂移,重点色只落在交互角色上。
+// 暗色 ramp 相比 M3 官方 tone 整体抬高(surface 6→10),不再刺黑。
+//
 // 注:@material/material-color-utilities 锁 0.3.0(0.4.x 的 ESM 打包缺扩展名,Node 无法加载)。
 // 0.3.0 的 scheme 缺 surfaceContainer* 五级,这里按 M3 官方规范用 neutral 色板补齐:
 //   light: Lowest 100 / Low 96 / 94 / High 92 / Highest 90,surface 98,dim 87,bright 98
-//   dark:  Lowest   4 / Low 10 / 12 / High 17 / Highest 22,surface  6,dim  6,bright 24
+//   dark:  Lowest   7 / Low 14 / 16 / High 21 / Highest 26,surface 10,dim 10(较官方抬亮,柔和不刺黑)
 import {
   themeFromSourceColor,
   hexFromArgb,
   argbFromHex,
+  TonalPalette,
+  Hct,
 } from "@material/material-color-utilities";
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -66,7 +73,9 @@ const SCHEME_ROLES = {
   inversePrimary: "inverse-primary",
 };
 
-/** surface 五级 + dim/bright:neutral 色板 tone(亮暗各一组) */
+/** surface 五级 + dim:neutral 色板 tone(亮暗各一组)。
+ *  亮色沿用 M3 官方 tone;暗色整体抬亮(官方 4~22 → 7~26),深色画布呈柔炭灰
+ *  而非近黑,层次差保留(级差最小 2,海拔关系与官方一致) */
 const SURFACE_TONES = {
   light: {
     surface: 98,
@@ -78,15 +87,24 @@ const SURFACE_TONES = {
     "surface-container-highest": 90,
   },
   dark: {
-    surface: 6,
-    "surface-dim": 6,
-    "surface-container-lowest": 4,
-    "surface-container-low": 10,
-    "surface-container": 12,
-    "surface-container-high": 17,
-    "surface-container-highest": 22,
+    surface: 10,
+    "surface-dim": 10,
+    "surface-container-lowest": 7,
+    "surface-container-low": 14,
+    "surface-container": 16,
+    "surface-container-high": 21,
+    "surface-container-highest": 26,
   },
 };
+
+/** 画布专用 neutral 色板:固定暖源色派生,所有重点色共用。取珊瑚橙的色相、
+ *  chroma 压到 3(官方 neutral 是 4):暖意读作「米白/暖灰」而非粉米,
+ *  浅色是暖象牙白、暗色是带暖意的炭灰 */
+const SURFACE_SOURCE = "#ea580c";
+const surfaceNeutral = TonalPalette.fromHueAndChroma(
+  Hct.fromInt(argbFromHex(SURFACE_SOURCE)).hue,
+  3,
+);
 
 // ---- 生成 ----
 const themes = ACCENTS.map((a) => ({
@@ -143,7 +161,8 @@ function linesFor(theme, mode, mono) {
     return `  --md-sys-color-${cssName}: ${value};`;
   });
   for (const [name, tone] of Object.entries(SURFACE_TONES[mode])) {
-    lines.push(`  --md-sys-color-${name}: ${hexFromArgb(neutral.tone(tone))};`);
+    // surface 用全局固定暖色画布,不取各主题自己的 neutral(画布不随重点色漂移)
+    lines.push(`  --md-sys-color-${name}: ${hexFromArgb(surfaceNeutral.tone(tone))};`);
   }
   return lines.join("\n");
 }
@@ -172,8 +191,10 @@ const darkBlocks = [
 ].join("\n\n");
 
 const css = `/* ---- M3 scheme(生成文件,勿手改)----
-   由 scripts/generate-m3.mjs 从 ACCENTS 各源色经 material-color-utilities 生成
-   (surfaceContainer* 按 M3 规范取 neutral 色板 tone,见脚本内注释)。
+   由 scripts/generate-m3.mjs 从 ACCENTS 各源色经 material-color-utilities 生成。
+   surface 七角色用固定暖源色(${SURFACE_SOURCE})派生的共用 neutral 色板:
+   浅色 = 暖象牙白,暗色 = 柔炭灰(整体抬亮),背景画布不随重点色漂移;
+   其余角色(交互色/文字/描边)按各重点色生成。
    默认青绿 = :root / [data-theme="dark"];其余重点色 = [data-accent] 与
    [data-theme="dark"][data-accent](深浅各一套,深浅切换 + 重点色切换全生效)。
    重新生成:pnpm tokens:m3 */
