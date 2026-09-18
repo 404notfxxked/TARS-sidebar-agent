@@ -195,7 +195,7 @@ export const enUS = {
   },
   skills: {
     settingsSection: "Skills",
-    hint: "After installing a skill, type / in the chat input to invoke it. Skills are instruction texts stored locally and never sent elsewhere.",
+    hint: "After installing, type / in the chat input to invoke a skill. Skills stay on this device.",
     manage: "Manage skills",
     countLine: "{n} skills installed · type / in the chat to invoke",
     emptyShort: "No skills yet",
@@ -229,7 +229,7 @@ export const enUS = {
   security: {
     hostAccess: "Page & network access",
     hostAccessHint:
-      "Reading pages, web search and reading URLs all require this grant. Nothing is granted at install time; the record lives in your browser and can be revoked anytime.",
+      "Reading pages, web search and reading URLs all require this grant; it can be revoked anytime.",
     hostAccessDetail:
       "This grant covers: reading and acting on pages (page tools), web search (reading search engine result pages in a background tab), and reading a URL directly. Chats and model requests are separate — the model endpoint is authorized individually when you add a provider. The grant is confirmed via Chrome's standard permission prompt; revoking disables the related features immediately.",
     hostAccessGrant: "Grant page & network access",
@@ -237,12 +237,12 @@ export const enUS = {
     hostAccessOn: "Granted",
     confirmActions: "Confirm sensitive actions",
     confirmActionsHint:
-      "Before clicking or typing on a web page, saving or deleting long-term memories, or reading private-network / unfamiliar links, TARS shows a confirmation card and waits for your decision. This is the recommended default.",
+      "TARS shows a confirmation card before sensitive actions like clicking, typing, or writing memories.",
     confirmActionsDetail:
       "Covers page writes (click_element / fill_input), memory save and delete, and web_fetch of private-network addresses and links outside the session's source domains: the card shows the target page and the action, and no reply within 2 minutes counts as a denial. Source domains = links you typed in messages, search results, and domains already fetched this session; the first fetch of any new domain asks once, and approving it keeps the domain quiet for the rest of the session. Web content can contain injection-style instructions, so this gate is the final human review; turn it off only when you trust the scenario — TARS will then perform these actions immediately.",
     notifyDone: "Task completion notifications",
     notifyDoneHint:
-      "When the panel is not visible (window minimized or switched away), a system notification is posted when a task finishes or fails; click it to return to the browser window.",
+      "When the panel is not visible, a system notification is posted when a task finishes or fails; click it to return.",
   },
   notify: {
     doneTitle: "TARS task finished",
@@ -268,7 +268,7 @@ export const enUS = {
     providerEmpty:
       'No providers configured yet. Click "Add provider" and enter the service URL and API key to enable it. Multiple providers can be added and switched at any time.',
     providerHint:
-      'Click a card to expand its detailed configuration. The provider marked "Current" is the one in use for the current conversation.',
+      'Click a card to expand its configuration; the provider marked "Current" is in use.',
     providerUnnamed: "Unnamed service",
     providerName: "Name",
     providerUrl: "Base URL",
@@ -288,7 +288,7 @@ export const enUS = {
     modelEmptyHint:
       'No models yet. Click "Fetch list" to retrieve the model list automatically, or add models manually below.',
     modelRowHint:
-      'Click a model row to expand its configuration. The model marked "Default" is the one in use for the current conversation.',
+      'Click a row to expand its configuration; the model marked "Default" is used for the current conversation.',
     modelIdPlaceholder: "Add a model ID manually, e.g. deepseek-chat",
     alias: "Alias",
     aliasPlaceholder: "Name shown in the model picker",
@@ -326,26 +326,25 @@ export const enUS = {
     accentRose: "Rose",
     accentGraphite: "Graphite",
     quoteToggle: "Daily quote",
-    quoteHint: "Show a short quote on the empty state; hover it to reveal the source.",
+    quoteHint: "Show a daily quote on the chat empty state.",
     // Web search
     webSearch: "Web search",
-    webSearchHint:
-      "Off by default. When enabled, the AI can search the web: each search opens a real search engine page in a background tab and closes it right after reading. No API key required.",
+    webSearchHint: "When enabled, the AI can search the web; off by default.",
     searchHow:
-      "Engines are selected automatically among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks cool down for a few minutes while the next one takes over. Search queries are sent to the corresponding search engine. The Tavily / Bocha / Brave API channels remain in the code and can be enabled via manual configuration, but no UI is provided.",
+      "Each search opens a real search engine page in a background tab and closes it right after reading; no API key required. Engines are selected automatically among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks cool down for a few minutes while the next one takes over. Search queries are sent to the corresponding search engine. The Tavily / Bocha / Brave API channels remain in the code and can be enabled via manual configuration, but no UI is provided.",
     webNeedAccess:
       "Web search also requires the \"Page & network access\" grant (Settings → Security); without it the search results page cannot be read.",
     // MCP
     mcpEnable: "Enable MCP tools",
     mcpHint:
-      "When enabled, tools provided by MCP servers are available to the AI alongside the built-in tools. During a tool call, the relevant request data is sent to the operator of that server — connect trusted services only.",
+      "When enabled, the AI can call tools provided by MCP servers.",
     mcpDetail:
-      "Only Streamable HTTP endpoints over HTTP(S) are currently supported; stdio servers that require a local process are not supported.",
+      "Only Streamable HTTP endpoints over HTTP(S) are currently supported; stdio servers that require a local process are not supported. During a tool call, the relevant request data is sent to the operator of that server — connect trusted services only.",
     addServer: "Add server",
     serverEmpty:
       'No servers configured yet. Click "Add server" and enter the endpoint URL; if authentication is required, also add the necessary header configuration.',
     serverHint:
-      'Click a card to expand its detailed configuration; "Test connection" also fetches the tool list at the same time. Each server can be enabled or disabled independently.',
+      'Click a card to expand its configuration; each server can be toggled and tested independently.',
     serverUnnamed: "Unnamed server",
     serverName: "Name",
     serverNamePlaceholder: "e.g. GitHub",
@@ -370,7 +369,7 @@ export const enUS = {
     confirmDeleteServer: "Click again to confirm deleting this server",
     // Memory
     memoryHint:
-      'Explicit requests such as "remember …" or mentions of stable preferences are saved as memories automatically and included in every subsequent turn; the chat interface shows the save status.',
+      "Stable preferences and facts are saved as memories automatically and included in subsequent turns.",
     memoryDetail:
       "Turning the feature off only stops saving new memories and injecting existing ones; stored memories are not deleted and return once the feature is re-enabled.",
     // Context compaction
@@ -381,7 +380,7 @@ export const enUS = {
     compactModel: "Compaction model",
     compactFollow: "Follow current model",
     compactHint:
-      'When the chat history reaches this share of the context window, earlier turns are summarized automatically to free up space; the original history is not modified. Requires "Context window" in the model configuration.',
+      'When the chat history reaches this share of the context window, earlier turns are summarized automatically (the original history is unchanged); requires "Context window" in the model configuration.',
     compactModelHint:
       "Compaction only needs a text summary, so a low-cost, fast model is recommended. Leave empty to follow the current conversation model.",
     // History data

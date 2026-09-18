@@ -189,7 +189,7 @@ export const zhCN = {
   },
   skills: {
     settingsSection: "技能",
-    hint: "安装后可在聊天输入框输入 / 快速调用；技能是本机保存的任务指令文本，不会外发。",
+    hint: "安装后在聊天输入 / 即可调用；内容仅存本机。",
     manage: "管理技能",
     countLine: "已安装 {n} 个技能 · 聊天输入 / 快速调用",
     emptyShort: "还没有技能",
@@ -221,20 +221,18 @@ export const zhCN = {
   // 安全分节:站点访问授权 + 写操作确认门 + 任务完成通知(通知文案后台按 locale 现取)
   security: {
     hostAccess: "页面与网络访问",
-    hostAccessHint:
-      "读取页面、联网搜索、读取网页都需要此授权；安装时默认不授予，授权记录保存在浏览器本地，可随时撤销。",
+    hostAccessHint: "读取页面、联网搜索、读取网页都需要此授权，可随时撤销。",
     hostAccessDetail:
       "此授权覆盖：读取与操作网页（页面工具）、联网搜索（后台读取搜索引擎结果页）、按链接读取网页。对话与模型请求不经此授权——模型端点在添加服务时单独授权。授权以 Chrome 标准权限弹窗确认，撤销后相关功能立即停用。",
     hostAccessGrant: "授权页面与网络访问",
     hostAccessRevoke: "撤销授权",
     hostAccessOn: "已授权",
     confirmActions: "敏感操作需确认",
-    confirmActionsHint: "AI 点击、填写网页、写入或删除长期记忆、读取内网或陌生链接前，先弹出确认卡由你决定；这是默认推荐的安全设置。",
+    confirmActionsHint: "AI 点击、填写、写入或删除记忆等敏感动作前，会先弹卡询问你。",
     confirmActionsDetail:
       "覆盖页面写操作（点击元素/填写输入）、长期记忆的写入与删除、以及 web_fetch 对私网地址和会话来源域之外链接的读取：确认卡展示目标页面与操作内容，2 分钟未答复按拒绝处理。会话来源域 = 你消息里给出的链接、搜索结果、以及本次会话已抓取过的域；首次抓取任何新域会询问一次，批准后本会话内不再重复询问。网页内容可能包含诱导性指令，确认是最后一道人审防线；关闭后 AI 将直接执行这些动作，请仅在可信场景下关闭。",
     notifyDone: "任务完成通知",
-    notifyDoneHint:
-      "面板不可见时（窗口最小化或切走），任务结束或失败会发一条系统通知；点按通知回到浏览器窗口。",
+    notifyDoneHint: "面板切走时，任务结束或失败会发系统通知，点按回到窗口。",
   },
   notify: {
     doneTitle: "TARS 任务完成",
@@ -259,8 +257,7 @@ export const zhCN = {
     addProvider: "添加服务商",
     providerEmpty:
       "暂无配置的服务商，请点击「添加服务商」，填入服务地址与 API Key 即可启用，支持添加多个服务商并随时切换。",
-    providerHint:
-      "点击卡片展开详细配置，标记有「当前」的服务商为当前对话正在使用的服务商。",
+    providerHint: "点击卡片展开配置，「当前」即对话所用服务商。",
     providerUnnamed: "未命名服务",
     providerName: "名称",
     providerUrl: "Base URL",
@@ -279,8 +276,7 @@ export const zhCN = {
     accessDenied: "未获得站点授权，无法访问该端点",
     modelEmptyHint:
       "暂无模型。点击「获取列表」自动拉取模型列表，或在下方手动添加模型。",
-    modelRowHint:
-      "点击模型行展开配置，标记为「默认」的模型为当前对话使用的模型。",
+    modelRowHint: "点击行展开配置，「默认」即当前对话所用模型。",
     modelIdPlaceholder: "手动添加模型 ID，如 deepseek-chat",
     alias: "别名",
     aliasPlaceholder: "在模型选择器里的名称",
@@ -318,26 +314,23 @@ export const zhCN = {
     accentRose: "玫红",
     accentGraphite: "石墨",
     quoteToggle: "每日一句",
-    quoteHint: "空态展示一句短语；出处默认隐藏，悬停句子上时显形。",
+    quoteHint: "聊天空态展示每日一句。",
     // 联网
     webSearch: "联网搜索",
-    webSearchHint:
-      "默认关闭。开启后 AI 可联网搜索：后台新开真实搜索引擎页面，读完即关，无需配置 API Key。",
+    webSearchHint: "开启后 AI 可用搜索引擎查资料，默认关闭。",
     searchHow:
-      "引擎在 DuckDuckGo / Bing / Google / 百度 之间自动选择：连续失败或触发风控的引擎会进入几分钟冷却，自动换下一家；搜索词会发送至对应搜索引擎。Tavily / 博查 / Brave 的 API 通道代码仍保留，可手动写入配置启用，界面不再提供。",
+      "搜索通过后台新开真实搜索引擎页面读取结果，读完即关，无需配置 API Key；引擎在 DuckDuckGo / Bing / Google / 百度 之间自动选择：连续失败或触发风控的引擎会进入几分钟冷却，自动换下一家；搜索词会发送至对应搜索引擎。Tavily / 博查 / Brave 的 API 通道代码仍保留，可手动写入配置启用，界面不再提供。",
     webNeedAccess:
       "联网搜索还需要「页面与网络访问」授权（设置 → 安全），未授权时无法读取搜索引擎结果页。",
     // MCP
     mcpEnable: "启用 MCP 工具",
-    mcpHint:
-      "启用后，MCP 服务器的工具与内置工具一同供 AI 调用；调用时相关请求数据会发送至对应服务器的运营方，请仅接入可信服务。",
+    mcpHint: "启用后，AI 可调用 MCP 服务器提供的工具。",
     mcpDetail:
-      "当前仅支持 HTTP(S) 协议的 Streamable HTTP 端点，需要本地进程的 stdio 服务器不受支持。",
+      "当前仅支持 HTTP(S) 协议的 Streamable HTTP 端点，本地进程的 stdio 服务器不受支持。调用时相关请求数据会发送至对应服务器的运营方，请仅接入可信服务。",
     addServer: "添加服务器",
     serverEmpty:
       "暂无已配置的服务器。点击「添加服务器」，输入端点地址；如需认证，请补充请求头配置。",
-    serverHint:
-      "点击卡片可展开详细配置，「测试连接」将同步拉取工具清单。每台服务器支持独立启用或停用。",
+    serverHint: "点击卡片展开配置；每台服务器可单独启停并测试连接。",
     serverUnnamed: "未命名服务器",
     serverName: "名称",
     serverNamePlaceholder: "如 GitHub",
@@ -361,8 +354,7 @@ export const zhCN = {
     deleteServer: "删除此服务器",
     confirmDeleteServer: "再点一次确认删除此服务器",
     // 记忆
-    memoryHint:
-      "对话中明确要求「记住…」或聊到稳定偏好时会自动存为记忆，后续每轮对话自动携带；聊天界面会提示保存状态。",
+    memoryHint: "AI 会自动保存偏好与事实，并在后续对话中自动携带。",
     memoryDetail:
       "关闭该功能仅停止新增保存与已有记忆的注入，已存储的记忆不会删除，重新开启即恢复使用。",
     // 上下文压缩
@@ -372,8 +364,7 @@ export const zhCN = {
     compactLate: "用满 90%",
     compactModel: "压缩用模型",
     compactFollow: "跟随当前模型",
-    compactHint:
-      "聊天记录占用上下文窗口达到该比例时，较早对话自动生成摘要释放空间，原记录不变；需先在模型配置填写「上下文窗口」。",
+    compactHint: "上下文占用达到比例时自动压缩旧对话，原记录不变；需先配置「上下文窗口」。",
     compactModelHint:
       "压缩只需生成文本摘要，建议选低成本、高速度的模型；留空则跟随当前对话模型。",
     // 历史数据
