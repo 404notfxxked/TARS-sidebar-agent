@@ -8,7 +8,7 @@ import { savePrefs, type LocalePref } from "../../shared/configStore";
 import { setLocale } from "../../shared/i18n";
 import { createLogger } from "../../shared/logger";
 import { useLocale, useT } from "../ui/hooks";
-import { CheckIcon } from "../ui/icons";
+import { CheckIcon, GlobeIcon } from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
@@ -43,7 +43,6 @@ export default function LanguageMenu() {
         }
       }}
     >
-      {/* 「文A」是语言符号不是文案:两种界面语言下同形,不加字典键 */}
       <button
         type="button"
         aria-label={t("chat.switchLanguage")}
@@ -51,9 +50,10 @@ export default function LanguageMenu() {
         aria-expanded={open}
         title={t("chat.switchLanguage")}
         onClick={() => setOpen((v) => !v)}
-        className="icon-btn text-[11px] font-semibold"
+        className="icon-btn"
       >
-        文A
+        {/* 地球是语言切换的通行图标(文/A 读作"翻译");选项用语言本名补足语义 */}
+        <GlobeIcon />
       </button>
       {open && (
         <>

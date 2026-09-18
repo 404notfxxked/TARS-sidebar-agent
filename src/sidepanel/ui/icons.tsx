@@ -1,6 +1,27 @@
 // 跨视图复用的图标。视图私有的图标留在各自文件里,别为「可能复用」上移。
 
 /** 垃圾桶(删除动作):记忆行/会话行同款 */
+export function GlobeIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="block"
+    >
+      <circle cx="8" cy="8" r="6.3" />
+      <path d="M1.7 8h12.6" />
+      <ellipse cx="8" cy="8" rx="3.1" ry="6.3" />
+    </svg>
+  );
+}
+
 export function PencilIcon() {
   return (
     <svg
