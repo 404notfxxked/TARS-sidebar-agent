@@ -74,9 +74,11 @@ registerTool<
     "List all tabs in the current window (tabId, title, URL), marking each tab as the default target for page tools when tabId is omitted (default: the page at submit time) or the currently active tab (active). The tab list in <context> is a submit-time snapshot and goes stale as tabs open / close / switch during the run; when a tool reports \"tab not found\" or \"failed to inject content script\", call this tool first for a fresh list, then retry with the right tabId.",
   parameters: { type: "object", properties: {} },
   execute: async () => {
-    const tabs = await chrome.tabs.query({ currentWindow: true });
+    // ctx 读取必须在同步开头(并发纪律见 toolContext 头注),先 query 后读
+    // 会跨 await,并发 run 覆盖单槽时读到别人的 tabId
     const ctx = getToolExecutionContext();
     const defaultTabId = ctx?.tabId ?? null;
+    const tabs = await chrome.tabs.query({ currentWindow: true });
     return {
       defaultTabId,
       tabs: tabs.map((t) => ({

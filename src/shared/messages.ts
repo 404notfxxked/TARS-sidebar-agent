@@ -234,8 +234,9 @@ export type AgentEvent =
       tabUrl?: string;
     }
   | { type: typeof MSG.AGENT_MESSAGE; delta: string }
-  /** reason 缺省 = 兜底/取消路径发的 DONE(如 index.ts 的 finally);"max-turns" = 步数耗尽后收尾 */
-  | { type: typeof MSG.AGENT_DONE; reason?: "complete" | "max-turns" }
+  /** reason 缺省 = 兜底/取消路径发的 DONE(如 index.ts 的 finally);"max-turns" = 步数耗尽后收尾;
+   *  "truncated" = 最终回答撞到 max_tokens 被截断 */
+  | { type: typeof MSG.AGENT_DONE; reason?: "complete" | "max-turns" | "truncated" }
   | { type: typeof MSG.AGENT_ERROR; error: string }
   | {
       type: typeof MSG.HISTORY;

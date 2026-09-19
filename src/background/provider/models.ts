@@ -1,7 +1,8 @@
 // 模型列表:GET {base}/models —— OpenAI 兼容层的事实标准端点
 // (DeepSeek/Kimi/OpenRouter/SiliconFlow/Ollama 兼容层都实现);
 // 不实现该端点的中转会失败,调用方需降级为手动填写。
-// 面板侧直接调用(host_permissions: <all_urls>,扩展页面 fetch 无 CORS 限制)
+// 调用方(设置页)在 fetch 前经 ensureOriginAuthorized 按域取得 host 授权
+// (安装零授权模型:optional_host_permissions),授权后扩展上下文 fetch 不受 CORS 限制
 
 import { apiFetch } from "./client";
 

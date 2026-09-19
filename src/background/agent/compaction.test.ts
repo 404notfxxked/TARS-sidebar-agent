@@ -192,4 +192,48 @@ describe("toTranscript 转写预算", () => {
     expect(transcript.match(/omitted/g)).toHaveLength(1);
     expect(transcript.length).toBeLessThan(TRANSCRIPT_BUDGET_CHARS);
   });
+
+  it("超长 user/assistant 行超预算:从最旧行截起并注记省略数,总量进预算", () => {
+    // tool 打桩只约束工具正文:两条各 7 万字符的正文合起来就超预算
+    const old = "a".repeat(70_000);
+    const transcript = toTranscript([
+      user(`<user-request>${old}</user-request>`),
+      assistant(old),
+      user("<user-request>最近一问</user-request>"),
+      assistant("b".repeat(70_000)),
+    ]);
+    expect(transcript).not.toContain("aaaa"); // 最旧两行整行丢
+    expect(transcript).toContain("最近一问");
+    expect(transcript).toContain(`[assistant] ${"b".repeat(70_000)}`);
+    expect(transcript).toContain(
+      "[2 earlier message(s) omitted to fit the summarizer window]",
+    );
+    expect(transcript.length).toBeLessThanOrEqual(TRANSCRIPT_BUDGET_CHARS);
+  });
+
+  it("单条自身超预算:截断该条尾部,而不是把整份转写清空", () => {
+    const transcript = toTranscript([
+      user(`<user-request>${"u".repeat(200_000)}</user-request>`),
+    ]);
+    expect(transcript.startsWith("[user] ")).toBe(true);
+    expect(transcript).toContain("[truncated to fit the summarizer window]");
+    // 只留一句省略注记 = 摘要输入为空,压缩等于静默失忆 —— 正是要防的事
+    expect(transcript).not.toContain("earlier message(s) omitted");
+    expect(transcript.length).toBeLessThanOrEqual(TRANSCRIPT_BUDGET_CHARS);
+  });
+
+  it("注记与保留行仍放不下:截断最旧的保留行,其余原样", () => {
+    const transcript = toTranscript([
+      user("<user-request>旧问</user-request>"),
+      assistant("旧答"),
+      assistant("z".repeat(200_000)),
+    ]);
+    expect(transcript).toContain(
+      "[2 earlier message(s) omitted to fit the summarizer window]",
+    );
+    expect(transcript).toContain("[truncated to fit the summarizer window]");
+    // 截断只削到预算线为止,不是把最新一条也压成短头
+    expect(transcript.length).toBeLessThanOrEqual(TRANSCRIPT_BUDGET_CHARS);
+    expect(transcript.length).toBeGreaterThan(TRANSCRIPT_BUDGET_CHARS - 200);
+  });
 });

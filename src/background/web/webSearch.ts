@@ -255,14 +255,35 @@ export async function runWebSearch(
 ): Promise<WebSearchResult> {
   const parsed = parseSearchArgs(args);
   const route = await readSearchRoute();
-  return route.kind === "api"
-    ? runApiSearch(route, parsed)
-    : runTabSearch({
+  if (route.kind !== "api") {
+    // 免 Key 通道不支持时间/地区过滤:模型给了这两个参数时必须让它知道
+    // 未生效,否则它会以为结果已经按时间过滤过
+    if (parsed.recency || parsed.market) {
+      const dropped = [
+        parsed.recency ? "recency" : null,
+        parsed.market ? "market" : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      const res = await runTabSearch({
         query: parsed.query,
         limit: parsed.limit,
         allowed: parsed.allowed,
         blocked: parsed.blocked,
       });
+      return {
+        ...res,
+        note: `${res.note ? `${res.note} ` : ""}[${dropped} parameter(s) ignored: the keyless tab channel does not support them; results are not time/market filtered]`,
+      };
+    }
+    return runTabSearch({
+      query: parsed.query,
+      limit: parsed.limit,
+      allowed: parsed.allowed,
+      blocked: parsed.blocked,
+    });
+  }
+  return runApiSearch(route, parsed);
 }
 
 /** 参数解析与校验收口(query/recency/market 的报错文案是工具契约,勿改) */
@@ -464,7 +485,9 @@ function validateMarket(v: unknown): string | null {
     : lang.toLowerCase();
 }
 
-/** 域名参数宽松归一:允许带协议/路径,取主机名部分 */
+/** 域名参数宽松归一:允许带协议/路径,取主机名部分;顺手剥端口与 `*.`
+ *  通配前缀 —— 名单项带这些写法时,原样保留会同任何真实 hostname 都不
+ *  相等,过滤全部落空(模型只看到「结果全被过滤排除」,无法自诊) */
 function parseDomainList(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v
@@ -475,7 +498,9 @@ function parseDomainList(v: unknown): string[] {
         .toLowerCase()
         .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
         .split("/")[0]
-        .replace(/^\.+/, ""),
+        .replace(/^\*\./, "")
+        .replace(/^\.+/, "")
+        .split(":")[0],
     )
     .filter((d) => d.length > 0);
 }

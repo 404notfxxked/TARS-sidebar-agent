@@ -6,7 +6,12 @@
 
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it } from "vitest";
-import { clearAllRows, loadMessageRows } from "./sessionDb";
+import {
+  appendMessages,
+  clearAllRows,
+  getSession,
+  loadMessageRows,
+} from "./sessionDb";
 import {
   listSessions,
   loadHistory,
@@ -351,6 +356,94 @@ describe("listSessions(列表条数口径)", () => {
     const s6 = sessions.find((x) => x.id === "s6");
     // 可见 = 提问 + 回答;tool 行 / 空 assistant / 注记伪 user 都不计
     expect(s6?.msgCount).toBe(2);
+  });
+
+  it("工具轮的中间正文不计条数;条数随追加递增、随重新生成截断扣回", async () => {
+    const round1: InternalMsg[] = [
+      { role: "user", content: "<user-request>\n问\n</user-request>" },
+      {
+        role: "assistant",
+        // 工具轮带正文:回放里是过程卡内文案,不是气泡
+        content: "我先看一下页面",
+        toolCalls: [{ id: "t1", name: "page_read", args: {} }],
+      },
+      { role: "tool", toolCallId: "t1", content: "..." },
+      { role: "assistant", content: "答" },
+    ];
+    const countOf = async () =>
+      (await listSessions()).find((x) => x.id === "s7")?.msgCount;
+
+    await saveHistory("s7", round1, 0, 0);
+    expect(await countOf()).toBe(2);
+
+    // 追加一轮(带真实提问):增量缓存 +2
+    await saveHistory(
+      "s7",
+      [
+        ...round1,
+        { role: "user", content: "<user-request>\n追问\n</user-request>" },
+        { role: "assistant", content: "答二" },
+      ],
+      4,
+      4,
+    );
+    expect(await countOf()).toBe(4);
+
+    // 重新生成截到「追问」:扣回该轮可见气泡
+    const payload = await prepareRegenerate("s7");
+    expect(payload?.text).toBe("追问");
+    expect(await countOf()).toBe(2);
+  });
+
+  it("旧版本会话行(无 visibleCount 缓存):回落扫一次就回填,不再次次全量扫", async () => {
+    // 直写会话行模拟旧版本数据(db 层不产展示口径缓存)
+    await appendMessages(
+      "s9",
+      {
+        id: "s9",
+        title: "旧会话",
+        createdAt: 1,
+        updatedAt: 1,
+        msgCount: 2,
+      },
+      [
+        { role: "user", content: "<user-request>\n旧问\n</user-request>" },
+        { role: "assistant", content: "旧答" },
+      ],
+      0,
+      [],
+    );
+
+    const first = (await listSessions()).find((x) => x.id === "s9");
+    expect(first?.msgCount).toBe(2); // 回落扫描的结果照常返回
+    // 结果已回填:下次开列表命中缓存,不再逐会话读消息行
+    expect((await getSession("s9"))?.visibleCount).toBe(2);
+  });
+});
+
+describe("损坏行保序(数组下标 = seq 的地基)", () => {
+  it("损坏行替换为 error 占位行,不跳位、不回灌 prompt", async () => {
+    await saveHistory(
+      "s8",
+      [
+        { role: "user", content: "<user-request>\n问\n</user-request>" },
+        { role: "assistant", content: "答" },
+      ],
+      0,
+      0,
+    );
+    // 直写一条坏行(模拟存储损坏),再走正常读取路径
+    const session = (await getSession("s8"))!;
+    await appendMessages("s8", { ...session, msgCount: 3 }, [null], 2, []);
+
+    const rows = await loadHistory("s8");
+    expect(rows).toHaveLength(3); // 占位保序,不跳位
+    expect((rows[2] as { error?: true }).error).toBe(true);
+    // prompt 转写滤除占位行(错误文本不回灌),回放投影保留错误语义
+    expect(await loadTranscript("s8")).toHaveLength(2);
+    expect(
+      toChatRecords(rows).some((r) => r.role === "assistant" && r.error === true),
+    ).toBe(true);
   });
 });
 

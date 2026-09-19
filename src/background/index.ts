@@ -123,6 +123,17 @@ interface RunState {
 // 需跨唤醒存活的数据(会话历史)走 chrome.storage.session,不在这里。
 const activeRuns = new Map<string, RunState>();
 
+// REGENERATE 的 prepareRegenerate(读库 + 截库)是跨 await 的窗口:防重若等到
+// launchRun 才登记,窗口内到达的同会话请求会通过检查并与截库并发跑同一条会话
+// (写库 seq 互踩)。这里为那个窗口补一段占位登记,与 activeRuns 一起构成
+// 「会话忙」判据 —— SW 休眠清空同 activeRuns,本就不该跨唤醒存活
+const preparingSessions = new Set<string>();
+
+/** 会话是否已有在途任务(含 REGENERATE 的截库窗口) */
+function sessionBusy(sessionId: string): boolean {
+  return activeRuns.has(sessionId) || preparingSessions.has(sessionId);
+}
+
 // 面板可见性(每个窗口的侧栏实例各一份):任务完成通知据此判断
 // 「这个 run 的主人是否正看着」。面板不可见 = 收到通知才有意义
 const panels = new Map<chrome.runtime.Port, { hidden: boolean }>();
@@ -264,26 +275,69 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
     const msg = raw as SideToBg;
     switch (msg.type) {
       case MSG.USER_MESSAGE: {
-        await launchRun(port, msg.payload);
+        // 会话级防重:同会话已有 run 在途时拒绝(双窗口同会话 / 面板异步
+        // 门控的竞窗都会打到这)。面板在提交时乐观置 thinking,拒绝必须
+        // 回包(AGENT_ERROR 会让面板归位 idle 并显示错误),否则卡死在思考态
+        const sessionId = msg.payload.sessionId ?? crypto.randomUUID();
+        if (sessionBusy(sessionId)) {
+          log.warn("agent", "user message ignored, run in progress", {
+            sessionId,
+          });
+          try {
+            port.postMessage({
+              type: MSG.AGENT_ERROR,
+              error: "该会话已有正在进行的任务,请等它结束后再发送新消息",
+            });
+          } catch {
+            /* 端口已断开 */
+          }
+          break;
+        }
+        await launchRun(port, { ...msg.payload, sessionId });
         break;
       }
       case MSG.REGENERATE: {
-        // 已有 run 在跑的会话不接受重答(面板也有 idle 门控,双保险)
-        if (activeRuns.has(msg.sessionId)) {
+        // 已有 run 在跑(或截库在途)的会话不接受重答。SW 侧防重是权威防线
+        // (面板的 idle 门控读渲染闭包,异步窗口内不保证拦住),面板门控只是
+        // 第一道 Filter
+        if (sessionBusy(msg.sessionId)) {
           log.warn("agent", "regenerate ignored, run in progress", {
             sessionId: msg.sessionId,
           });
           break;
         }
-        const prep = await prepareRegenerate(msg.sessionId);
-        if (!prep) {
-          log.warn("agent", "regenerate: no user turn to replay", {
-            sessionId: msg.sessionId,
-          });
-          break;
+        // 占位登记一直持有到 launchRun 收口(内部随即写 activeRuns,两者对
+        // 防重等价):中途不留「登记空窗」,哪条退出路径都不会漏放
+        preparingSessions.add(msg.sessionId);
+        try {
+          // 截库失败同样要回包:面板已乐观截断本地消息并置 thinking,静默
+          // break 会把面板卡死在思考态(切会话/新对话都被 idle 门控拦住)
+          let prep: UserMessagePayload | null = null;
+          try {
+            prep = await prepareRegenerate(msg.sessionId);
+          } catch (err) {
+            log.warn("agent", "regenerate prepare failed", {
+              sessionId: msg.sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          if (!prep) {
+            try {
+              port.postMessage({
+                type: MSG.AGENT_ERROR,
+                error:
+                  "没有可重新生成的消息:该会话可能尚未成功保存到本地,请直接发送新消息",
+              });
+            } catch {
+              /* 端口已断开 */
+            }
+            break;
+          }
+          // tabId 不还原:重答按当时的活动 tab 取页面上下文,与手发一致
+          await launchRun(port, prep);
+        } finally {
+          preparingSessions.delete(msg.sessionId);
         }
-        // tabId 不还原:重答按当时的活动 tab 取页面上下文,与手发一致
-        await launchRun(port, prep);
         break;
       }
       case MSG.CANCEL_RUN: {

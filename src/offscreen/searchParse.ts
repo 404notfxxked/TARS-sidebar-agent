@@ -137,11 +137,13 @@ function resolveHref(raw: string | null, base: string): string {
   }
 }
 
-/** Bing 点击包装(/ck/a?...&u=a1<base64url>)还原为真实目标 URL */
+/** Bing 点击包装(/ck/a?...&u=a1<base64url>)还原为真实目标 URL。
+ *  host 校验与 DDG 同款用「域边界 + 结尾」:裸后缀匹配会把 notbing.com
+ *  之类蹭域也放进来 */
 function unwrapBingClick(url: string): string {
   try {
     const u = new URL(url);
-    if (/bing\.com$/.test(u.hostname) && u.pathname === "/ck/a") {
+    if (/(^|\.)bing\.com$/.test(u.hostname) && u.pathname === "/ck/a") {
       const enc = u.searchParams.get("u") ?? "";
       if (enc.startsWith("a1")) {
         const b64 = enc.slice(2).replace(/-/g, "+").replace(/_/g, "/");

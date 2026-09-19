@@ -172,6 +172,13 @@ try {
   llm.mode = "length";
   const d = await askRaw("触发截断");
   check(d.type === "agent_done", "截断不算错误,run 正常收束", JSON.stringify(d));
+  // 收束原因必须与正常完成区分:面板据此补系统提示条(2026-09 审计 P2-1),
+  // 报 complete 会让「答案半截」看起来像正常收尾
+  check(
+    d.reason === "truncated",
+    "done 原因为 truncated(不谎报 complete)",
+    JSON.stringify(d),
+  );
   // runAsk 走裸 port,panel 未必渲染该轮文本;断言持久层 assistant 行
   const rows = await idbGetAll(sidepanel, "messages");
   const hit = rows.some(

@@ -15,7 +15,7 @@
 
 import { MSG } from "../../shared/messages";
 import type { AgentPort } from "./agent";
-import { getToolExecutionContext } from "../tools/toolContext";
+import type { ToolExecutionContext } from "../tools/toolContext";
 import { webFetchNeedsConfirm } from "../web/outboundGuard";
 
 /** 等待答复上限:面板关了/用户走开了,run 不该挂在半空 */
@@ -40,15 +40,19 @@ export const CONFIRM_TOOLS: ReadonlySet<string> = new Set([
   "memory_delete",
 ]);
 
-/** 统一确认门判定:静态集合 + web_fetch 的参数级判定(私网目标,或会话
- *  来源域白名单未命中 —— 见 outboundGuard/fetchAllowlist;命中直抓)。
- *  confirmActions 总开关由调用点(agent 的 dispatch)把守 */
+/** 统一确认门判定:静态集合 + MCP 动态工具 + web_fetch 的参数级判定
+ *  (私网目标,或会话来源域白名单未命中 —— 见 outboundGuard/fetchAllowlist;
+ *  命中直抓)。confirmActions 总开关由调用点(agent 的 dispatch)把守 */
 export function needsConfirmation(
   name: string,
   args: unknown,
   fetchAllowlist?: ReadonlySet<string>,
 ): boolean {
   if (CONFIRM_TOOLS.has(name)) return true;
+  // MCP 工具语义由各服务器自定义,无法静态判定只读:删除/发送/改配置皆可能,
+  // 也可能就是把数据外带的通道 —— 一律过门,宁慢勿错(架构不变式:写工具
+  // 必须过确认门再上线;confirmActions 关闭即用户自担,同页面写动作口径)
+  if (name.startsWith("mcp_")) return true;
   if (name === "web_fetch") return webFetchNeedsConfirm(args, fetchAllowlist);
   return false;
 }
@@ -72,11 +76,10 @@ export interface ConfirmRequestInfo {
 
 /** 目标标签页信息:取本 run 最近操作(缺省提交时捕获)的 tab,尽力解析
  *  标题/URL 供确认卡展示;解析失败不阻塞确认流程 */
-async function resolveTargetTab(): Promise<{
+async function resolveTargetTab(ctx?: ToolExecutionContext | null): Promise<{
   tabTitle?: string;
   tabUrl?: string;
 }> {
-  const ctx = getToolExecutionContext();
   const tabId = ctx?.lastOperatedTabId ?? ctx?.tabId;
   if (tabId === undefined) return {};
   const tab = await chrome.tabs.get(tabId);
@@ -85,15 +88,17 @@ async function resolveTargetTab(): Promise<{
 
 /**
  * 发确认请求并等待答复。true = 用户允许;false = 拒绝/超时/已取消。
- * 必须在 tool 执行上下文已设置的状态下调用(目标 tab 从上下文读)。
+ * ctx 显式传入:等待窗口是跨 await 的,并发 run 可能已覆盖全局单槽,
+ * 从全局读目标 tab 会读到别人的(目标页信息随确认卡一起展示给用户,不能错)
  */
 export async function requestConfirmation(
   port: AgentPort,
   req: ConfirmRequestInfo,
   signal?: AbortSignal,
+  ctx?: ToolExecutionContext | null,
 ): Promise<boolean> {
   const requestId = crypto.randomUUID();
-  const target = await resolveTargetTab().catch(() => ({}));
+  const target = await resolveTargetTab(ctx).catch(() => ({}));
   port.postMessage({
     type: MSG.AGENT_CONFIRM_REQUEST,
     requestId,

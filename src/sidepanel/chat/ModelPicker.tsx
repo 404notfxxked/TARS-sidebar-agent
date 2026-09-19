@@ -8,6 +8,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderEntry } from "../../shared/configStore";
 import { useT } from "../ui/hooks";
 
+/** baseUrl → 主机名(供应商未命名时的展示兜底)。裸 new URL 会抛:
+ *  「添加服务」建出的供应商 baseUrl 为空串,不设防会把整个面板炸白屏 */
+function hostLabel(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
+
 export default function ModelPicker({
   providers,
   modelProvider,
@@ -166,7 +176,7 @@ export default function ModelPicker({
                 aria-hidden="true"
                 className="px-3 pb-0.5 pt-2 text-[11.5px] font-medium uppercase tracking-wide text-on-surface-variant/70 first:pt-1.5"
               >
-                {p.name || new URL(p.baseUrl).hostname}
+                {p.name || hostLabel(p.baseUrl)}
               </div>
               {p.models.map((m, mi) => {
                 const idx = start + mi;

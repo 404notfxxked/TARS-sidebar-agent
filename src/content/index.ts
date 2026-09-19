@@ -99,6 +99,9 @@ function summarizeResult(name: string, result: unknown): unknown {
   }
 }
 
+/** capture_doc 采样上限(字符):入口设防,防巨型页打挂消息通道与 offscreen */
+const CAPTURE_HTML_MAX_CHARS = 1_000_000;
+
 async function runTool(name: string, args: unknown): Promise<unknown> {
   switch (name) {
     // 采样器:序列化当前页面正文子树,offscreen 端据此构建虚拟文档。
@@ -106,14 +109,23 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
     // 绝不在真实 DOM 上改写属性,避免污染宿主页面。
     case "capture_doc": {
       const root = (document.querySelector("main, article") ?? document.body) as HTMLElement;
+      // 入口上界:无限流 SPA/巨型表格页的 outerHTML 可达数十 MB,无上界
+      // 会在 SW↔offscreen 两次拷贝 + DOMParser 再拷贝处打出内存峰值。
+      // 截断只丢尾部标记之后的 DOM,解析侧本就有 DOC_MAX_CHARS 的正文截断
+      const rawHtml = root.outerHTML;
+      const html =
+        rawHtml.length > CAPTURE_HTML_MAX_CHARS
+          ? `${rawHtml.slice(0, CAPTURE_HTML_MAX_CHARS)}\n<!-- tars: capture truncated at ${CAPTURE_HTML_MAX_CHARS} chars (page too large) -->`
+          : rawHtml;
       return {
-        html: root.outerHTML,
+        html,
         baseURI: document.baseURI,
         url: location.href,
         title: document.title,
         // 采样根标签(main/article/body)随快照上报:排查「页面有但读不到」时,
         // 先看采样根有没有圈错范围
         root: root.tagName.toLowerCase(),
+        ...(rawHtml.length > CAPTURE_HTML_MAX_CHARS ? { truncated: true } : {}),
       };
     }
 

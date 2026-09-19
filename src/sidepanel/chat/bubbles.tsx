@@ -164,13 +164,19 @@ export function ErrorBubble({
   );
 }
 
-/** 系统运行提示条(非错误):步数耗尽/连接中断等状态说明,视觉层级低于错误 */
-export function NoticeBubble({ kind }: { kind?: "max-turns" | "disconnected" }) {
+/** 系统运行提示条(非错误):步数耗尽/连接中断/输出截断等状态说明,视觉层级低于错误 */
+export function NoticeBubble({
+  kind,
+}: {
+  kind?: "max-turns" | "disconnected" | "truncated";
+}) {
   const t = useT();
   const text =
     kind === "disconnected"
       ? t("chat.disconnectNotice")
-      : t("chat.maxTurnsNotice");
+      : kind === "truncated"
+        ? t("chat.truncatedNotice")
+        : t("chat.maxTurnsNotice");
   return (
     <div className="msg-in flex w-full items-start gap-2 rounded-md bg-surface-container-high px-3.5 py-2.5 text-[12.5px] leading-relaxed text-on-surface-variant">
       <InfoIcon />

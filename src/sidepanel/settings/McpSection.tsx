@@ -170,6 +170,10 @@ function McpServerCard({
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsError, setToolsError] = useState("");
   const [headersText, setHeadersText] = useState(headersToText(entry.headers));
+  // url 的「提交后快照」:url 输入是每键 onChange(不落盘),失焦才提交。
+  // 工具清单的重拉必须跟随提交值 —— 跟随 entry.url 的话每敲一键都会对
+  // 半截 URL 发起一次真实 MCP 连接(同 headersKey 对鉴权头的处理)
+  const [committedUrl, setCommittedUrl] = useState(entry.url);
 
   const displayName = entry.name || hostOf(entry.url) || t("settings.serverUnnamed");
   /** headers 逐行编辑、失焦整包提交,序列化后作依赖:提交才触发重拉
@@ -184,10 +188,10 @@ function McpServerCard({
   }, [entry.url, headersKey]);
 
   // 展开时拉工具清单(与「测试连接」同一条后台缓存,成功即预热下次 run);
-  // url 或请求头变了就重拉。失败只标注在工具清单区,不挡其他字段的编辑
+  // 提交后的 url 或请求头变了就重拉。失败只标注在工具清单区,不挡其他字段的编辑
   // biome-ignore lint/correctness/useExhaustiveDependencies: headersKey(JSON 串)代替 entry 引用 —— 仅当提交过的鉴权头真变了才重拉,勿让自动修复改写此数组
   useEffect(() => {
-    if (!open || !entry.url.trim()) {
+    if (!open || !committedUrl.trim()) {
       setToolsLoading(false);
       setToolsError("");
       return;
@@ -195,7 +199,7 @@ function McpServerCard({
     let alive = true;
     setToolsLoading(true);
     setToolsError("");
-    mcpListTools(entry)
+    mcpListTools({ ...entry, url: committedUrl })
       .then((list) => {
         if (alive) {
           setTools(list);
@@ -212,7 +216,7 @@ function McpServerCard({
     return () => {
       alive = false;
     };
-  }, [open, entry.url, headersKey]);
+  }, [open, committedUrl, headersKey]);
 
   const runTest = async () => {
     if (testState === "loading") return;
@@ -301,7 +305,11 @@ function McpServerCard({
           type="text"
           value={entry.url}
           onChange={(e) => onPatch({ url: e.target.value }, false)}
-          onBlur={(e) => onPatch({ url: e.target.value.trim() }, true)}
+          onBlur={(e) => {
+            const next = e.target.value.trim();
+            onPatch({ url: next }, true);
+            setCommittedUrl(next);
+          }}
           placeholder={t("settings.serverUrlPlaceholder")}
           autoComplete="off"
           spellCheck={false}

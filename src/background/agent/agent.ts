@@ -447,24 +447,27 @@ export async function runAgentLoop(
     await persistNewMessages();
 
     // 工具分发:注册表里的工具统一在这里执行。
-    // 每次执行前重申 run 作用域上下文(提交时捕获的 tabId + 取消信号),
-    // 让内容工具读对页面、联网工具感知取消。执行后不清理:并行批次下
-    // 兄弟工具可能仍在读全局 ctx,清理由 run 收口的 finally 统一做
+    // 执行上下文在「真正执行前」重申归属:确认等待是跨 await 窗口,并发 run
+    // 可能在窗口内覆盖全局单槽,确认返回后才 set 会砸不中 —— 所以 set 紧贴
+    // execute(工具对 ctx 的读取都发生在自己执行体的同步开头,窗口内读不到别人的)。
+    // 执行后不清理:并行批次下兄弟工具可能仍在读全局 ctx,清理由 run 收口的
+    // finally 统一做
     const dispatchToolCall = async (
       name: string,
       args: unknown,
     ): Promise<unknown> => {
-      setToolExecutionContext(toolCtx);
       const tool = getTool(name);
       if (!tool) throw new Error(`unknown tool: ${name}`);
-      // 写操作确认门:页面动作(点按/填写)、记忆写入/删除,以及 web_fetch
-      // 的出口判定(私网目标 / 白名单未命中)默认逐次经面板确认(设置可关)。
-      // 拒绝/超时的文案作为工具错误回给模型 —— 让它改道而不是硬重试
+      // 写操作确认门:页面动作(点按/填写)、记忆写入/删除、MCP 动态工具
+      // (语义未知不假设只读),以及 web_fetch 的出口判定(私网目标 /
+      // 白名单未命中)默认逐次经面板确认(设置可关)。拒绝/超时的文案作为
+      // 工具错误回给模型 —— 让它改道而不是硬重试
       if (config.confirmActions && needsConfirmation(name, args, fetchAllowlist)) {
         const approved = await requestConfirmation(
           port,
           { name, displayName: tool.displayName, args },
           signal,
+          toolCtx,
         );
         if (!approved) throw new Error(CONFIRM_DENIED_MSG);
         // 批准即知情:同 run 内该域后续抓取不再重复确认(跨 run 由下一轮
@@ -478,11 +481,16 @@ export async function runAgentLoop(
           if (domain) fetchAllowlist.add(domain);
         }
       }
+      setToolExecutionContext(toolCtx);
       return await tool.execute(args);
     };
 
     /** 循环是否以最终回答收束;false = 步数耗尽,循环外做收尾兜底 */
     let completed = false;
+
+    /** 最终回答撞到 max_tokens 截断(finish_reason=length):答案完整收束但
+     *  内容半截,AGENT_DONE 以 truncated 收口让面板明示,不再谎报 complete */
+    let truncatedByLength = false;
 
     /** 最终轮请求的实测用量:run 结束存会话行,作下次压缩触发的实测基线 */
     let lastUsage: ChatResult["usage"];
@@ -756,6 +764,7 @@ export async function runAgentLoop(
           : {}),
         model: config.model,
       });
+      truncatedByLength = result.finishReason === "length";
       completed = true;
       break;
     }
@@ -792,8 +801,11 @@ export async function runAgentLoop(
     if (payload.sessionId) {
       await persistNewMessages();
       // 实测基线:最终轮请求的 prompt tokens + 当时的消息条数。下次 run 用
-      // 它叠加新增部分算压缩触发基线,比纯估算准;失败不影响本次回答
-      if (lastUsage) {
+      // 它叠加新增部分算压缩触发基线,比纯估算准;失败不影响本次回答。
+      // 撞窗紧急压缩发生过的轮次例外:promptTokens 是「摘要 + 尾部投影」的
+      // 实测,而 msgs 记的是全量条数,两个口径对不上会让下次基线系统性低估
+      // —— 宁可弃测回落纯估算,也不落一个错基线
+      if (lastUsage && !emergency) {
         try {
           await saveCtx(payload.sessionId, {
             promptTokens: lastUsage.promptTokens,
@@ -809,7 +821,11 @@ export async function runAgentLoop(
 
     port.postMessage({
       type: MSG.AGENT_DONE,
-      reason: completed ? "complete" : "max-turns",
+      reason: completed
+        ? truncatedByLength
+          ? "truncated"
+          : "complete"
+        : "max-turns",
     });
   } catch (err) {
     // 用户取消 → 静默结束,不算错误(wrapPort 也会拒绝再发事件)
@@ -901,11 +917,19 @@ function enforceToolResultBudget(messages: InternalMsg[], budgetChars: number): 
   const totalChars = () =>
     messages.reduce((n, m) => (m.role === "tool" ? n + m.content.length : n), 0);
   if (totalChars() <= budgetChars) return;
-  // 最新一条 tool 消息保留不截(模型下一步就要读它)
+  // 最新一条 tool 消息保留不截(模型下一步就要读它)—— 但单条自身超预算时
+  // 例外:不截的话一条超大 MCP 结果就能让整个预算机制失效,请求体量失控。
+  // 按预算半数截断保留头部,注记里声明原始体量,模型需要时可重新调用
   let lastToolIdx = -1;
   messages.forEach((m, i) => {
     if (m.role === "tool") lastToolIdx = i;
   });
+  const lastTool = messages[lastToolIdx];
+  if (lastTool?.role === "tool" && lastTool.content.length > budgetChars) {
+    lastTool.content =
+      lastTool.content.slice(0, Math.floor(budgetChars / 2)) +
+      `\n[此工具结果过长(共 ${lastTool.content.length} 字符)已截断,如仍需要请分页/重新调用]`;
+  }
   let truncated = 0;
   for (let i = 0; i < lastToolIdx && totalChars() > budgetChars; i++) {
     const m = messages[i];
@@ -979,10 +1003,14 @@ function trimHistoryForWindow(
   );
   const sum = (from: number) => opts.currentEstimate + estimateRange(history, from);
   if (sum(0) <= limit) return history;
-  // 每轮起始 = user 消息的下标;从最旧的一轮开始整轮丢弃,直到塞得下或只剩最后一轮
+  // 每轮起始 = 真实 user 消息的下标(截图等系统注记是上一轮的附件延续,
+  // 不算轮起点 —— 与 compaction 的 turnStarts 同一单位);从最旧的一轮开始
+  // 整轮丢弃,直到塞得下或只剩最后一轮
   const roundStarts: number[] = [];
   history.forEach((m, i) => {
-    if (m.role === "user") roundStarts.push(i);
+    if (m.role === "user" && !m.content.startsWith(SYSTEM_NOTE_PREFIX)) {
+      roundStarts.push(i);
+    }
   });
   let dropIdx = 0;
   while (

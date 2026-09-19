@@ -250,7 +250,18 @@ async function callTool(rec: McpToolRecord, args: unknown): Promise<string> {
   for (const { path, header } of rec.headerParams) {
     const v = valueAtPath(a, path);
     if (v === undefined || v === null) continue; // 缺参省略头,规范同款
-    extraHeaders[`Mcp-Param-${header}`] = encodeHeaderValue(primitiveToString(v));
+    // 头名来自服务器 schema 的 x-mcp-header 注解(外部输入):非法 token
+    // 字符会让 fetch 抛 TypeError,被误译成「网络不可达」误导排查 —— 跳过
+    // 并留日志,不让单个坏注解炸掉整次调用
+    const headerName = `Mcp-Param-${header}`;
+    if (!isHttpToken(headerName)) {
+      log.warn("mcp", "x-mcp-header 注解含非法头名字符,已跳过", {
+        tool: rec.toolName,
+        header: header.slice(0, 40),
+      });
+      continue;
+    }
+    extraHeaders[headerName] = encodeHeaderValue(primitiveToString(v));
   }
   const result = (await client.request(
     "tools/call",
@@ -272,8 +283,28 @@ async function callTool(rec: McpToolRecord, args: unknown): Promise<string> {
     );
   }
   const text = contentToText(result);
-  if (result.isError) throw new Error(text || "MCP 工具执行失败(服务器未给出原因)");
-  return text || "(工具执行成功,无文本结果)";
+  // isError 的错误原文同样要有预算上限:服务器可返回任意体量的文本,
+  // 它会作为工具错误整段进模型上下文(与硬预算纪律一致,头部保留 + 注记体量)
+  if (result.isError) {
+    throw new Error(
+      capToolText(text) || "MCP 工具执行失败(服务器未给出原因)",
+    );
+  }
+  return capToolText(text) || "(工具执行成功,无文本结果)";
+}
+
+/** MCP 工具结果文本上限:超出截断并注记体量 */
+const RESULT_TEXT_MAX_CHARS = 20_000;
+
+function capToolText(text: string): string {
+  return text.length > RESULT_TEXT_MAX_CHARS
+    ? `${text.slice(0, RESULT_TEXT_MAX_CHARS)}\n[MCP tool result truncated: ${text.length} chars in total]`
+    : text;
+}
+
+/** RFC 7230 token 字符集(头名合法性) */
+function isHttpToken(name: string): boolean {
+  return /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name);
 }
 
 /** content 块数组 → 纯文本:文本直取,图片/资源给占位说明(V1 不投喂二进制) */

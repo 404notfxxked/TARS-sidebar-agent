@@ -96,7 +96,14 @@ export default function MemoryView({
     setMemories((list) => list?.filter((m) => m.id !== id) ?? list);
     memReq({ type: MSG.MEM_DELETE, id })
       .then(setMemories)
-      .catch(() => {}); // 乐观移除后兜底刷新;失败时列表会还原
+      .catch((e) => {
+        // 乐观移除后兜底刷新:失败也要重拉一次真实状态,不能让已删的行
+        // 凭空留在视图里(port 中途断开时回包永远不来,必须主动还原)
+        log.error("memory", "记忆删除失败", { err: String(e) });
+        memReq({ type: MSG.MEM_LIST })
+          .then(setMemories)
+          .catch(() => {});
+      });
   };
 
   const clearAll = () => {

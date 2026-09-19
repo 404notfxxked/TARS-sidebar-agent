@@ -100,7 +100,13 @@ export async function addMemory(
     if (!prev) throw new Error("Memory to replace not found or already deleted");
     const row: MemoryRow = { ...prev, text: clean, updatedAt: now };
     await putMemoryRow(row);
-    log.info("memory", "记忆已替换", { id: row.id, old: prev.text });
+    // 只记 id 与长度,不带原文:记忆可能是健康/饮食类敏感事实,
+    // 诊断日志导出时不该带走(隐私判据同 toolLog 的 fill_input)
+    log.info("memory", "记忆已替换", {
+      id: row.id,
+      oldChars: prev.text.length,
+      newChars: clean.length,
+    });
     return { row, duplicate: false, replaced: true };
   }
 
@@ -126,7 +132,8 @@ export async function addMemory(
       await putMemoryRow(row);
       log.info("memory", conflict ? "记忆卡片覆盖旧值(冲突)" : "记忆卡片同值刷新", {
         key,
-        old: prev.text,
+        oldChars: prev.text.length,
+        newChars: clean.length,
       });
       return { row, duplicate: !conflict, upserted: true };
     }

@@ -90,7 +90,11 @@ const SUMMARY_SYSTEM = `You compress the history of an AI assistant conversation
  *  2 万字符,长研究会话轻松堆出几十万字符)。转写本身超出 summarizer 的
  *  窗口会让压缩请求整体 400,压缩静默回落 trim —— 「长会话不失忆」失明。
  *  超预算从最旧的 tool 正文开始打桩:丢的是陈旧页面原文(结论已在
- *  assistant 行里),user/assistant 行承载任务语义,保留全文 */
+ *  assistant 行里),user/assistant 行承载任务语义,保留全文。
+ *  tool 打桩后总量仍可能超(超长粘贴/超长回答不在此列地原样进转写),
+ *  所以预算是总量硬上界:仍超时从最旧的行截起、注记省略数,只留到最新一条
+ *  为止(单条自身超长则截断其尾部)—— 宁可给 summarizer 一份削过的尾部,
+ *  也不给它一句空注记(见 toTranscript 尾部) */
 export const TRANSCRIPT_BUDGET_CHARS = 120_000;
 
 /** wire 转写:user 消息解掉 <context>/<user-request> 包裹(tab 快照是噪音,
@@ -130,6 +134,43 @@ export function toTranscript(prefix: InternalMsg[]): string {
       line.text = `[tool result omitted — ${line.toolChars} chars of stale page/fetch content; conclusions from it are kept in the assistant turns above]`;
     } else {
       remaining -= line.toolChars;
+    }
+  }
+
+  // 总量硬预算兜底:tool 打桩只约束工具正文,超长 user/assistant 行不在此列。
+  // 仍超预算时从最旧的行截起(带省略注记)—— 摘要输入宁可丢最旧的原文,
+  // 也不能让压缩请求整体撞窗后静默回落 trim
+  const JOIN_OVERHEAD = 2; // 行间 "\n\n"
+  const TRUNC_NOTE = "\n[truncated to fit the summarizer window]";
+  const DROP_NOTE_RESERVE = 72; // 省略注记 + 行间开销的最大占位
+  const totalOf = (from: number) =>
+    lines.slice(from).reduce((n, l) => n + l.text.length + JOIN_OVERHEAD, 0);
+  if (totalOf(0) > TRANSCRIPT_BUDGET_CHARS) {
+    // 只丢到「剩最新一条」为止:尾部全丢会让摘要输入只剩一句省略注记,
+    // 压缩等于静默失忆 —— 这正是预算兜底要防的事
+    let drop = 0;
+    while (
+      drop < lines.length - 1 &&
+      totalOf(drop) > TRANSCRIPT_BUDGET_CHARS - DROP_NOTE_RESERVE
+    ) {
+      drop++;
+    }
+    lines.splice(0, drop);
+    // 注记 + 保留行仍超预算(单条自身就超长):截断最旧一条的尾部而不是
+    // 丢掉它 —— 尾部截断注记声明此处被削过,模型知道读到的不是全文。
+    // 截断必须在注记入列之前做,否则削的是注记自己
+    const room = TRANSCRIPT_BUDGET_CHARS - (drop > 0 ? DROP_NOTE_RESERVE : 0);
+    const over = totalOf(0) - room;
+    if (over > 0) {
+      const head = lines[0];
+      const keep = Math.max(0, head.text.length - over - TRUNC_NOTE.length);
+      head.text = `${head.text.slice(0, keep)}${TRUNC_NOTE}`;
+    }
+    if (drop > 0) {
+      lines.unshift({
+        text: `[${drop} earlier message(s) omitted to fit the summarizer window]`,
+        toolChars: -1,
+      });
     }
   }
 

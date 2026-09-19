@@ -247,8 +247,41 @@ const mcpOn = {
   ],
 };
 
-/** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error */
-const runAsk = (sessionId, text) => runAskViaPort(sidepanel, sessionId, text);
+/** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error。
+ *  autoConfirm 自动应答写操作确认门 —— mcp_ 工具自 2026-09 起逐次过门
+ *  (与页面写动作同款),「门后链路」套件靠它穿过,确认卡交互由 confirm 套件专测 */
+const runAsk = (sessionId, text) =>
+  runAskViaPort(sidepanel, sessionId, text, { autoConfirm: true });
+
+/** 钉 mcp 确认门:与 runAsk 同链路,但记录 agent_confirm_request。
+ *  确认请求只发给 run 自己的 port,无法从第二个 port 偷听,故 T2 用本变体 */
+const runAskWithConfirmLog = (sessionId, text) =>
+  sidepanel.evaluate(
+    ({ sessionId, text }) =>
+      new Promise((resolve, reject) => {
+        const port = chrome.runtime.connect({ name: "agent-port" });
+        const confirmed = [];
+        const timer = setTimeout(() => reject(new Error("run 超时")), 60000);
+        port.onMessage.addListener((msg) => {
+          if (msg.type === "agent_confirm_request") {
+            confirmed.push(msg.name);
+            port.postMessage({
+              type: "confirm_response",
+              requestId: msg.requestId,
+              approved: true,
+            });
+            return;
+          }
+          if (msg.type === "agent_done" || msg.type === "agent_error") {
+            clearTimeout(timer);
+            port.disconnect();
+            resolve({ type: msg.type, confirmed });
+          }
+        });
+        port.postMessage({ type: "user_message", payload: { text, sessionId } });
+      }),
+    { sessionId, text },
+  );
 
 // ---- T1. 总开关关 ----
 console.log("\n===== T1. 总开关关:无 mcp_ 工具、零 MCP 请求 =====");
@@ -271,7 +304,14 @@ await setMcp(mcpOn);
 {
   resetMcpLog();
   llm.mode = "call-mcp";
-  await runAsk("s-t2", "帮我看下 issue 42");
+  const done = await runAskWithConfirmLog("s-t2", "帮我看下 issue 42");
+  // mcp_ 工具与页面写动作同款逐次过确认门(2026-09 审计 P1-4):门必须
+  // 先于执行出现,自动批准后链路继续(T2-1 起的行为断言依赖这次批准)
+  check(
+    done.confirmed.includes(WIRE_GET_ISSUE),
+    "T2-0 mcp 工具调用先经写操作确认门",
+    JSON.stringify(done.confirmed),
+  );
   const names = (lastAgentBody.tools ?? []).map((t) => t.function?.name);
   check(
     names.includes(WIRE_GET_ISSUE),

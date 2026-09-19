@@ -98,11 +98,14 @@ export default function ChatView({
   const [input, setInput] = useState("");
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // 切会话时清空输入草稿:历史列表选中的会话(含空串 = 新对话)经
-  // resumeSessionId 进来,channel 内 openSession 已清消息流,这里跟随清输入;
-  // 头部「新对话」按钮的清空在调用点自理
+  // 切会话时清空输入草稿与待发附件:为 A 会话贴的图不该在 B 会话里发出
+  // (预览 objectURL 一并回收);「新对话」按钮的清空在调用点自理。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只随 resumeSessionId 触发,clearAttachments 读 ref + 稳定 setter,无过期闭包问题
   useEffect(() => {
-    if (resumeSessionId !== null) setInput("");
+    if (resumeSessionId !== null) {
+      setInput("");
+      clearAttachments();
+    }
   }, [resumeSessionId]);
 
   // ---- 模型选择:按供应商分组展示,切换即写回 modelProvider + model 两字段 ----
@@ -160,6 +163,13 @@ export default function ChatView({
   const [attachHint, setAttachHint] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hintTimer = useRef<number | null>(null);
+  // 附件的准入判定镜(ref):压缩/提交/清空都经这里同步,异步粘贴并发下
+  // 余量判定才有最新值(state 闭包只反映上次渲染)
+  const pendingImagesRef = useRef<PendingImage[]>([]);
+  const commitPendingImages = (next: PendingImage[]) => {
+    pendingImagesRef.current = next;
+    setPendingImages(next);
+  };
 
   // 当前会话回传给 App,历史列表据此高亮「当前」
   useEffect(() => {
@@ -322,6 +332,13 @@ export default function ChatView({
     el.style.overflowY = el.scrollHeight > 116 ? "auto" : "hidden";
   }, [input, chatInputRef]);
 
+  /** 清空待发附件(切会话/新对话/发送后):预览 objectURL 一并回收 */
+  const clearAttachments = () => {
+    for (const p of pendingImagesRef.current) URL.revokeObjectURL(p.url);
+    commitPendingImages([]);
+    setAttachHint("");
+  };
+
   const flashHint = (msg: string) => {
     setAttachHint(msg);
     if (hintTimer.current) window.clearTimeout(hintTimer.current);
@@ -337,29 +354,46 @@ export default function ChatView({
       flashHint(t("chat.visionOffToast"));
       return;
     }
-    const room = MAX_ATTACHMENTS - pendingImages.length;
-    if (room <= 0) {
-      flashHint(t("chat.imageLimit", { max: MAX_ATTACHMENTS }));
-      return;
-    }
-    if (images.length > room) flashHint(t("chat.imageRoom", { room }));
+    // 余量判定读 ref 镜像(压缩前后各查一次):压缩是几十毫秒的异步,两次
+    // 快速粘贴若各按调用时的 state 闭包算余量,会一起通过门控突破上限
     const added: PendingImage[] = [];
-    for (const file of images.slice(0, room)) {
+    let dropped = 0;
+    for (const file of images) {
+      if (pendingImagesRef.current.length + added.length >= MAX_ATTACHMENTS) {
+        dropped = images.length - added.length;
+        break;
+      }
+      let img: PendingImage;
       try {
-        added.push(await compressImage(file));
+        img = await compressImage(file);
       } catch {
         flashHint(t("chat.imageDecodeFailed", { name: file.name || t("chat.clipboard") }));
+        continue;
       }
+      if (pendingImagesRef.current.length + added.length >= MAX_ATTACHMENTS) {
+        dropped = images.length - added.length;
+        break;
+      }
+      added.push(img);
     }
-    if (added.length > 0) setPendingImages((prev) => [...prev, ...added]);
+    if (added.length > 0) {
+      commitPendingImages([...pendingImagesRef.current, ...added]);
+    }
+    if (dropped > 0) {
+      flashHint(
+        added.length > 0
+          ? t("chat.imageRoom", { room: added.length })
+          : t("chat.imageLimit", { max: MAX_ATTACHMENTS }),
+      );
+    }
   };
 
   const removePending = (id: string) => {
-    setPendingImages((prev) => {
-      const hit = prev.find((p) => p.id === id);
-      if (hit) URL.revokeObjectURL(hit.url);
-      return prev.filter((p) => p.id !== id);
-    });
+    commitPendingImages(pendingImagesRef.current.filter((p) => {
+      if (p.id !== id) return true;
+      URL.revokeObjectURL(p.url);
+      return false;
+    }));
   };
 
   // 粘贴监听只在挂载时注册一次,addAttachments 闭包随渲染刷新 → ref 转发。
@@ -416,7 +450,7 @@ export default function ChatView({
       ...(pendingImages.length ? { images: pendingImages } : {}),
     });
     setInput("");
-    setPendingImages([]);
+    clearAttachments();
   };
 
   return (
@@ -444,6 +478,7 @@ export default function ChatView({
                 onClick={() => {
                   chat.resetConversation();
                   setInput("");
+                  clearAttachments();
                 }}
                 disabled={busy}
                 aria-label={t("chat.newChat")}

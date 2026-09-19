@@ -662,11 +662,17 @@ function firstLine(s: string): string {
   return line.trim();
 }
 
-/** 超长文本截断,尾部标注总字数(t 由调用方传入,理由同 fmtDur) */
+/** 超长文本截断,尾部标注总字数(t 由调用方传入,理由同 fmtDur)。
+ *  截断点落在代理对高半时回退一个码元(同 windowSlice 的处理),不渲染出
+ *  替换符 */
 function truncate(
   t: TFn,
   s: string,
   max: number,
 ): string {
-  return s.length > max ? `${s.slice(0, max)}${t("chat.truncatedChars", { n: s.length })}` : s;
+  if (s.length <= max) return s;
+  let end = max;
+  const c = s.codePointAt(end) ?? 0;
+  if (c >= 0xdc00 && c <= 0xdfff) end -= 1;
+  return `${s.slice(0, end)}${t("chat.truncatedChars", { n: s.length })}`;
 }

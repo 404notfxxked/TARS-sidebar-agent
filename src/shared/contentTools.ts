@@ -51,7 +51,7 @@ export async function getActiveTabId(): Promise<number | null> {
  * content script 不静态注入(manifest 已移除):发送因「无接收者」失败时,
  * 按需 executeScript 注入后重试一次 —— 这是注入的唯一路径
  */
-export function callContentTool(
+export async function callContentTool(
   tabId: number,
   name: string,
   args?: unknown,
@@ -94,6 +94,11 @@ export function callContentTool(
       });
     });
 
+  // 授权复核在发送前、对所有路径生效:已注入的 content script 不随撤权
+  // 失效,消息可以直达 —— 权限门若只挂在注入路径,撤销授权后旧 tab 照样
+  // 可读写,「撤销立即生效」就成了空话
+  await assertTabAccess(tabId);
+
   // 先直接发;若因 content script 未注入失败,按需注入后重试一次。
   // injectContentScript 的失败均已语义化(授权缺失/内置页/tab 消失),原样上抛
   return sendOnce().catch(async (err) => {
@@ -102,6 +107,27 @@ export function callContentTool(
     await injectContentScript(tabId);
     return sendOnce();
   });
+}
+
+/** 目标 tab 的页面访问授权复核(发送侧的统一权限门) */
+async function assertTabAccess(tabId: number): Promise<void> {
+  let url = "";
+  try {
+    url = (await chrome.tabs.get(tabId))?.url ?? "";
+  } catch {
+    throw new Error(
+      `目标 tab(${tabId})不存在或已关闭,<context> 清单可能已过期;用 get_tabs 获取最新清单重新选择`,
+    );
+  }
+  const origin = grantableOriginOf(url);
+  if (!origin) {
+    throw new Error(
+      `目标页面(tabId=${tabId})是浏览器内置页或非网页(${url || "未知地址"}),无法操作`,
+    );
+  }
+  if (!(await hasOriginAccess(url))) {
+    throw new Error(pageAccessHint(origin));
+  }
 }
 
 /** 把 sendMessage 的底层错误转成语义化中文(供模型理解,别甩英文) */

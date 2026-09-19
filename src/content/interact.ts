@@ -9,11 +9,12 @@
 /** 不可见的原因:给模型看的「为什么点不到」,直接映射下一步行动 */
 type VisibilityReason =
   | "display-none" // 不在布局里(自身 display:none)—— 去触发显示它的父 UI
+  | "visibility-hidden" // 自身 visibility:hidden(占布局但不可见,须显式显现)
   | "opacity-zero" // 自身 opacity:0,开发者意图隐藏(状态控制)
   | "transparent" // opacity 在 (0, 0.1],可能是动画中间帧
   | "pointer-events-none" // 看得见但点不到(click-through)
   | "zero-size" // 无渲染盒 / 零尺寸
-  | "ancestor-hidden"; // 自身正常,祖先 display:none / opacity:0
+  | "ancestor-hidden"; // 自身正常,祖先 display:none / visibility:hidden / opacity:0
 
 /** 归一化后的元素类型闭集(超出归 null,不给模型无谓噪音) */
 export type RoleName =
@@ -297,7 +298,16 @@ function getVisibility(el: Element): VisibilityInfo {
     return { visible: false, hidden: "zero-size" };
   }
 
+  // visibility:hidden 不脱布局,元素仍有渲染盒 —— 有盒路径必须补查 visibility,
+  // 否则 find_elements 误报可见、click 在错误坐标报遮挡。
+  // 只查自身:visibility 是继承属性,computed style 里已是继承后的结果,祖先链
+  // 只是多走一遍 style 计算;而且它会把「祖先 hidden + 自身 visibility:visible」
+  // 的合法写法误判成不可见(实测该子元素 computed 为 visible、elementFromPoint
+  // 命中它、click 正常派发),findInteractive 恰会丢弃 ancestor-hidden 一类
   const cs = getComputedStyle(el);
+  if (cs.visibility === "hidden") {
+    return { visible: false, hidden: "visibility-hidden" };
+  }
   if (cs.pointerEvents === "none") {
     return { visible: false, hidden: "pointer-events-none" };
   }
@@ -389,9 +399,11 @@ export function findInteractive(
 
 // ---- 动作:合成事件 ----
 
-/** 目标元素的中心坐标(须先 scrollIntoView 再取,否则滚动前坐标点错位置) */
+/** 目标元素的中心坐标(须先 scrollIntoView 再取,否则滚动前坐标点错位置)。
+ *  behavior 必须显式 instant:默认值会尊重页面 CSS 的 scroll-behavior:smooth,
+ *  滚动变成异步动画,紧接着取的 rect 是中间态坐标,遮挡校验全歪 */
 function pointOf(el: Element): { x: number; y: number } {
-  el.scrollIntoView({ block: "center", inline: "center" });
+  el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
@@ -504,21 +516,26 @@ export function fillElement(el: Element, text: string): void {
     el.getAttribute("contenteditable") === "true" ||
     el.getAttribute("contenteditable") === ""
   ) {
-    // 富文本标准手法:先全选再插入。execCommand 虽 deprecated,Chrome 仍可用(无等价替代)
+    // 富文本标准手法:先全选再插入。execCommand 虽 deprecated,Chrome 仍可用(无等价替代)。
+    // execCommand 成功时浏览器自己派发 input 事件(inputType=insertText,React 原生感知),
+    // 不能再手动补发 —— 双发会让计数/防抖型监听器行为失真
     const range = document.createRange();
     range.selectNodeContents(el);
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
-    document.execCommand("insertText", false, text);
-    el.dispatchEvent(
-      new InputEvent("input", {
-        bubbles: true,
-        composed: true,
-        inputType: "insertText",
-        data: text,
-      }),
-    );
+    const ok = document.execCommand("insertText", false, text);
+    if (!ok) {
+      // deprecated 命令可能被拒(极旧实现):退化手动派发,至少让框架感知
+      el.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: "insertText",
+          data: text,
+        }),
+      );
+    }
     return;
   }
 

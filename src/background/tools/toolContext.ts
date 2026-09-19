@@ -1,10 +1,14 @@
 // 工具执行上下文:run 作用域,提交时捕获 tabId / 会话 / 取消信号,工具从中读取
 // 解决 P0:用户对 tab A 提问,中途切到 tab B,工具应读 A 而非实时激活的 B
-// 并发安全(1.2.0 只读工具并行后修订):整 run 复用同一个 ctx 对象,
-// dispatchToolCall 执行前重复 set 只是重申归属,不产生新对象 ——
-// lastOperatedTabId 的跨轮记忆与并行兄弟工具的读取互不干扰;
-// 清理只在 run 收口做(clearToolExecutionContext 条件清,并发 run 互不误伤),
-// per-call finally 置 null 在并行批次下会砸掉晚完成工具的后置读取
+// 并发纪律(1.2.0 只读工具并行 + 跨窗口并发 run 后修订):
+// - 全局单槽只是「当前 dispatch 的归属声明」,不是并发隔离:dispatchToolCall
+//   在每次 execute 前重设(set 紧贴 execute,工具对 ctx 的读取必须发生在
+//   自己执行体的同步开头 —— 第一个 await 之前),跨 await 的再读取不在保护内
+// - 确认等待窗口由调用方显式传 ctx(confirmations),不读全局
+// - 同会话并发 run 被 index.ts 的 activeRuns 防重挡住;跨会话并发 run 在
+//   对方 dispatch 的瞬间仍可能覆盖单槽,prologue 纪律是约定的防线
+// - 清理只在 run 收口做(clearToolExecutionContext 条件清,并发 run 互不误伤),
+//   per-call finally 置 null 在并行批次下会砸掉晚完成工具的后置读取
 
 export interface ToolExecutionContext {
   /** 提交时激活的 tab;无激活 tab 时可能为 undefined */

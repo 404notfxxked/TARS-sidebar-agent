@@ -155,3 +155,34 @@ describe("空壳页 hint(管线自报,京东/淘宝壳页案)", () => {
     expect(runPageRead(doc, 0, 6000).hint).toContain("字体反爬");
   });
 });
+
+describe("标题层级与定位的边界(2026-09 审计)", () => {
+  it("aria-level 烂值不炸整页解析:钳回 1-6 档", () => {
+    // 旧实现直接 Number(aria-level) 后 "#".repeat(-1) 抛 RangeError,
+    // 整页解析在同一位置反复炸死(page_read/page_find/page_outline 全废)
+    const html = `<body>
+      <div role="heading" aria-level="-1">负值标题</div>
+      <div role="heading" aria-level="1e99">天文标题</div>
+      <h3>正常标题</h3>
+      <p>正文</p>
+    </body>`;
+    const doc = buildVirtualDoc(capture(html));
+    const levels = runPageOutline(doc).items.map((i) => i.level);
+    expect(levels).toEqual([2, 2, 3]); // 烂值回落默认 2,合法值照旧
+    expect(doc.md).toContain("负值标题");
+  });
+
+  it("小写变长字符不使定位偏移:page_find 的 pos 仍指向 md 真身", () => {
+    // İ→i̇ / ﬁ→fi 折叠后长度 +1:旧实现用 toLowerCase 建搜索基底,lower 与 md
+    // 错位,首个变长字符之后的所有命中 pos 系统性偏移(读到错的正文片段)
+    const html = `<body>
+      <p>İstanbul ﬁnal 记录</p>
+      <p>这里才是目标词</p>
+    </body>`;
+    const doc = buildVirtualDoc(capture(html));
+    const found = runPageFind(doc, "目标词", 3);
+    expect(found.total_matches).toBe(1);
+    const pos = found.matches[0].pos;
+    expect(doc.md.slice(pos, pos + 3)).toBe("目标词");
+  });
+});

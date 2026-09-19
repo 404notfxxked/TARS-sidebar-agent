@@ -247,8 +247,11 @@ function collectHeadings(root: HTMLElement): HTMLElement[] {
 function headingLevel(el: HTMLElement): number {
   const m = /^h([1-6])$/i.exec(el.tagName);
   if (m) return Number(m[1]);
+  // aria-level 是开放属性:畸形值(-1/1e99/非数字)不钳制会让 "#".repeat
+  // 抛 RangeError,整页解析在同一位置反复炸死 —— 一律钳回 1-6 或默认档
   const lv = el.getAttribute("aria-level");
-  return lv ? Number(lv) || 2 : 2;
+  const n = lv ? Number(lv) : NaN;
+  return Number.isInteger(n) && n >= 1 && n <= 6 ? n : 2;
 }
 
 function headingTitle(el: HTMLElement): string {
@@ -457,6 +460,19 @@ function buildSnippet(raw: string, pos: number): string {
   return out;
 }
 
+/** 等长小写折叠:toLowerCase 对个别字符(İ→i̇、ﬁ→fi)长度会变,直接
+ *  折叠会让 lower 与 md 的索引错位,page_find 的 pos / snippet 系统性偏移
+ *  (首个变长字符之后的命中全歪)。变长映射的字符保留原文,只折等长映射
+ *  —— 位置精确优先于这类字符的查询命中 */
+function lowerSameLength(s: string): string {
+  let out = "";
+  for (const ch of s) {
+    const lo = ch.toLowerCase();
+    out += lo.length === 1 ? lo : ch;
+  }
+  return out;
+}
+
 /** 全文定位:词位合并、按距离聚簇、多词共现加权,返回可寻址偏移 */
 export function runPageFind(doc: VirtualDoc, query: unknown, limitRaw: unknown) {
   if (typeof query !== "string" || query.trim().length === 0) {
@@ -467,7 +483,7 @@ export function runPageFind(doc: VirtualDoc, query: unknown, limitRaw: unknown) 
       ? Math.min(Math.max(1, Math.floor(limitRaw)), SEARCH_LIMIT_MAX)
       : SEARCH_LIMIT_DEFAULT;
 
-  const lower = (doc.lower ??= doc.md.toLowerCase());
+  const lower = (doc.lower ??= lowerSameLength(doc.md));
   const phrase = query.trim().toLowerCase();
   const terms = expandQueryTerms(query);
 

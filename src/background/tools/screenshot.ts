@@ -120,8 +120,15 @@ export async function runPageScreenshot(
       screenshot: shot.attachment,
     };
   } finally {
-    // 摘标记兜底:捕获或编码抛错也不能把标记框留在用户页面上
-    await callContentTool(tabId, "screenshot_cleanup").catch(() => {});
+    // 摘标记兜底:捕获或编码抛错也不能把标记框留在用户页面上。失败要留痕
+    // 而不是静默吞掉 —— callContentTool 的授权复核对这条清理同样生效(撤权
+    // 后清理会被拒),那种情况下标记框确实会留在页面上,日志是唯一线索
+    await callContentTool(tabId, "screenshot_cleanup").catch((e) => {
+      log.warn("screenshot", "摘标记失败(标记框可能残留在页面)", {
+        tabId,
+        err: e instanceof Error ? e.message : String(e),
+      });
+    });
     // 活动 tab 配平恢复:尽力而为(原 tab 可能已被用户关掉),失败不吞掉主流程错误
     if (restore) await restore().catch(() => {});
   }

@@ -114,8 +114,11 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
       log.info("search", "引擎冷却中,跳过", { engine: engine.id, error: msg });
       continue;
     }
-    const tabId = await openTab();
+    // openTab 也在 try 内:tabs.create 抛错(窗口正在关闭等时序)按引擎失败
+    // 换下一家,与逐引擎降级的设计一致;finally 对无 tab 的 remove 走 catch no-op
+    let tabId: number | undefined;
     try {
+      tabId = await openTab();
       await pace(engine.id);
       // 监听先就位、再发导航:target 一创建就带 URL 的话,首航请求可能在
       // 任何监听方(含测试的拦截层)就绪前已经发车,两段式保证确定性
@@ -203,7 +206,10 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
         error: msg,
       });
     } finally {
-      void chrome.tabs.remove(tabId).catch(() => {});
+      // openTab 失败时无 tab 可关:undefined 的 remove 拒绝走 catch no-op
+      if (tabId !== undefined) {
+        void chrome.tabs.remove(tabId).catch(() => {});
+      }
     }
   }
 
@@ -288,7 +294,10 @@ async function openTab(): Promise<number> {
 }
 
 /** 等待标签页加载完成;用户关掉 tab / 中止 run / 超时都以错误失败本引擎。
- *  调用方必须先挂本监听、后发导航(tabs.update),无需处理「挂上前已完成」*/
+ *  调用方必须先挂本监听、后发导航(tabs.update)。注意新建 tab 的 about:blank
+ *  首载也发 complete —— tabs.create 与 tabs.update 之间事件投递是异步的,
+ *  空白页的 complete 可能落在监听就位后、导航生效前,因此 complete 时还要
+ *  校验 tab 已离开空白页,否则会提前 resolve 读到 about:blank */
 function waitForTabComplete(
   tabId: number,
   external?: AbortSignal,
@@ -318,7 +327,15 @@ function waitForTabComplete(
       id: number,
       info: chrome.tabs.TabChangeInfo,
     ): void => {
-      if (id === tabId && info.status === "complete") finish();
+      if (id !== tabId || info.status !== "complete") return;
+      chrome.tabs
+        .get(tabId)
+        .then((t) => {
+          const url = t.url ?? "";
+          if (url && !url.startsWith("about:")) finish();
+          // 仍停在空白页:导航尚未生效,等导航后的下一次 complete
+        })
+        .catch(() => finish(new Error("tab closed before load completed")));
     };
     const onRemoved = (id: number): void => {
       if (id === tabId) finish(new Error("tab closed before load completed"));

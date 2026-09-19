@@ -22,6 +22,14 @@ import { ExpandCard, SettingsSection, hostOf } from "./parts";
 /** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
+/** 数字输入 → 非负整数(0 = 未设置):负数/Infinity/NaN 一律按 0 处理。
+ *  裸 `Number(x) || 0` 会把 -500 当真值直通,负 max_tokens 原样发给 API、
+ *  负 contextTokens 让压缩可用窗口变负 */
+function coerceTokenCount(raw: string): number {
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 type FetchState = "idle" | "loading" | "error";
 
 export interface ModelDomain {
@@ -231,7 +239,7 @@ function ModelRow({
             type="number"
             value={entry.contextTokens || ""}
             onChange={(e) =>
-              onPatch({ contextTokens: Number(e.target.value) || 0 })
+              onPatch({ contextTokens: coerceTokenCount(e.target.value) })
             }
             onBlur={onCommit}
             placeholder={t("settings.ctxPlaceholder")}
@@ -248,7 +256,7 @@ function ModelRow({
             type="number"
             value={entry.maxTokens || ""}
             onChange={(e) =>
-              onPatch({ maxTokens: Number(e.target.value) || 0 })
+              onPatch({ maxTokens: coerceTokenCount(e.target.value) })
             }
             onBlur={onCommit}
             placeholder={t("settings.maxPlaceholder")}
@@ -344,6 +352,10 @@ function ProviderCard({
   const [fetchError, setFetchError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
+  // entry 的 ref 镜像:fetchList 在途期间用户可继续增删模型行,resolve 后
+  // 必须合并进「最新」的 entry.models,而不是闭包里的过期快照(失更新)
+  const entryRef = useRef(entry);
+  entryRef.current = entry;
 
   const displayName = entry.name || hostOf(entry.baseUrl) || t("settings.providerUnnamed");
 
@@ -401,13 +413,14 @@ function ProviderCard({
     try {
       const list = await fetchModels(
         endpoint,
-        entry.apiKey.trim(),
+        entryRef.current.apiKey.trim(),
         ctl.signal,
       );
       // 新增条目用 models.dev 快照 + 启发式预填;已有条目回填「从未设置」的
-      // 缺失字段——手动设置过/清空过的一律不碰
+      // 缺失字段——手动设置过/清空过的一律不碰。合并基线取 ref 镜像
+      // (fetch 在途时的手动增删已在最新 entry 里)
       const cat = await loadCatalog();
-      const map = new Map(entry.models.map((m) => [m.id, m]));
+      const map = new Map(entryRef.current.models.map((m) => [m.id, m]));
       for (const id of list) {
         const existing = map.get(id);
         if (!existing) map.set(id, { id, ...prefillEntry(cat, id) });
@@ -465,7 +478,13 @@ function ProviderCard({
           type="text"
           value={entry.baseUrl}
           onChange={(e) => onPatch({ baseUrl: e.target.value })}
-          onBlur={onCommit}
+          onBlur={(e) => {
+            // 失焦即归一(去首尾空白与尾斜杠)—— 粘贴带 / 的地址不归一
+            // 会拼出 //chat/completions;client.ts 另有兜底,这里是输入侧
+            const normalized = e.target.value.trim().replace(/\/+$/, "");
+            if (normalized !== entry.baseUrl) onPatch({ baseUrl: normalized });
+            onCommit();
+          }}
           placeholder={t("settings.providerUrlPlaceholder")}
           autoComplete="off"
           spellCheck={false}

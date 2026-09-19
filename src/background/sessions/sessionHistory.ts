@@ -30,12 +30,23 @@ export async function loadHistory(sessionId: string): Promise<InternalMsg[]> {
   if (!sessionId) return [];
   try {
     const rows = await db.loadMessageRows(sessionId);
-    return rows
-      .map((r) => r.msg)
-      .filter(
-        (m): m is InternalMsg =>
-          !!m && typeof m === "object" && "role" in (m as object),
-      );
+    return rows.map((r, i) => {
+      const m = r.msg as InternalMsg | null | undefined;
+      if (m && typeof m === "object" && "role" in (m as object)) return m;
+      // 损坏行不能跳过:数组下标 = seq 是压缩点、持久化锚点与追加 baseSeq
+      // 的共同地基,跳一行会让 baseSeq 回退、覆写既有 seq(数据损坏放大)。
+      // 替换为 error 占位行保序 —— error 行不回灌 prompt(loadTranscript 滤除),
+      // 回放渲染为错误气泡,损坏可见而非静默
+      log.warn("agent", "unreadable message row replaced", {
+        sessionId,
+        seq: r.seq ?? i,
+      });
+      return {
+        role: "assistant",
+        content: "[此消息行数据损坏,已替换为占位]",
+        error: true,
+      } as InternalMsg;
+    });
   } catch (err) {
     log.warn("agent", "load history failed", {
       sessionId,
@@ -113,6 +124,12 @@ export async function saveHistory(
   }
   const now = Date.now();
   const prev = await db.getSession(sessionId).catch(() => undefined);
+  // 可见条数增量维护:新会话从 0 起步;旧版本会话行没有该字段时全量扫一次
+  // 作为基线(此后每轮追加都是增量,7 天短命数据很快自愈)
+  const freshVisible = freshRaw.filter((m) => isVisibleBubbleMsg(m)).length;
+  const visibleBase = prev
+    ? (prev.visibleCount ?? (await displayRowCount(sessionId)))
+    : 0;
   const meta: db.SessionRow = {
     id: sessionId,
     title:
@@ -124,6 +141,7 @@ export async function saveHistory(
     // msgCount = 下一条待写 seq:库里已有条数 + 本次新增。不能用 msgs.length
     // —— 发生过裁剪/压缩的 run 里 msgs 比全量短,那会让列表条数倒退
     msgCount: baseSeq + freshRaw.length,
+    visibleCount: visibleBase + freshVisible,
     // upsert 会整行覆盖:压缩/token 基线字段必须透传,否则一次保存就丢
     ...(prev?.compaction ? { compaction: prev.compaction } : {}),
     ...(prev?.ctx ? { ctx: prev.ctx } : {}),
@@ -176,33 +194,50 @@ export function saveCtx(
 
 /** 会话列表,最近活跃在前。msgCount 口径 = 用户可见的气泡数(真实提问 +
  *  有正文的回答;tool/注记/processOnly 纯过程行不计 —— 过程行在回放里是
- *  折叠卡不是气泡)。会话行上存的 msgCount 是 seq 记账,不是展示口径,
- *  两者有意分离 */
+ *  折叠卡不是气泡)。展示条数走会话行上的增量缓存(visibleCount,保存/截断
+ *  时维护),不逐会话读消息行;缓存缺省(旧版本行)才回落单会话扫描一次,
+ *  并把结果回填进缓存 —— 否则每次开列表都对同一批存量会话重扫 */
 export async function listSessions(): Promise<SessionMeta[]> {
   const rows = await db.listSessions();
   const out: SessionMeta[] = [];
   for (const row of rows) {
+    let msgCount = row.visibleCount;
+    if (msgCount === undefined) {
+      msgCount = await displayRowCount(row.id);
+      // 回填缓存(旧版本行的一次性迁移),失败不影响列表:下次开列表再扫
+      await db.patchVisibleCount(row.id, msgCount).catch(() => {});
+    }
     out.push({
       id: row.id,
       title: row.title,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-      msgCount: await displayRowCount(row.id),
+      msgCount,
     });
   }
   return out;
 }
 
-/** 单会话的用户可见消息数;读取失败按 0(列表不为它打断) */
+/** 用户可见气泡口径(列表「N 条」与回放气泡同源):真实提问 + 有正文且
+ *  不带工具调用的回答(工具轮的中间文案在回放里是过程卡内文案,不是气泡);
+ *  错误占位行照计(回放渲染为错误气泡) */
+function isVisibleBubbleMsg(m: InternalMsg): boolean {
+  if (m.role === "user") return !isPseudoUserMsg(m);
+  if (m.role === "assistant") {
+    if (m.error) return true;
+    return !!m.content && !m.toolCalls?.length;
+  }
+  return false;
+}
+
+/** 单会话的用户可见消息数;读取失败按 0(列表不为它打断)。
+ *  只作 visibleCount 缓存缺省时的回落扫描(旧版本会话行) */
 async function displayRowCount(sessionId: string): Promise<number> {
   try {
     const rows = await db.loadMessageRows(sessionId);
     return rows.filter((r) => {
       const m = r.msg as InternalMsg;
-      if (!m || typeof m !== "object") return false;
-      if (m.role === "user") return !isPseudoUserMsg(m);
-      if (m.role === "assistant") return !!m.content;
-      return false;
+      return !!m && typeof m === "object" && isVisibleBubbleMsg(m);
     }).length;
   } catch {
     return 0;
@@ -239,7 +274,13 @@ export async function prepareRegenerate(
   }
   if (!lastUser) return null;
   const user = lastUser.msg as Extract<InternalMsg, { role: "user" }>;
-  await db.deleteMessagesFrom(sessionId, lastUser.seq);
+  // 截断段可见气泡数(列表条数缓存同步扣减)与图片字节先于截断处理:
+  // 级联删除会清掉截断段引用的图片行(含本条 user 自己的),必须先水合
+  const doomed = rows.filter((r) => r.seq >= lastUser.seq);
+  const visibleDelta = doomed.filter((r) => {
+    const m = r.msg as InternalMsg;
+    return !!m && typeof m === "object" && isVisibleBubbleMsg(m);
+  }).length;
   const images: NonNullable<UserMessagePayload["images"]> = [];
   for (const im of user.images ?? []) {
     const row = await db.getImage(im.id).catch(() => undefined);
@@ -251,6 +292,7 @@ export async function prepareRegenerate(
       base64: bytesToBase64(row.bytes),
     });
   }
+  await db.deleteMessagesFrom(sessionId, lastUser.seq, visibleDelta);
   return {
     text: userRequestText(user.content ?? ""),
     sessionId,

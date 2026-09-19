@@ -17,6 +17,7 @@ import {
 import { getActiveTabId } from "../../shared/contentTools";
 import { createLogger } from "../../shared/logger";
 import {
+  failPendingImages,
   resolveImageData,
   setImageSender,
   type PendingImage,
@@ -38,7 +39,7 @@ export interface ChatMsg {
   /** 系统运行提示(如步数耗尽/连接中断):以 NoticeBubble 呈现 */
   notice?: boolean;
   /** 提示语种类(NoticeBubble 按此取文案;缺省 = 步数耗尽) */
-  noticeKind?: "max-turns" | "disconnected";
+  noticeKind?: "max-turns" | "disconnected" | "truncated";
   /** 后台注入的伪 user 消息(截图附件注记):只展示图片,不作用户气泡 */
   synthetic?: true;
   /** 纯过程行(历史回放带,与 ChatRecord 同步):该 run 没有收尾记录
@@ -99,11 +100,16 @@ export function useAgentChannel({
   // ---- 断连重同步:run 期间 port 断过 = 后台被杀过,本地视图可能停在
   // 截断处,而库里有完整落盘(每轮收口即存)。下次 connect()(用户的下一
   // 个动作必然触发)时带 resync 拉库,空闲且期间无本地动作才按库替换。
-  // actionSeq 本地动作计数:发出 resync 请求后又提交/切会话过 → 本地更新鲜,
-  // 迟到的重同步响应作废
+  // actionSeq 本地动作计数:断连时刻快照基线,回包时比对 —— 断连后发生过
+  // 提交/重答等本地动作 → 本地更新鲜,迟到的重同步响应作废。
+  // 快照必须在断连时采,不能在发送 resync 时采:触发 connect 的那个动作
+  // (提交/重答)本身就是本地变更,发送时采快照会把它算进基线,守卫恒通过
+  // resyncSessionRef:断连时的会话。期间切过会话则整个 resync 作废
+  // (新会话的历史由 openSession 正常拉取,不需要也不该按旧会话对账)
   const resyncPendingRef = useRef(false);
   const actionSeqRef = useRef(0);
   const resyncSeqRef = useRef(-1);
+  const resyncSessionRef = useRef("");
 
   // ---- 本轮执行流:状态机(hook)+ 归档出口(文本段 → messages) ----
   const run = useRunSegments((texts) => {
@@ -163,8 +169,10 @@ export function useAgentChannel({
           run.onSettled();
           updateStatus("idle");
           setConfirmReq(null); // 确认卡随 run 收口清掉(超时拒绝后台已兜底)
-          // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示
-          if (evt.reason === "max-turns") {
+          // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示;
+          // 输出截断:回答半截收束,同样明示
+          if (evt.reason === "max-turns" || evt.reason === "truncated") {
+            const kind = evt.reason;
             setMessages((ms) => [
               ...ms,
               {
@@ -172,6 +180,7 @@ export function useAgentChannel({
                 content: "",
                 sessionId: sessionRef.current,
                 notice: true,
+                noticeKind: kind,
               },
             ]);
           }
@@ -260,6 +269,8 @@ export function useAgentChannel({
     port.onDisconnect.addListener(() => {
       log.warn("chat", "port disconnected");
       portRef.current = null;
+      // 在途图片字节请求随连接死亡:按缺失收场,不让骨架屏永久转圈
+      failPendingImages();
       // run 在途时断连 = 后台被杀,事件不会再来了:落袋为安 + 明示,
       // 不让用户盯着无声截断的回答。空闲时断连(后台闲置被回收)无感
       const runWasActive = statusRef.current !== "idle";
@@ -268,6 +279,8 @@ export function useAgentChannel({
       setConfirmReq(null);
       if (runWasActive) {
         resyncPendingRef.current = true;
+        resyncSessionRef.current = sessionRef.current;
+        resyncSeqRef.current = actionSeqRef.current; // 断连时刻的动作基线
         setMessages((ms) =>
           ms.some((m) => m.noticeKind === "disconnected")
             ? ms
@@ -286,12 +299,12 @@ export function useAgentChannel({
     });
 
     // 重连(上个动作触发的 connect):run 期间断过连 → 静默拉库对账,
-    // 把本地视图补到落盘的完整处。空闲断连无需对账
+    // 把本地视图补到落盘的完整处。空闲断连无需对账;期间切过会话同样
+    // 不对账(新会话有自己的拉取路径)
     if (resyncPendingRef.current) {
       resyncPendingRef.current = false;
-      const sid = sessionRef.current;
-      if (sid && statusRef.current === "idle") {
-        resyncSeqRef.current = actionSeqRef.current;
+      const sid = resyncSessionRef.current;
+      if (sid && sessionRef.current === sid && statusRef.current === "idle") {
         port.postMessage({ type: MSG.LOAD_HISTORY, sessionId: sid, resync: true });
       }
     }
@@ -400,7 +413,9 @@ export function useAgentChannel({
     actionSeqRef.current += 1; // 本地动作:未决的断连重同步作废
     run.newRound();
     setMemorySaved(0);
-    setStatus("thinking"); // 乐观:AGENT_STARTED 马上到,思考态先亮起
+    // 乐观:AGENT_STARTED 马上到,思考态先亮起。走 updateStatus 同步 statusRef
+    // (断连兜底与 resync 门控都读 ref,只 setStatus 会让 ref 停留在 idle)
+    updateStatus("thinking");
     setMessages((ms) => {
       // 截断点 = 末条「真实」user:后台注入的截图注记行不算提问,
       // 否则重答会把系统注记文本当用户问题重发(与后台 prepareRegenerate 同规则)

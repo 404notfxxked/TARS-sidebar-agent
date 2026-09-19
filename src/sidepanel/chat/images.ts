@@ -132,3 +132,13 @@ export function resolveImageData(evt: {
   imgUrlCache.set(evt.id, url);
   waiter?.(url);
 }
+
+/** port 断开(后台被杀)时,在途的图片字节请求永远等不到回包:统一按
+ *  「图片缺失」收场,气泡出失效占位,而不是骨架屏永久转圈。断连重同步
+ *  会替换消息列表,之后有新组件实例重新发起请求 */
+export function failPendingImages(): void {
+  const waiters = [...imgWaiters.entries()];
+  imgWaiters.clear();
+  imgInflight.clear();
+  for (const [, waiter] of waiters) waiter(null);
+}

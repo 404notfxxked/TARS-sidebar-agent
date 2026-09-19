@@ -60,6 +60,8 @@ export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
   } = opts;
 
   const maxRetry = retry ? MAX_RETRY : 0;
+  // 尾斜杠归一:设置页存进的 baseUrl 可能带 /,直接拼接会产出 //chat/completions
+  const base = baseUrl.replace(/\/+$/, "");
   for (let attempt = 0; attempt <= maxRetry; attempt++) {
     const timeout = new AbortController();
     let timedOut = false;
@@ -73,7 +75,7 @@ export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
       : timeout.signal;
 
     try {
-      const res = await fetch(`${baseUrl}${path}`, {
+      const res = await fetch(`${base}${path}`, {
         method,
         headers: {
           ...(body !== undefined && { "Content-Type": "application/json" }),

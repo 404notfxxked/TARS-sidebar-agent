@@ -55,6 +55,10 @@ async function main() {
       <textarea id="area"></textarea>
       <div id="ce" contenteditable="true"></div>
       <div id="hidden" style="display:none"><button>看不见</button></div>
+      <div id="vhidden"><button id="vh-btn" style="visibility:hidden">自身隐藏</button></div>
+      <div id="vparent" style="visibility:hidden">
+        <button id="vchild-btn" style="visibility:visible">覆盖可见</button>
+      </div>
       <div id="covered"><button id="covered-btn">被盖住的按钮</button></div>
       <div id="overlay"></div>
       <script>${bundleCode}</script>
@@ -112,6 +116,22 @@ async function main() {
   const all = await page.evaluate(() => window.__interact.findInteractive(document, {}));
   assert("默认查找含按钮/链接/输入/select/textarea/checkbox", all.count >= 6, `(count=${all.count})`);
   assert("跳过 display:none 内元素", !all.elements.some((e) => e.label === "看不见"), "hidden 元素不应出现在结果");
+  // visibility:hidden 不脱布局(仍有渲染盒),必须在有盒路径单独判定:
+  // 自身隐藏 → 如实报原因;祖先隐藏但自身显式 visible → 真的可见可点,
+  // 不能因祖先链被误判丢弃(2026-09 审计:自己的误判,实测 computed=visible
+  // 且 elementFromPoint 命中该子元素)
+  const selfHidden = all.elements.find((e) => e.label === "自身隐藏");
+  assert(
+    "自身 visibility:hidden 报 visibility-hidden",
+    selfHidden?.visible === false && selfHidden?.hidden === "visibility-hidden",
+    JSON.stringify(selfHidden),
+  );
+  const overrideVisible = all.elements.find((e) => e.label === "覆盖可见");
+  assert(
+    "祖先 hidden + 自身 visible 仍算可见(覆盖写法)",
+    overrideVisible?.visible === true,
+    JSON.stringify(overrideVisible),
+  );
   const byRole = await page.evaluate(() => window.__interact.findInteractive(document, { role: "input" }));
   assert("role=input 过滤", byRole.elements.every((e) => e.role === "input"), `(count=${byRole.count})`);
   const byText = await page.evaluate(() => window.__interact.findInteractive(document, { text: "行按钮" }));

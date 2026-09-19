@@ -280,7 +280,10 @@ function normalizeProviders(
         typeof p.id === "string" &&
         typeof p.apiKey === "string" &&
         typeof p.baseUrl === "string" &&
-        Array.isArray(p.models),
+        Array.isArray(p.models) &&
+        // models 条目同 legacy 路径一样逐条校验:损坏条目放行会让下游
+        // find(m => m.id === …) 对 null 取属性直接炸
+        p.models.every((m) => m && typeof m.id === "string"),
     );
   }
   const legacyModels: ModelEntry[] = Array.isArray(legacy.models)

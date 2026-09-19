@@ -26,6 +26,8 @@
 // 属于服务器侧策略,客户端无解(Origin 是禁止改写的头)。
 
 import { createLogger } from "../../shared/logger";
+import { bytesToBase64 } from "../../shared/imageCodec";
+import { readSSE } from "../provider/sse";
 
 const log = createLogger({ ctx: "bg" });
 
@@ -177,6 +179,8 @@ export class McpClient {
       extraHeaders?: Record<string, string>;
       notification?: boolean;
       noProbe?: boolean;
+      /** 本条调用链已重握手过(防「握手成功但持续 404」的服务器无限循环) */
+      rehandshaked?: boolean;
     },
   ): Promise<{ result: unknown; headers: Headers }> {
     const id = opts.notification ? undefined : this.nextId++;
@@ -221,17 +225,20 @@ export class McpClient {
     );
 
     if (!res.ok) {
-      // 会话失效(旧版服务器常以 404 表达):重握手一次再重试原请求
+      // 会话失效(旧版服务器常以 404 表达):重握手一次再重试原请求。
+      // 只重一次 —— 握手成功后仍 404 的服务器(会话即发即弃/路径配错)重试
+      // 只会握手↔404 无限循环
       if (
         this.era === "legacy" &&
         this.sessionId &&
         res.status === 404 &&
-        !opts.noProbe
+        !opts.noProbe &&
+        !opts.rehandshaked
       ) {
         log.warn("mcp", `${this.label} 会话失效,重新握手`);
         this.sessionId = undefined;
         await this.handshake(opts.signal);
-        return this.postRaw(method, params, opts);
+        return this.postRaw(method, params, { ...opts, rehandshaked: true });
       }
       const text = await res.text().catch(() => "");
       // 认证错误:永远直报(时代无关,探测也不该掩盖它)
@@ -280,7 +287,9 @@ export class McpClient {
       throw e;
     } finally {
       clearTimeout(timer);
-      outer?.removeEventListener("abort", onOuter);
+      // outer 的取消监听刻意不摘:60s 超时只护到响应头,响应头之后的
+      // 流式消费阶段(SSE)用户取消 run 仍要能打断在途读 —— 靠这条监听
+      // 把 outer 的 abort 传进 body 流。once 监听,abort 触发后自净
     }
   }
 }
@@ -313,6 +322,8 @@ async function parseJsonResponse(res: Response, id: number): Promise<unknown> {
 
 /**
  * 请求作用域 SSE 流:逐事件收集,直到本请求的最终响应。
+ * - 帧解析与停滞看门狗走共享 readSSE(CRLF 归一、多行 data、120s 无字节
+ *   看门狗 —— 响应头已到但流停滞的假死连接不该挂死整个 run)
  * - notifications/progress 等通知忽略
  * - 服务器发来的 JSON-RPC 请求(sampling)不响应 —— 见文件头「明确不支持」
  * - finally 里 cancel reader:提前返回(拿到响应)时即向服务器发出取消信号
@@ -323,50 +334,20 @@ async function readSseResponse(
   signal?: AbortSignal,
 ): Promise<unknown> {
   if (!res.body) throw new Error("MCP response has no body");
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  try {
-    for (;;) {
-      if (signal?.aborted) throw new DOMException("aborted", "AbortError");
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let sep: number;
-      while ((sep = buf.indexOf("\n\n")) !== -1) {
-        const event = buf.slice(0, sep);
-        buf = buf.slice(sep + 2);
-        const data = event
-          .split("\n")
-          .filter((l) => l.startsWith("data:"))
-          .map((l) => l.slice(5).trim())
-          .join("");
-        if (!data) continue; // 纯注释行(keep-alive)
-        let msg: {
-          id?: unknown;
-          result?: unknown;
-          error?: { code: number; message: string };
-          method?: string;
-        };
-        try {
-          msg = JSON.parse(data);
-        } catch {
-          continue;
-        }
-        if (msg.id === id) {
-          if (msg.error) throw new McpRpcError(msg.error.code, msg.error.message);
-          return msg.result;
-        }
-        if (msg.method) {
-          log.debug("mcp", "忽略服务器消息(流上通知/请求)", { method: msg.method });
-        }
-      }
+  type SseMsg = {
+    id?: unknown;
+    result?: unknown;
+    error?: { code: number; message: string };
+    method?: string;
+  };
+  for await (const msg of readSSE<SseMsg>(res)) {
+    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+    if (msg.id === id) {
+      if (msg.error) throw new McpRpcError(msg.error.code, msg.error.message);
+      return msg.result;
     }
-  } finally {
-    try {
-      await reader.cancel();
-    } catch {
-      /* 流已断 */
+    if (msg.method) {
+      log.debug("mcp", "忽略服务器消息(流上通知/请求)", { method: msg.method });
     }
   }
   throw new Error("MCP stream ended before a response arrived");
@@ -374,12 +355,14 @@ async function readSseResponse(
 
 /**
  * 头值编码:HTTP 头只容可见 ASCII;含非 ASCII / 控制字符 / 首尾空白的值按
- * 规范的 base64 哨兵格式传输(=?base64?...?=),纯 ASCII 原样
+ * 规范的 base64 哨兵格式传输(=?base64?...?=),纯 ASCII 原样。
+ * base64 走 imageCodec 的分块实现 —— 整段 String.fromCharCode 展开在超长
+ * 参数(模型可能填数十万字符)上会触发参数上限 RangeError
  */
 export function encodeHeaderValue(v: string): string {
   // \x20/\x09 是 RFC 5322 允许的裸字符,刻意保留
   // biome-ignore lint/suspicious/noControlCharactersInRegex: 编码前探测,控制字符是允许集的一部分
   if (/^[\x21-\x7e\x20\x09]*$/.test(v) && v === v.trim()) return v;
-  const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(v)));
+  const b64 = bytesToBase64(new TextEncoder().encode(v));
   return `=?base64?${b64}?=`;
 }

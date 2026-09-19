@@ -85,6 +85,9 @@ export interface SessionRow {
   updatedAt: number;
   /** 消息条数 = 该会话下一条待写 seq */
   msgCount: number;
+  /** 用户可见气泡数(列表「N 条」展示口径,与 msgCount 的 seq 记账分离):
+   *  追加/截断时增量维护;缺省 = 旧版本会话行,读侧回落单会话扫描 */
+  visibleCount?: number;
   /** 上下文压缩元数据;缺省 = 本会话尚未压缩过 */
   compaction?: SessionCompaction;
   /** 实测 token 基线;缺省 = 压缩触发用纯估算 */
@@ -213,6 +216,22 @@ export async function saveSessionInfo(
   await settled(tx);
 }
 
+/** 读侧回填可见条数缓存:只在会话行尚无该字段(旧版本行)时写入,已有值一律
+ *  不碰 —— 读侧算出的基线可能比并发 saveHistory 刚写的旧。读与写同在一个
+ *  事务内(条件写),与保存侧的增量不会互相覆盖 */
+export async function patchVisibleCount(
+  sessionId: string,
+  visibleCount: number,
+): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(SESSIONS, "readwrite");
+  const store = tx.objectStore(SESSIONS);
+  const prev = await p<SessionRow | undefined>(store.get(sessionId));
+  if (!prev) return;
+  if (prev.visibleCount === undefined) store.put({ ...prev, visibleCount });
+  await settled(tx);
+}
+
 /** 某会话全部消息,seq 升序(同一索引键下按主键 [sessionId, seq] 排序) */
 export async function loadMessageRows(
   sessionId: string,
@@ -251,25 +270,38 @@ export async function appendMessages(
 }
 
 /** 截掉 seq >= fromSeq 的消息行并回拨会话 msgCount(重新生成用)。
- *  压缩元数据与 token 基线透传不动:压缩只涉更早的 seq,基线只是估算启发。
- *  TODO(regenerate 图片回收):截断段消息引用的图片行暂不回收(字节留在
- *  images store 至会话级删除),见 design/tech-review-2026-09-18.md §5.1;
- *  修法需按截断段收集图片 id 一并删,与消息行同事务 */
+ *  截断段消息引用的图片行同事务级联回收(图片行只经消息行引用进来,引用
+ *  式级联不会误伤未截断轮次的图片);压缩元数据与 token 基线透传不动。
+ *  visibleDelta = 截断段的用户可见气泡数(调用方按展示口径统计),同步扣减
+ *  visibleCount 缓存;调用方不统计(传 0)时缓存不动,读侧回落扫描自愈 */
 export async function deleteMessagesFrom(
   sessionId: string,
   fromSeq: number,
+  visibleDelta = 0,
 ): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([SESSIONS, MESSAGES], "readwrite");
+  const tx = db.transaction([SESSIONS, MESSAGES, IMAGES], "readwrite");
   const prev = await p<SessionRow | undefined>(
     tx.objectStore(SESSIONS).get(sessionId),
   );
   if (prev) {
-    tx.objectStore(SESSIONS).put({ ...prev, msgCount: fromSeq });
+    const next: SessionRow = { ...prev, msgCount: fromSeq };
+    if (visibleDelta > 0 && prev.visibleCount !== undefined) {
+      next.visibleCount = Math.max(0, prev.visibleCount - visibleDelta);
+    }
+    tx.objectStore(SESSIONS).put(next);
   }
-  tx.objectStore(MESSAGES).delete(
-    IDBKeyRange.bound([sessionId, fromSeq], [sessionId, Infinity]),
-  );
+  const range = IDBKeyRange.bound([sessionId, fromSeq], [sessionId, Infinity]);
+  const messages = tx.objectStore(MESSAGES);
+  const doomed = await p<MessageRow[]>(messages.getAll(range));
+  const imageStore = tx.objectStore(IMAGES);
+  for (const row of doomed) {
+    const imgs = (row.msg as { images?: { id: string }[] } | null)?.images;
+    for (const im of Array.isArray(imgs) ? imgs : []) {
+      if (im && typeof im.id === "string") imageStore.delete([sessionId, im.id]);
+    }
+  }
+  messages.delete(range);
   await settled(tx);
 }
 

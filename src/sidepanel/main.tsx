@@ -13,15 +13,23 @@ installGlobalErrorHook(createLogger({ ctx: 'panel' }))
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('root element missing')
 
-// 主题与语言都在挂载前应用,避免深色系统下首帧闪白 / 英文用户见中文闪帧
-loadConfig().then((cfg) => {
-  applyThemePreference(cfg.theme);
-  applyAccent(cfg.accent);
-  setLocale(cfg.locale);
-  watchSystemTheme();
-  createRoot(rootEl).render(
-    <StrictMode>
-      <App />
-    </StrictMode>
-  )
-})
+// 主题与语言都在挂载前应用,避免深色系统下首帧闪白 / 英文用户见中文闪帧。
+// 配置读取失败(存储异常)也要渲染:不挂载 = 整个面板永久空白,挂载后
+// 各自的默认值兜底比黑屏可恢复
+loadConfig()
+  .then((cfg) => {
+    applyThemePreference(cfg.theme);
+    applyAccent(cfg.accent);
+    setLocale(cfg.locale);
+    watchSystemTheme();
+  })
+  .catch(() => {
+    watchSystemTheme();
+  })
+  .finally(() => {
+    createRoot(rootEl).render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    )
+  })

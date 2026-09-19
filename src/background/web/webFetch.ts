@@ -8,12 +8,18 @@
 // 知情放行」的出口;白名单命中直抓,任意新域首次抓取确认一次。
 // 重定向复核:确认门只判入口 URL,而 fetch 默认跟随重定向 —— 落点换 host
 // 时在 fetchHtml 内重跑私网判定(私网落点拦截、公开落点放行但不回填最终
-// URL,白名单不学习重定向带来的新域)。头注排除项「不拦 DNS 解析到私网」
-// 不涵盖 HTTP 重定向 —— 那是代码看得见的落点变化。
+// URL,白名单不学习重定向带来的新域)。
+// ⚠️ 已知边界:SW fetch 的 redirect:"manual" 只给 opaqueredirect(读不到
+// Location),逐跳复核在平台上不可行,跟随模式下可见的只有**最终**落点 ——
+// 多跳重定向中间的私网跳会真实发出(响应被丢弃),这不是可机械拦截的防线,
+// 只是「最终落点」的知情底线。开放重定向 → 内网 GET 的残余风险由确认门
+// 的入口白名单与用户知情兜着。
 //
 // 流程:先试 fetch_read(缓存命中 = 一次往返直达);offscreen 报 NOT_CACHED
-// 才走「抓取 → 入库 → 再读」。工具在 agent 循环里串行执行,build 与 read
-// 之间没有并发淘汰,NOT_CACHED 只出现在真正未缓存时。
+// 才走「抓取 → 入库 → 再读」。1.2.0 起只读工具批内并行(web_fetch 同批并发
+// 可达),build 与 read 之间不再有「串行 ⇒ 无并发淘汰」的保证:LRU 容量
+// 6 份,同批超过 6 个 fetch_build 才可能互踢出 NOT_CACHED,一旦出现按异常
+// 状态报错(见下),属可接受的小概率边界。
 // 取消:用户中止 run 时,在途抓取立即中断(offscreen 侧的解析为本地纯计算,
 // 不受影响,结果会被丢弃)。
 
@@ -140,7 +146,24 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
         to: hostKey(new URL(res.url).hostname),
       });
     }
-    const buf = await res.arrayBuffer();
+    const buf = await (async () => {
+      // 下载阶段(响应头之后)的错误单独包装:中止/超时给可读文案,
+      // 不让裸 Chrome 错误直穿;Content-Length 超限时先拒,不吃满下载
+      const declared = Number(res.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_HTML_BYTES) {
+        throw new Error(`Page too large (~${Math.round(declared / 1024)} KB, limit 2 MB)`);
+      }
+      try {
+        return await res.arrayBuffer();
+      } catch (e) {
+        if (cancelSignal?.aborted) throw new Error("Page read cancelled by the user");
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/timeout/i.test(msg)) {
+          throw new Error(`Page fetch timed out after ${FETCH_TIMEOUT_MS / 1000}s: ${url}`);
+        }
+        throw new Error(`Page download failed: ${msg} (${url})`);
+      }
+    })();
     if (buf.byteLength > MAX_HTML_BYTES) {
       throw new Error(`Page too large (~${Math.round(buf.byteLength / 1024)} KB, limit 2 MB)`);
     }
@@ -151,13 +174,15 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
 }
 
 /**
- * 字符集解码:Content-Type 声明优先,否则嗅探前 2KB 的 <meta charset>。
+ * 字符集解码:Content-Type 声明优先,否则嗅探文档头部的 <meta charset>。
  * fetch 的 res.text() 只会按 UTF-8 解,内网老站常见 GBK 会变乱码,这里补上。
+ * 嗅探窗口取 64KB:规范建议 meta charset 落在前 1KB,但长注释/前置内联脚本
+ * 常把它推后,2KB 窗口对真实页面太紧(漏嗅探 = 整页乱码进模型)
  */
 function decodeBody(buf: ArrayBuffer, contentType: string): string {
   let charset = /charset\s*=\s*["']?([\w-]+)/i.exec(contentType)?.[1];
   if (!charset) {
-    const head = new TextDecoder("utf-8").decode(buf.slice(0, 2048));
+    const head = new TextDecoder("utf-8").decode(buf.slice(0, 65_536));
     charset = /<meta[^>]+charset\s*=\s*["']?([\w-]+)/i.exec(head)?.[1];
   }
   if (charset) {

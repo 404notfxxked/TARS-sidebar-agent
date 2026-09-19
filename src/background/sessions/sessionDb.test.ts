@@ -146,8 +146,49 @@ describe("sessionDb 会话删除的图片级联回收(键序回归)", () => {
 
     const rows = await loadMessageRows(sid);
     expect(rows).toHaveLength(2);
-    // TODO(regenerate 图片回收):重新生成截断段引用的图片行暂不回收,
-    // 见 design/tech-review-2026-09-18.md §5.1 —— 记账不实现
-    expect(await countStore("images")).toBe(2);
+  });
+
+  it("deleteMessagesFrom 级联回收截断段引用的图片行,未截断轮次的不受影响", async () => {
+    const sid = "regen-img";
+    const keepId = crypto.randomUUID();
+    const doomedId = crypto.randomUUID();
+    await appendMessages(
+      sid,
+      meta(sid, 2),
+      [
+        {
+          role: "user",
+          content: "第一问",
+          images: [{ id: keepId, mime: "image/jpeg", w: 2, h: 2 }],
+        },
+        { role: "assistant", content: "第一答" },
+      ],
+      0,
+      [imgRow(sid, keepId)],
+    );
+    await appendMessages(
+      sid,
+      meta(sid, 4),
+      [
+        {
+          role: "user",
+          content: "第二问",
+          images: [{ id: doomedId, mime: "image/jpeg", w: 2, h: 2 }],
+        },
+        { role: "assistant", content: "第二答" },
+      ],
+      2,
+      [imgRow(sid, doomedId)],
+    );
+
+    await deleteMessagesFrom(sid, 2, 1);
+
+    // 截断段(第二问)引用的图片字节已随消息行一起回收;第一问的还在
+    expect(await getImage(keepId)).toBeDefined();
+    expect(await getImage(doomedId)).toBeUndefined();
+    // db 层不产可见口径:该会话行从未写过 visibleCount(appendMessages 直写),
+    // 缓存缺省语义 = 不动,读侧回落扫描
+    const session = (await listSessions()).find((r) => r.id === sid);
+    expect(session?.visibleCount).toBeUndefined();
   });
 });
