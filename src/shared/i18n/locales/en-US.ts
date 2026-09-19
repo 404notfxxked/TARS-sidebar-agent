@@ -119,6 +119,8 @@ export const enUS = {
       stepsMeta: "Ran for {dur}",
       thoughtMeta: "Thought for {dur}",
       reasoningMeta: "{dur} · {n} chars",
+      replaySteps: "Ran {n} steps",
+      replayThoughts: "Thought {n} steps",
     },
     tool: {
       getTabs: "List tabs",

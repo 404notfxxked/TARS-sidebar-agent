@@ -36,6 +36,10 @@ export type InternalMsg =
       reasoning_content?: string;
       /** 产出该消息的模型 id(仅内部记录/排查用,永不发给 API) */
       model?: string;
+      /** 运行失败占位行:content 即错误文本。全量落盘供回放渲染错误气泡;
+       *  组装 prompt 时整行滤除(loadTranscript)—— 错误文本不是模型说过的话,
+       *  回灌会污染上下文 */
+      error?: true;
     }
   | { role: "tool"; toolCallId: string; content: string };
 

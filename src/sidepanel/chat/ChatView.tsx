@@ -31,7 +31,7 @@ import {
   compressImage,
   type PendingImage,
 } from "./images";
-import { RunZone } from "./trace";
+import { ReplayProcessCard, RunZone } from "./trace";
 import {
   AssistantBubble,
   CompactionDivider,
@@ -480,8 +480,11 @@ export default function ChatView({
           {/* 内容列:面板拖宽后封顶 560px 居中,窄面板不变 */}
           <div className="mx-auto w-full max-w-[560px] space-y-3">
         {(() => {
+          // 注入的伪 user 消息(截图附件注记)只属于模型管线,对话流不渲染
+          // —— 实况视图本来就不显示它,回放对齐;落盘仍全量(synthetic 行
+          // 留在库与 messages 态里,只是不进消息流)
           const visible = messages.filter(
-            (m) => m.sessionId === currentSession,
+            (m) => m.sessionId === currentSession && !m.synthetic,
           );
           if (visible.length === 0 && status === "idle")
             return (
@@ -501,7 +504,8 @@ export default function ChatView({
           );
           // 重新生成的挂点:本轮答案在 RunZone(settled 收尾气泡)由它自己挂;
           // 无本轮答案时,只有当可见消息的最后一条就是普通 assistant 气泡
-          // (历史回放/上一轮归档后)才挂——重答截到末条 user,挂中间气泡会误导
+          // (历史回放/上一轮归档后)才挂——重答截到末条 user,挂中间气泡会误导。
+          // processOnly 纯过程行不是答案,排除
           let lastAssistantIdx = -1;
           if (runSegs.length === 0 && status === "idle") {
             const last = visible[visible.length - 1];
@@ -509,7 +513,8 @@ export default function ChatView({
               last &&
               last.role === "assistant" &&
               !last.error &&
-              !last.notice
+              !last.notice &&
+              !last.processOnly
             ) {
               lastAssistantIdx = visible.length - 1;
             }
@@ -538,13 +543,32 @@ export default function ChatView({
               m.role === "user" ? (
                 <UserBubble key={i} text={m.content} images={m.images} />
               ) : m.error ? (
-                <ErrorBubble
-                  key={i}
-                  text={m.content}
-                  onRetry={i === lastErrorIdx ? chat.regenerate : undefined}
-                />
+                // 失败轮:过程卡(如有)+ 错误气泡,与实况「过程卡 → 错误」同构
+                <div key={i} className="flex flex-col gap-1.5">
+                  {m.processItems && m.processItems.length > 0 && (
+                    <ReplayProcessCard items={m.processItems} />
+                  )}
+                  <ErrorBubble
+                    text={m.content}
+                    onRetry={i === lastErrorIdx ? chat.regenerate : undefined}
+                  />
+                </div>
               ) : m.notice ? (
                 <NoticeBubble key={i} kind={m.noticeKind} />
+              ) : m.processItems && m.processItems.length > 0 ? (
+                // 历史回放:过程卡(思考/中间文案/工具)+ 收尾气泡 ——
+                // 与实况 settled 布局同构;processOnly 载体行(无收尾
+                // 记录的 run)只有卡
+                <div key={i} className="flex flex-col gap-1.5">
+                  <ReplayProcessCard items={m.processItems} />
+                  {!m.processOnly && (
+                    <AssistantBubble
+                      text={m.content}
+                      actions={i === lastAssistantIdx ? "copy-regen" : "copy"}
+                      onRegenerate={i === lastAssistantIdx ? chat.regenerate : undefined}
+                    />
+                  )}
+                </div>
               ) : (
                 <AssistantBubble
                   key={i}

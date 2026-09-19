@@ -125,6 +125,22 @@ export interface SessionMeta {
   msgCount: number;
 }
 
+/** 回放过程项:历史 run 内的思考/中间文案/工具调用+结果,按到达顺序排列,
+ *  由后台投影聚合(sessionHistory toChatRecords),面板 ReplayProcessCard 渲染。
+ *  落库没有结构化的工具成败标记,按 wire 约定「Error: 」前缀判错误态 */
+export type ProcessItem =
+  | { kind: "reasoning"; text: string }
+  | { kind: "text"; text: string }
+  | {
+      kind: "tool";
+      id: string;
+      name: string;
+      args?: unknown;
+      /** 工具结果原文(投影侧超长截断并标注体量);配对的 tool 行缺失时无此字段 */
+      result?: string;
+      error?: boolean;
+    };
+
 /** 前端渲染用:只含 user/assistant 文本(+ 图片元信息),不含 tool 内部消息。
  *  图片字节经 GET_IMAGE/IMAGE_DATA 单独取,不随消息列表传。
  *  seq = 该记录对应消息在库里的序号(0 基稠密),压缩分隔条据此定位 */
@@ -133,6 +149,17 @@ export interface ChatRecord {
   content: string;
   images?: ImageMeta[];
   seq?: number;
+  /** 后台注入给模型的伪 user 消息(截图附件的系统注记):消息本身全量落盘
+   *  (虚拟上下文地基),但面板不作真实用户气泡渲染,只展示附件图片 */
+  synthetic?: true;
+  /** 运行失败占位行:回放渲染错误气泡(与实况同文同源) */
+  error?: true;
+  /** 纯过程行:该 run 没有收尾记录(取消/SW 被杀,历史停在工具结果上),
+   *  过程数据无气泡可挂,以此载体行独立成卡 */
+  processOnly?: true;
+  /** 该 run 的过程数据(思考/中间文案/工具调用+结果):挂在收尾记录
+   *  (回答/error)或 processOnly 载体行上,回放渲染为过程卡 */
+  processItems?: ProcessItem[];
 }
 
 /** 会话压缩元数据(面板展示用):seq ≤ uptoSeq 的消息已压缩为摘要,

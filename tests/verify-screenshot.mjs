@@ -19,6 +19,7 @@ import {
   ask,
   sse,
 } from "./lib-cdp-mock.mjs";
+import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
@@ -278,6 +279,81 @@ await ask(sidepanel, "看看这个页面长什么样");
     "images store 有截图字节(jpeg)",
     snap.images.length === 1 && snap.images[0].byteLen > 10_000 && snap.images[0].mime === "image/jpeg",
     `n=${snap.images.length} len=${snap.images[0]?.byteLen}`,
+  );
+
+  // 注记行的投影:全量落盘的伪 user 消息必须标 synthetic,面板据此不作
+  // 真实用户气泡渲染(曾把伪造的 user 信息当真展示,评审 2026-09-18)
+  const sessionId = await sidepanel.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const rq = indexedDB.open("tars");
+        rq.onsuccess = () => {
+          const db = rq.result;
+          const tx = db.transaction("sessions");
+          const req = tx.objectStore("sessions").getAll();
+          tx.oncomplete = () => {
+            db.close();
+            const rows = (req.result ?? []).sort((a, b) => b.updatedAt - a.updatedAt);
+            resolve(rows[0]?.id ?? "");
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        rq.onerror = () => reject(rq.error);
+      }),
+  );
+  const records = await sidepanel.evaluate(
+    (sessionId) =>
+      new Promise((resolve, reject) => {
+        const port = chrome.runtime.connect({ name: "agent-port" });
+        const timer = setTimeout(() => reject(new Error("history 超时")), 10000);
+        port.onMessage.addListener((msg) => {
+          if (msg.type === "history") {
+            clearTimeout(timer);
+            port.disconnect();
+            resolve(msg.messages);
+          }
+        });
+        port.postMessage({ type: "load_history", sessionId });
+      }),
+    sessionId,
+  );
+  const noteRecord = records.find(
+    (r) => r.role === "user" && r.content.startsWith("[System note:"),
+  );
+  check(
+    "注记行仍在历史投影中(落盘全量)且标 synthetic 带图",
+    !!noteRecord &&
+      noteRecord.synthetic === true &&
+      (noteRecord.images?.length ?? 0) === 1,
+    JSON.stringify(noteRecord)?.slice(0, 140),
+  );
+  check(
+    "真实用户行不带 synthetic 标",
+    records.some((r) => r.role === "user" && r.synthetic === undefined),
+  );
+
+  // 回放 UI:重开面板(本地态清空)→ 历史切回该会话,注记文本不得以
+  // 用户气泡出现,截图图片本身照常渲染
+  await sidepanel.reload();
+  await sleep(800);
+  await sidepanel.locator(`button[aria-label="${zh.chat.openSessions}"]`).click();
+  await sidepanel.locator(`h2:has-text("${zh.sessions.title}")`).waitFor({ timeout: 5000 });
+  await sidepanel
+    .locator("li")
+    .filter({ hasText: "看看这个页面长什么样" })
+    .first()
+    .click();
+  await sleep(600);
+  check(
+    "回放不渲染注记文本(伪 user 不作真用户气泡)",
+    (await sidepanel.getByText("[System note:").count()) === 0,
+  );
+  check(
+    "回放不渲染注入的截图附件(实况/回放对齐,附件只进模型管线)",
+    (await sidepanel.getByText("看看这个页面长什么样").count()) >= 1 &&
+      (await sidepanel
+        .locator(`img[alt^="${zh.chat.imageAlt.split("{")[0]}"]`)
+        .count()) === 0,
   );
 }
 

@@ -1,11 +1,14 @@
 // 本轮执行流的渲染层:思考段/文本段/工具段按到达顺序交错。live 时连续过程段
 // 聚卡、文本段流式为气泡;settled 时整轮过程(含中间文案)重排进一张卡,折叠成
 // 「已执行 x · n 步」摘要 chip,点击回看完整过程 —— 折叠态即「已执行 x → 最终回答」。
+// 历史回放的过程卡(ReplayProcessCard)也在这:后台投影的 processItems 复用
+// 同一套行组件,无耗时元数据,chip 只报步数。
 // 段类型也定义在这里(useRunSegments 是它的状态层)。渲染是纯函数式的:输入段
 // 序列,不持有任何执行流状态。
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { LocalePref } from "../../shared/configStore";
+import type { ProcessItem } from "../../shared/messages";
 import type { TFn } from "../../shared/i18n";
 import { useCopyFlash, useLocale, useT } from "../ui/hooks";
 import { toolLabel } from "./toolNames";
@@ -343,6 +346,95 @@ function ReasoningRow({ item, durMs }: { item: ReasoningSeg; durMs: number }) {
   );
 }
 
+/** 回放思考行:历史 run 落盘的 reasoning_content。与实况思考行同一套视觉;
+ *  耗时未落盘,尾部无计时。ReplayProcessCard 与行级使用(旧版单独成卡,
+ *  现收进过程卡)共用 */
+function ReplayReasoningRow({ text }: { text: string }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="trace-row" data-kind="reasoning" data-open={open}>
+      <button
+        type="button"
+        className="trace-header"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="trace-icon" aria-hidden="true">
+          <SparkleIcon />
+        </span>
+        <span className="trace-label">{t("chat.trace.reasoning")}</span>
+        <span className="trace-tail">
+          <ChevronIcon />
+        </span>
+      </button>
+      <div className="trace-body-wrap">
+        <div className="trace-body">
+          <div className="trace-copy-row">
+            <CopyButton text={text} />
+          </div>
+          <div className="reasoning-text">{truncate(t, text, REASONING_MAX_CHARS)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 回放过程卡:历史 run 投影的 processItems(思考/中间文案/工具调用+结果),
+ *  折叠成只报步数的摘要 chip(耗时未落盘,不报时长),展开复用实况同一套
+ *  行组件回看。由 ChatView 组合在收尾气泡上方 —— trace 已引用 AssistantBubble,
+ *  bubbles 反向导入会成环 */
+export function ReplayProcessCard({ items }: { items: ProcessItem[] }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const hasError = items.some((it) => it.kind === "tool" && it.error);
+  const meta = items.some((it) => it.kind === "tool")
+    ? t("chat.trace.replaySteps", { n: items.length })
+    : t("chat.trace.replayThoughts", { n: items.length });
+  return (
+    <div className="trace msg-in" data-open={open}>
+      <button
+        type="button"
+        className="trace-header trace-summary"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="trace-icon" aria-hidden="true">
+          {hasError ? <MarkError /> : <MarkOk />}
+        </span>
+        <span className="trace-summary-meta">{meta}</span>
+        <span className="trace-tail">
+          <ChevronIcon />
+        </span>
+      </button>
+      <div className="trace-rows-wrap">
+        <div className="trace-rows">
+          {items.map((it, i) =>
+            it.kind === "reasoning" ? (
+              <ReplayReasoningRow key={`r${i}`} text={it.text} />
+            ) : it.kind === "text" ? (
+              <TextRow key={`t${i}`} item={{ kind: "text", text: it.text, t: 0 }} />
+            ) : (
+              <ToolRow
+                key={it.id || `tool${i}`}
+                item={{
+                  kind: "tool",
+                  id: it.id,
+                  name: it.name,
+                  args: it.args,
+                  result: it.result,
+                  status: it.error ? "error" : "done",
+                  t: 0,
+                }}
+              />
+            ),
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 中间文案行(轮内思考/工具之间的叙述文本):摘要为单行首行预览,展开回看全文 */
 function TextRow({ item }: { item: TextSeg }) {
   const t = useT();
@@ -380,8 +472,9 @@ function TextRow({ item }: { item: TextSeg }) {
 
 /** 工具行:名称 + 状态常显(对勾/叉以描边画入),参数/结果点击展开(摘要截断)。
  *  完成的尾部直接给耗时(✓ 图标已表达完成,不再重复「完成」二字,与
- *  Manus/Cursor 的每步计时一致);运行中/失败仍用文字 */
-function ToolRow({ item, durMs }: { item: ToolSeg; durMs: number }) {
+ *  Manus/Cursor 的每步计时一致);运行中/失败仍用文字。
+ *  durMs 缺省 = 回放形态(耗时未落盘),完成态只留图标 */
+function ToolRow({ item, durMs }: { item: ToolSeg; durMs?: number }) {
   const t = useT();
   const locale = useLocale();
   const [open, setOpen] = useState(false);
@@ -390,7 +483,9 @@ function ToolRow({ item, durMs }: { item: ToolSeg; durMs: number }) {
       ? t("chat.trace.running")
       : item.status === "error"
         ? t("chat.trace.failed")
-        : fmtDur(durMs, locale);
+        : durMs === undefined
+          ? ""
+          : fmtDur(durMs, locale);
   return (
     <div
       className="trace-row"
@@ -415,7 +510,9 @@ function ToolRow({ item, durMs }: { item: ToolSeg; durMs: number }) {
         </span>
         <span className="trace-label">{toolLabel(t, item.name, item.displayName)}</span>
         <span className="trace-tail">
-          <span className="trace-status">{statusText}</span>
+          {statusText !== "" && (
+            <span className="trace-status">{statusText}</span>
+          )}
           <ChevronIcon />
         </span>
       </button>

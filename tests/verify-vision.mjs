@@ -203,7 +203,33 @@ await sidepanel.locator('input[type="file"]').setInputFiles(PNG_PATH);
 await sidepanel.locator('img[alt^="待发送图片"]').first().waitFor({ timeout: 5000 });
 await setModels(sidepanel, false);
 await sleep(400);
-await ask(sidepanel, "再问一次");
+// 提示在发送瞬间亮起、3s 后熄灭;ask() 在「状态翻转被 React 批次吞掉」时
+// 会等满 10s 才返回(见 ask 内注),到那时提示早已熄灭 —— 本条检查必须
+// 手动驱动:点击后立刻轮询捕获,再等 run 收口做请求侧断言
+{
+  const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
+  await input.fill("再问一次");
+  await sidepanel.locator(`button[aria-label="${zh.chat.send}"]`).click();
+  let hint = false;
+  for (let i = 0; i < 20 && !hint; i++) {
+    hint = await sidepanel
+      .getByText(zh.chat.visionModelFallback)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (!hint) await sleep(100);
+  }
+  check("发送时面板提示图片不会发送", hint);
+  // 等 run 真正开始(发送钮翻转为停止)再等收口(翻回发送),请求侧断言
+  // 才读到本轮的 lastRequest —— 翻转被吞时按 ask() 同款语义吞掉超时
+  await sidepanel
+    .locator(`button[aria-label="${zh.chat.send}"]`)
+    .waitFor({ state: "hidden", timeout: 10000 })
+    .catch(() => {});
+  await sidepanel
+    .locator(`button[aria-label="${zh.chat.send}"]`)
+    .waitFor({ state: "visible", timeout: 60000 });
+}
 {
   const users = lastRequest?.messages?.filter((m) => m.role === "user") ?? [];
   const allString = users.length > 0 && users.every((m) => typeof m.content === "string");
@@ -213,12 +239,6 @@ await ask(sidepanel, "再问一次");
     "被剥离的图片消息带系统注(模型可知情回答)",
     users.filter((m) => m.content.includes("当前模型不支持视觉识别")).length === 2,
   );
-  const hint = await sidepanel
-    .getByText(zh.chat.visionModelFallback)
-    .first()
-    .isVisible()
-    .catch(() => false);
-  check("发送时面板提示图片不会发送", hint);
   const imgCount = await sidepanel.evaluate(
     () =>
       new Promise((resolve, reject) => {

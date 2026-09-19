@@ -113,6 +113,8 @@ export const zhCN = {
       stepsMeta: "已执行 {dur}",
       thoughtMeta: "已思考 {dur}",
       reasoningMeta: "{dur} · {n} 字",
+      replaySteps: "已执行 {n} 步",
+      replayThoughts: "已思考 {n} 步",
     },
     tool: {
       getTabs: "列出标签页",

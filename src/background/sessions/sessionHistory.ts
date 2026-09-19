@@ -7,8 +7,14 @@
 //   连带清掉、磁盘紧张时可能被驱逐,当历史被当作可丢弃数据时这些都不再致命
 // - 首次启动把旧版 chrome.storage.session 里的 history:* 一次性搬进来
 
+import { SYSTEM_NOTE_PREFIX } from "../agent/compaction";
 import type { InternalMsg } from "../provider/types";
-import type { ChatRecord, SessionMeta, UserMessagePayload } from "../../shared/messages";
+import type {
+  ChatRecord,
+  ProcessItem,
+  SessionMeta,
+  UserMessagePayload,
+} from "../../shared/messages";
 import { bytesToBase64 } from "../../shared/imageCodec";
 import { createLogger } from "../../shared/logger";
 import * as db from "./sessionDb";
@@ -39,16 +45,44 @@ export async function loadHistory(sessionId: string): Promise<InternalMsg[]> {
   }
 }
 
+/** 组装 prompt 用的历史:与落盘同源,但两处口径收窄 ——
+ *  ①滤掉失败轮错误行:错误文本不是模型说过的话,回灌会污染上下文;
+ *  ②最终回答行剥离 reasoning_content:思考对 API 没有回传价值,剥掉把
+ *    「未知字段」暴露面收到最小;带 toolCalls 的行保留 —— DeepSeek 新版
+ *    thinking 模式要求 reasoning_content 随 tools 回传(缺失 400,见
+ *    api-docs.deepseek.com/guides/thinking_mode),且 run 内内存直用的
+ *    wire(openai.ts toWireMessages)本就带此字段,跨 run 与 run 内口径
+ *    一致;严格网关若拒收未知字段,run 内第二轮同样会炸,非跨 run 新增
+ *    风险(审计 2026-09-18 C 的冲突由此收口)。
+ *  回放投影(toChatRecords)包含错误行,两层口径不同是有意设计 */
+export async function loadTranscript(sessionId: string): Promise<InternalMsg[]> {
+  const msgs = await loadHistory(sessionId);
+  return msgs
+    .filter((m) => !(m.role === "assistant" && m.error))
+    .map((m) => {
+      if (m.role !== "assistant") return m;
+      // 带 toolCalls 的行原样回传(含 reasoning_content);最终回答行重建对象
+      // 以彻底去掉 reasoning_content 键(undefined 值可能被存储层保留)
+      if (m.toolCalls?.length) return m;
+      if (m.reasoning_content === undefined) return m;
+      return {
+        role: "assistant",
+        content: m.content,
+        ...(m.model ? { model: m.model } : {}),
+        ...(m.error ? { error: m.error } : {}),
+      };
+    });
+}
+
 /** 追加保存:只落本轮新增的消息。
  *  - msgs:本轮结束时的完整领域消息(不含 system,调用方已 slice(1))
  *  - fromIdx:msgs 里第一条「本轮新增」的下标。无裁剪时 = 已落盘条数;
  *    发生过溢出裁剪时更小(最早几轮已从内存丢弃,但库里仍存着全量 ——
  *    裁剪只影响本轮 prompt,不写回,落盘永远是全量历史)
  *  - baseSeq:该会话在库里的已有条数,即新消息的起始 seq
- *  落盘前剥离思考内容(reasoning_content)与图片字节:严格按 OpenAI 规范
- *  校验的端点对 assistant 消息里的未知字段直接 400;图片字节进 images store,
- *  消息行只留引用。单次 run 内的逐轮回传不受影响(内存直用)。写失败由
- *  调用方兜底,不打断回答。 */
+ *  落盘前剥离图片字节(进 images store,消息行只留引用);思考内容
+ *  (reasoning_content)自 2026-09 起全量落盘作回放展示元数据,回灌 prompt
+ *  前在 loadTranscript 处剥离。写失败由调用方兜底,不打断回答。 */
 export async function saveHistory(
   sessionId: string,
   msgs: InternalMsg[],
@@ -60,6 +94,23 @@ export async function saveHistory(
   if (freshRaw.length === 0) return;
   const imageRows = collectImageRows(sessionId, freshRaw);
   const fresh = freshRaw.map(persistableMsg);
+  // 思考落盘计量:只记 turns 与字节数,不记原文(诊断导出判据,硬规则 12)。
+  // 用于评估全量落盘的真实存储分布(2026-09-18 决策:全量落盘试运行);
+  // 日志按类 400 条环形淘汰,重用会滚掉更早的条目
+  const reasoningTurns = freshRaw.filter(
+    (m): m is Extract<InternalMsg, { role: "assistant" }> =>
+      m.role === "assistant" && !!m.reasoning_content,
+  );
+  if (reasoningTurns.length > 0) {
+    const enc = new TextEncoder();
+    log.info("bg", "思考内容落盘", {
+      turns: reasoningTurns.length,
+      bytes: reasoningTurns.reduce(
+        (sum, m) => sum + enc.encode(m.reasoning_content ?? "").length,
+        0,
+      ),
+    });
+  }
   const now = Date.now();
   const prev = await db.getSession(sessionId).catch(() => undefined);
   const meta: db.SessionRow = {
@@ -123,16 +174,39 @@ export function saveCtx(
   return db.saveSessionInfo(sessionId, { ctx });
 }
 
-/** 会话列表,最近活跃在前 */
+/** 会话列表,最近活跃在前。msgCount 口径 = 用户可见的气泡数(真实提问 +
+ *  有正文的回答;tool/注记/processOnly 纯过程行不计 —— 过程行在回放里是
+ *  折叠卡不是气泡)。会话行上存的 msgCount 是 seq 记账,不是展示口径,
+ *  两者有意分离 */
 export async function listSessions(): Promise<SessionMeta[]> {
   const rows = await db.listSessions();
-  return rows.map(({ id, title, createdAt, updatedAt, msgCount }) => ({
-    id,
-    title,
-    createdAt,
-    updatedAt,
-    msgCount,
-  }));
+  const out: SessionMeta[] = [];
+  for (const row of rows) {
+    out.push({
+      id: row.id,
+      title: row.title,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      msgCount: await displayRowCount(row.id),
+    });
+  }
+  return out;
+}
+
+/** 单会话的用户可见消息数;读取失败按 0(列表不为它打断) */
+async function displayRowCount(sessionId: string): Promise<number> {
+  try {
+    const rows = await db.loadMessageRows(sessionId);
+    return rows.filter((r) => {
+      const m = r.msg as InternalMsg;
+      if (!m || typeof m !== "object") return false;
+      if (m.role === "user") return !isPseudoUserMsg(m);
+      if (m.role === "assistant") return !!m.content;
+      return false;
+    }).length;
+  } catch {
+    return 0;
+  }
 }
 
 export function deleteSession(sessionId: string): Promise<void> {
@@ -257,11 +331,16 @@ function userRequestText(content: string): string {
   return inner ? inner[1].trim() : content;
 }
 
-/** 注入型伪消息(<user-memory> / <context-summary>)的 user 角色消息:
- *  只进 prompt 不进历史,但 deriveTitle 拿到的切片数组以它们开头 */
+/** 注入型伪 user 消息:<user-memory>/<context-summary> 只进 prompt 不进
+ *  历史;截图系统注记(SYSTEM_NOTE_PREFIX)则全量落盘 —— 三者都不是用户
+ *  提问:标题推导跳过、重新生成的截断点跳过、面板投影标 synthetic */
 function isPseudoUserMsg(m: InternalMsg): boolean {
   const c = m.content ?? "";
-  return c.startsWith("<user-memory>") || c.startsWith("<context-summary>");
+  return (
+    c.startsWith("<user-memory>") ||
+    c.startsWith("<context-summary>") ||
+    c.startsWith(SYSTEM_NOTE_PREFIX)
+  );
 }
 
 /** 首条用户消息 → 列表标题(压平空白后截断);跳过注入型伪消息 */
@@ -276,20 +355,8 @@ function deriveTitle(msgs: InternalMsg[]): string {
     : text;
 }
 
-function stripReasoning(
-  m: InternalMsg,
-): InternalMsg {
-  if (m.role !== "assistant" || m.reasoning_content === undefined) return m;
-  // 重建对象以彻底去掉 reasoning_content 键(undefined 值可能被存储层保留)
-  return {
-    role: "assistant",
-    content: m.content,
-    ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}),
-    ...(m.model ? { model: m.model } : {}),
-  };
-}
-
-/** 持久化形态:剥 reasoning_content + 剥图片字节(字节另行入 images store) */
+/** 持久化形态:剥图片字节(另行入 images store);reasoning_content 全量
+ *  保留(prompt 侧剥离在 loadTranscript,见彼处注释) */
 function persistableMsg(m: InternalMsg): InternalMsg {
   if (m.role === "user" && m.images?.length) {
     return {
@@ -298,7 +365,7 @@ function persistableMsg(m: InternalMsg): InternalMsg {
       images: m.images.map(({ id, mime, w, h }) => ({ id, mime, w, h })),
     };
   }
-  return stripReasoning(m);
+  return m;
 }
 
 /** 从待保存的新消息里收集图片字节行(只收带字节的;历史引用没有字节) */
@@ -325,15 +392,54 @@ function collectImageRows(
   return rows;
 }
 
+/** 工具结果在回放投影里的单条字符上限:与实况单条工具结果同量级,超出截断
+ *  并标注体量(硬规则 8 同款纪律)。截断只影响投影,库里仍全量 */
+const PROCESS_RESULT_CAP_CHARS = 12_000;
+
 /** 完整 InternalMsg[] → 前端展示用的精简投影(user/assistant 文本 + 图片元信息)。
  *  用户消息解掉 <context>/<user-request> 包裹 —— 气泡回显的应是用户输入的
  *  原文,与实时发送时的本地回显一致;wire 内容只属于发给模型的请求。
+ *  run 内的过程数据(思考/中间文案/工具调用+结果)按 seq 顺序聚成
+ *  processItems,挂在收尾记录(回答/error)上;没有收尾记录的 run(取消/
+ *  SW 被杀)由 processOnly 载体行独立成卡 —— 回放过程卡才能与实况过程卡
+ *  看到同一批步骤(曾因投影跳过空正文 assistant 行,工具轮思考全部丢失)。
  *  seq = 数组下标:seq 是 0 基稠密(loadMessageRows 按 seq 升序返回且无空洞),
  *  压缩分隔条据此定位压缩点 */
 export function toChatRecords(msgs: InternalMsg[]): ChatRecord[] {
   const out: ChatRecord[] = [];
+  /** 当前 run(自上一条真实 user 起)累积的过程项;收尾时挂载 */
+  let pending: ProcessItem[] = [];
+  let lastSeq = 0;
+  // 收尾记录缺席:过程数据出载体行(不是气泡,不计列表条数)
+  const flushCarrier = () => {
+    if (pending.length === 0) return;
+    out.push({
+      role: "assistant",
+      content: "",
+      seq: lastSeq,
+      processOnly: true,
+      processItems: pending,
+    });
+    pending = [];
+  };
   msgs.forEach((m, seq) => {
+    lastSeq = seq;
     if (m.role === "user") {
+      // 截图注记:标 synthetic 照常投影(面板不作真实用户气泡渲染),
+      // 但它是 run 内的附件延续 —— 不打断过程归组
+      if (isPseudoUserMsg(m)) {
+        out.push({
+          role: "user",
+          content: userRequestText(m.content),
+          seq,
+          synthetic: true,
+          ...(m.images?.length
+            ? { images: m.images.map(({ id, mime, w, h }) => ({ id, mime, w, h })) }
+            : {}),
+        });
+        return;
+      }
+      flushCarrier();
       out.push({
         role: "user",
         content: userRequestText(m.content),
@@ -342,10 +448,61 @@ export function toChatRecords(msgs: InternalMsg[]): ChatRecord[] {
           ? { images: m.images.map(({ id, mime, w, h }) => ({ id, mime, w, h })) }
           : {}),
       });
-    } else if (m.role === "assistant" && m.content) {
-      out.push({ role: "assistant", content: m.content, seq });
+      return;
     }
-    // tool / 空 assistant 不展示
+    if (m.role === "tool") {
+      // 回填最近一次同名配对的工具项(结果按 toolCallId 对应)
+      const item = [...pending]
+        .reverse()
+        .find((p): p is Extract<ProcessItem, { kind: "tool" }> =>
+          p.kind === "tool" && p.id === m.toolCallId);
+      if (item) {
+        item.error = m.content.startsWith("Error: ");
+        item.result =
+          m.content.length > PROCESS_RESULT_CAP_CHARS
+            ? `${m.content.slice(0, PROCESS_RESULT_CAP_CHARS)}\n[回放截断:共 ${m.content.length} 字符]`
+            : m.content;
+      }
+      return;
+    }
+    if (m.role !== "assistant") return;
+    if (m.error) {
+      const items = pending;
+      pending = [];
+      out.push({
+        role: "assistant",
+        content: m.content ?? "",
+        seq,
+        error: true,
+        ...(items.length ? { processItems: items } : {}),
+      });
+      return;
+    }
+    if (m.toolCalls?.length) {
+      // 工具轮:思考 → 中间文案 → 工具调用,与实况段的到达顺序一致
+      if (m.reasoning_content) {
+        pending.push({ kind: "reasoning", text: m.reasoning_content });
+      }
+      if (m.content?.trim()) pending.push({ kind: "text", text: m.content });
+      for (const tc of m.toolCalls) {
+        pending.push({ kind: "tool", id: tc.id, name: tc.name, args: tc.args });
+      }
+      return;
+    }
+    if (m.content) {
+      // 最终回答:思考进卡,答案气泡留在卡外(与实况 settled 布局一致)
+      const items = pending;
+      pending = [];
+      if (m.reasoning_content) items.push({ kind: "reasoning", text: m.reasoning_content });
+      out.push({
+        role: "assistant",
+        content: m.content,
+        seq,
+        ...(items.length ? { processItems: items } : {}),
+      });
+    }
+    // 无正文也无思考的空 assistant 不展示
   });
+  flushCarrier();
   return out;
 }

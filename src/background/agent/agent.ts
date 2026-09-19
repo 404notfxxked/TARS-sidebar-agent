@@ -54,7 +54,7 @@ import { base64ToBytes } from "../../shared/imageCodec";
 import { loadMemories, memoryToMsg, renderMemoryBlock } from "../memory/memoryStore";
 import {
   loadImage,
-  loadHistory,
+  loadTranscript,
   loadSessionInfo,
   saveCompaction,
   saveCtx,
@@ -143,6 +143,10 @@ export async function runAgentLoop(
 
   /** 正在执行的轮次(作用域在 try 外,catch 里报错时要带上下文) */
   let turnNo = 0;
+
+  /** 失败轮错误行落盘的抓手(try 内赋值,catch 里调用;同 turnNo 的作用域
+   *  理由)。取 null = 失败发生在首保存之前,连提问都还没落盘,无处可挂 */
+  let persistFailure: ((text: string) => Promise<void>) | null = null;
 
   // 工具执行上下文:整 run 一个对象,提交时捕获 tabId / 会话 / 取消信号。
   // dispatchToolCall 执行前重复 set 是并发 run 下重申归属(同一对象,
@@ -276,7 +280,8 @@ export async function runAgentLoop(
       mcpTools: mcpSchemas.length,
     });
 
-    const history = await loadHistory(payload.sessionId ?? "");
+    // prompt 组装走 loadTranscript:失败轮错误行只供回放,不回灌模型
+    const history = await loadTranscript(payload.sessionId ?? "");
     // 会话来源域白名单:web_fetch 的确认门判定用(用户消息 URL / 搜索结果 /
     // 已成功抓取的域直抓,其余确认)。从落盘全量历史推导,SW 被杀不丢;
     // 本轮用户原文显式传入(此刻尚未落盘),本轮内批准的新域在确认门处
@@ -418,6 +423,26 @@ export async function runAgentLoop(
         });
       }
     };
+    // 失败轮错误行:比 persistNewMessages 多追加一条 error 行,锚点语义一致
+    // (fromIdx = savedUpTo,连同此前未落盘的尾巴一起写)。文本与实况错误
+    // 气泡同文同源(后台错误串,不经字典 —— 既有债务,硬规则 1)
+    persistFailure = async (text: string): Promise<void> => {
+      if (!payload.sessionId) return;
+      try {
+        const domain = messages.slice(1);
+        await saveHistory(
+          payload.sessionId,
+          [...domain, { role: "assistant", content: text, error: true }],
+          savedUpTo,
+          persistedSeqs + (savedUpTo - persistedInCtx),
+        );
+      } catch (err) {
+        log.warn("agent", "save error row failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
     // 首保存即落用户提问:第一轮请求挂起期间关面板/杀 SW,问题也不丢
     await persistNewMessages();
 
@@ -801,6 +826,9 @@ export async function runAgentLoop(
       turn: turnNo,
       stack: err instanceof Error ? err.stack : undefined,
     });
+    // 失败轮落错误行:回放里这次提问不至于悬空(实况有错误气泡,回放原本
+    // 只剩提问)。用户取消例外 —— 上面的 abort 分支已静默返回
+    if (persistFailure) await persistFailure(message);
     port.postMessage({ type: MSG.AGENT_ERROR, error: message });
   } finally {
     // run 收口清理工具上下文:仅当全局仍是本 run 的对象(并发 run 下

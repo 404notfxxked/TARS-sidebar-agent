@@ -12,6 +12,7 @@ import {
   type AgentEvent,
   type CompactionMark,
   type ImageMeta,
+  type ProcessItem,
 } from "../../shared/messages";
 import { getActiveTabId } from "../../shared/contentTools";
 import { createLogger } from "../../shared/logger";
@@ -38,6 +39,13 @@ export interface ChatMsg {
   notice?: boolean;
   /** 提示语种类(NoticeBubble 按此取文案;缺省 = 步数耗尽) */
   noticeKind?: "max-turns" | "disconnected";
+  /** 后台注入的伪 user 消息(截图附件注记):只展示图片,不作用户气泡 */
+  synthetic?: true;
+  /** 纯过程行(历史回放带,与 ChatRecord 同步):该 run 没有收尾记录
+   *  (取消/SW 被杀),过程卡独立成卡、无气泡 */
+  processOnly?: true;
+  /** 该 run 的过程数据(历史回放带):渲染为过程卡,与实况过程卡同构 */
+  processItems?: ProcessItem[];
   /** 该消息在库里的 seq(仅历史回放有;压缩分隔条据此定位) */
   seq?: number;
 }
@@ -394,9 +402,13 @@ export function useAgentChannel({
     setMemorySaved(0);
     setStatus("thinking"); // 乐观:AGENT_STARTED 马上到,思考态先亮起
     setMessages((ms) => {
+      // 截断点 = 末条「真实」user:后台注入的截图注记行不算提问,
+      // 否则重答会把系统注记文本当用户问题重发(与后台 prepareRegenerate 同规则)
       let lastUser = -1;
       ms.forEach((m, i) => {
-        if (m.sessionId === sid && m.role === "user") lastUser = i;
+        if (m.sessionId === sid && m.role === "user" && !m.synthetic) {
+          lastUser = i;
+        }
       });
       return lastUser === -1 ? ms : ms.slice(0, lastUser + 1);
     });
