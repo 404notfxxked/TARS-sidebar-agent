@@ -1,6 +1,6 @@
 // sessionDb 的键序回归测试:messages 第二键是数字(seq)、images 第二键是
 // 字符串(uuid),IDB 键序 number < string —— 用 [id, Infinity] 做会话前缀
-// 上界时图片行一条都删不到(评审 §5.1 的真实泄漏)。这类 bug 只有按「键序」
+// 上界时图片行一条都删不到(真实泄漏)。这类 bug 只有按「键序」
 // 维度断言才拦得住:用 fake-indexeddb(实现了 IDB 键序算法)钉死行为。
 // fake-indexeddb/auto 会把 globalThis.indexedDB 换成内存实现,node 环境可跑。
 

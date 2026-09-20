@@ -120,7 +120,7 @@ interface RunState {
 
 // 每个运行中的 agent 会话 → 取消句柄(以 sessionId 为 key)
 // 注意:SW 休眠时此 Map 会被清空(内存态,本就不该跨唤醒存活);
-// 需跨唤醒存活的数据(会话历史)走 chrome.storage.session,不在这里。
+// 需跨唤醒存活的持久数据走 IndexedDB(见 sessions/sessionHistory.ts),不在这里。
 const activeRuns = new Map<string, RunState>();
 
 // REGENERATE 的 prepareRegenerate(读库 + 截库)是跨 await 的窗口:防重若等到
@@ -367,7 +367,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
         // 有压缩时带上压缩点,面板据此渲染分隔条(历史本身始终全量)。
         // resync = 断连重同步,原样回显给面板走「按库替换」分支。
         // sessionId 必须回带:面板按「响应会话 == 当前会话」判定新鲜度,
-        // 缺了它,快速切会话时旧回包会把 A 的转写盖上 B 的 id(评审 §5.2)
+        // 缺了它,快速切会话时旧回包会把 A 的转写盖上 B 的 id
         const history = await loadHistory(msg.sessionId);
         const compaction = await getCompactionMark(msg.sessionId);
         port.postMessage({

@@ -84,7 +84,7 @@ const MAX_TURNS = 10;
 // ---- 图片附件(多模态) ----
 // 每张图片的 token 估值(detail auto、1600px 长边压缩后约 3~4 个 512px 块,
 // 宁可高估防超窗);随请求发送的字节预算 —— 超出时最旧的图不再随请求发送,
-// 只留文字。50MB 请求上限与上下文窗口都靠它兜底
+// 只留文字。wire 字节预算(IMAGE_WIRE_BUDGET_BYTES = 8MB)与上下文窗口都靠它兜底
 const IMAGE_TOKEN_ESTIMATE = 1500;
 
 /** 截图附件随工具结果注入的 user 消息文本。必须以 SYSTEM_NOTE_PREFIX 开头:
@@ -97,7 +97,7 @@ const IMAGE_WIRE_BUDGET_BYTES = 8 * 1024 * 1024;
 const WRAP_UP_NUDGE = `<system-note>本轮可用的推理步数已用完,工具调用已停用。请直接向用户说明:目前完成了什么、还剩什么没做。不要调用工具。用户发送「继续」后,你可以从当前进度接着做。</system-note>`;
 
 // 注意:SYSTEM_PROMPT 保持静态,不要往里拼每轮变化的上下文 —— 会破坏 prompt cache 命中。
-// 本轮变化的上下文(如划选提示)走 user message / tool result。
+// 本轮变化的上下文(<context> tab 快照、<user-memory>、截图注记、技能块)走 user message / tool result。
 // 引用纪律(规则 2/7):来源只按用户视角表述(页面/站点/URL),正文不得出现
 // 工具名与内部机制 —— 写过 "cite tool results" 会让模型把工具名说进正文;
 // 工具轨迹已由前端 trace 段展示,正文再报是冗余。规则 8:搜索设高门槛 +
@@ -208,8 +208,8 @@ export async function runAgentLoop(
     // 当前默认模型对应的列表条目:提供每模型配置(最大输出 / 上下文窗口)
     const modelEntry = cur.models.find((m) => m.id === config.model);
     // 工具结果字符预算:配了 contextTokens 就按窗口 1/4 缩放(混排内容约
-    // 0.4 token/字符 ≈ 占窗口 10%),未配置用默认 60k;下限 12k 保证至少
-    // 容得下一次完整的网页窗口
+    // 0.4 token/字符 ≈ 占窗口 10%),上限 60k(窗口再大也封顶于此)、未配置
+    // 也取 60k;下限 12k 保证至少容得下一次完整的网页窗口
     const toolResultBudgetChars = modelEntry?.contextTokens
       ? Math.min(60_000, Math.max(12_000, Math.floor(modelEntry.contextTokens / 4)))
       : 60_000;

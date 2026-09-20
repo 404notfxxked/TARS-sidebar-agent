@@ -85,7 +85,7 @@ mock.setRoutes([
       }
       if (mode === "webfetch-parallel") {
         // 同轮两个白名单外 fetch:批次屏障下必须逐个出卡,不允许同批并发
-        // 派发把先到的确认请求挤丢(评审 A2-1)。第三跳复用已批准的域:
+        // 派发把先到的确认请求挤丢。第三跳复用已批准的域:
         // 批准即知情,同域不再重复弹卡。
         // 域名用本套件专属的 w2a/w2b.test:同会话前序场景已把 mock.test
         // 写进白名单,用它会让「首卡」错位到第二跳
@@ -331,7 +331,7 @@ try {
     JSON.stringify(wfOpenLog?.data ?? null).slice(0, 200),
   );
 
-  // ---- 场景 5b:同轮两个白名单外 fetch 串行出卡(评审 A2-1 批次屏障) ----
+  // ---- 场景 5b:同轮两个白名单外 fetch 串行出卡(批次屏障) ----
   scene = "W2 双白名单外 fetch 串行确认";
   console.log("\n── W2 同轮双过门 fetch:逐个出卡 + 同域复用 ──");
   mode = "webfetch-parallel";

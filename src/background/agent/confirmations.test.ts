@@ -1,5 +1,5 @@
 // 确认门判定单测:静态集合(页面写动作 + 记忆持久写)与 web_fetch 的
-// 参数级底线(私网目标/长查询串,评审 S1/S3)。总开关 confirmActions
+// 参数级底线(私网目标/长查询串)。总开关 confirmActions
 // 由 agent 派发点把守,不在此测。出站判定本体在 ../web/outboundGuard
 // (纯模块),那里有独立单测;这里测 needsConfirmation 的接入。
 

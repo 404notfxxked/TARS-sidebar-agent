@@ -2,8 +2,9 @@
 // 键即字典结构(t("settings.title")),插值用 {name} 占位。
 // 只收拢「给用户看」的文案;给模型看的(工具 description、后台错误串)
 // 与日志文案不进字典,它们不是 UI。
-// 语言只有面板在用:current 是面板运行态,启动时 main.tsx 从配置读入,
-// 设置页切换;SW 侧文案(模型可见)始终英文,不走这里。
+// 运行时 t()/current 只有面板在用:启动时 main.tsx 从配置读入,设置页切换。
+// SW 侧不用 t():它有硬编码文案(模型可见,中英混杂,属 AGENTS.md 硬规则 1 的
+// 已知债务);系统通知文案另行直接从字典取(见 background/index.ts)。
 
 import type { LocalePref } from "../configStore";
 import { zhCN } from "./locales/zh-CN";

@@ -89,7 +89,7 @@ export async function launchWithCdp({ extDir, userDataDir, proxy, flavor = "gran
   });
 
   // 等 SW 启动并取扩展 ID:先查已起的,没有则事件驱动等待。固定 sleep 在
-  // 慢机 / CI xvfb 下会竞态抛「找不到扩展 ID」(2026-09 评审定位的单点 flake)
+  // 慢机 / CI xvfb 下会竞态抛「找不到扩展 ID」(定位过的单点 flake)
   const known = browser
     .serviceWorkers()
     .find((sw) => /chrome-extension:\/\//.test(sw.url()));
@@ -474,7 +474,7 @@ export async function seedSessions(page, rows) {
 
 /**
  * 断言助手工厂:check(ok,label,detail) 累积 failures,套件末尾统一判退出码。
- * 各 verify-* 的近逐字重复实现收敛于此(2026-09 评审 T10)。
+ * 各 verify-* 的近逐字重复实现收敛于此。
  * 未统一:verify-persist/verify-vision 的 check(name,cond) 参数序相反。
  */
 export function makeChecker() {

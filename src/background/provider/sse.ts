@@ -42,9 +42,9 @@ export async function* readSSE<T>(
   res: Response,
   idleTimeoutMs = STREAM_IDLE_TIMEOUT_MS,
 ): AsyncGenerator<T> {
-  const reader = res.body!.getReader(); // 拿到响应体的可读流
-  const decoder = new TextDecoder(); // 把二进制 Uint8Array 解码成字符串
-  let buffer = ""; // 攒着还没凑成完整帧的残留数据
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
   // 读一块字节,同时挂 120s 看门狗:窗口内没有任何字节到达(连注释

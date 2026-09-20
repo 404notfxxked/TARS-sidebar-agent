@@ -501,7 +501,6 @@ export function useAgentChannel({
   };
 
   return {
-    // 状态
     messages,
     compaction,
     memorySaved,
@@ -514,7 +513,6 @@ export function useAgentChannel({
     runEndedAt: run.runEndedAt,
     openGroups: run.openGroups,
     toggleGroup: run.toggleGroup,
-    // 动作
     resolveContext,
     submitUserMessage,
     openSession,

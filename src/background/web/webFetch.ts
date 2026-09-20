@@ -2,7 +2,7 @@
 // 与 web_search 同一套分工:网络抓取在 SW(host_permissions 覆盖,含内网
 // http 页面),HTML 解析与缓存在 offscreen(fetch_read / fetch_build 协议,
 // 见 offscreen/fetchDoc.ts)。
-// 出站判定(2026-09 评审 S1,见 web/outboundGuard.ts + fetchAllowlist.ts):
+// 出站判定(见 web/outboundGuard.ts + fetchAllowlist.ts):
 // 私网/内网目标、或会话来源域白名单(用户消息 URL / 搜索结果 / 已成功抓取)
 // 未命中的链接,先经面板确认再抓 —— 读取内网仍是设计内能力,但属「用户该
 // 知情放行」的出口;白名单命中直抓,任意新域首次抓取确认一次。

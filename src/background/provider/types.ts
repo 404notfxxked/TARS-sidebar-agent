@@ -85,7 +85,8 @@ export interface MessageImage {
   bytes?: Uint8Array;
 }
 
-/** 内部消息格式 —— OpenAI 扁平形状(见记忆 agent-loop-byok-design) */
+/** 内部消息格式 —— 全链沿用 OpenAI 扁平形状(role/content/tool_calls),
+ *  各家协议差异收敛在 provider 适配器内部,避免全库翻译层 */
 export type InternalMsg =
   | { role: "system"; content: string }
   | { role: "user"; content: string; images?: MessageImage[] }

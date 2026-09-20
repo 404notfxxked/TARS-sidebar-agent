@@ -110,7 +110,7 @@ describe("readSSE 兼容端点脏形态", () => {
 
 // ---- ChatCompletionsAdapter.chat:delta 聚合层 ----
 // 真实端点的 tool_calls arguments 是分片增量下发的,adapter 按 index
-// 累加拼接;此前 e2e mock 永远整包单帧,聚合逻辑零覆盖(2026-09 评审)。
+// 累加拼接;此前 e2e mock 永远整包单帧,聚合逻辑零覆盖。
 
 const apiFetchMock = vi.mocked(apiFetch);
 

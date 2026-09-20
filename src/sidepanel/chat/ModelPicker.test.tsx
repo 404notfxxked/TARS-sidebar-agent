@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ModelPicker 组件单测:开合/键盘导航(↑↓ 环绕、Home/End、Enter/Tab 选中、
 // Esc 关闭)/选中标记/引用失效回退。键盘路径 e2e 已有(probe-focus),这里
-// 用毫秒级单测把映射规则钉死(2026-09 评审 T6)。
+// 用毫秒级单测把映射规则钉死。
 
 import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";

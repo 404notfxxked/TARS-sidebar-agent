@@ -5,7 +5,7 @@ import { useState, type ReactNode } from "react";
 import { useT } from "../ui/hooks";
 
 /** 分节:眉题 + 白卡。卡内子块节奏由 .settings-card > * + * 的 margin 管
- *  (契约 6,勿给子块另垫上下 padding)。首个分节 mt-3,其余 mt-5
+ *  (勿给子块另垫上下 padding)。首个分节 mt-3,其余 mt-5
  *  (分节之间多给一档呼吸,眉题才压得住卡) */
 export function SettingsSection({
   title,
@@ -131,7 +131,7 @@ export function EntryRow({
 }
 
 /** 「了解详情」折叠:一句话说明留在明面,机制/隐私类长说明按需展开
- *  (定义类短说明走 ui/InfoTip 气泡,警示类保持明面 —— 三层分工见 roadmap)。
+ *  (定义类短说明走 ui/InfoTip 气泡,警示类保持明面)。
  *  展开体是普通 field-hint 段落,文案由调用侧经 t() 现取 */
 export function HintMore({ detail }: { detail: string }) {
   const t = useT();

@@ -1,5 +1,5 @@
 // 撞窗紧急压缩的纯决策:是否触发 + 压缩后的发送投影。
-// 从 callChat 闭包抽出,索引算术此前零单测(2026-09 评审 T8)。
+// 从 callChat 闭包抽出,索引算术此前零单测。
 
 import type { InternalMsg } from "../provider";
 import { isContextOverflow } from "./compaction";

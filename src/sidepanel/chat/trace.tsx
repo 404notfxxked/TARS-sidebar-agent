@@ -40,7 +40,8 @@ export type TextSeg = { kind: "text"; text: string; t: number };
 export type RunSegment = ToolSeg | ReasoningSeg | TextSeg;
 export type ProcessSeg = ToolSeg | ReasoningSeg;
 
-// 展开预览的截断阈值(字符):工具结果可达 12k,思考/文案整段也不短,不整段渲染;
+// 展开预览的截断阈值(字符):回放投影里的单条工具结果上限 12k
+// (sessionHistory PROCESS_RESULT_CAP_CHARS);实况读页窗口更大,思考/文案整段也不短;
 // 展开区配「复制」按钮,完整内容可取出
 const PREVIEW_CHARS = 500;
 const REASONING_MAX_CHARS = 2000;

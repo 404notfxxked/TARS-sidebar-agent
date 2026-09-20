@@ -1,4 +1,4 @@
-// 会话历史的 IndexedDB 底层封装:db "tars",两个版本起的 store
+// 会话历史的 IndexedDB 底层封装:db "tars",store 随 DB_VERSION 递增(当前 v4)
 // - sessions:会话元数据(keyPath id),列表/保留期清理只碰这里,不读消息体
 // - messages:一条 InternalMsg 一行,主键 [sessionId, seq],按会话有序读写
 // - images:消息图片字节(压缩后),主键 [sessionId, id],随会话级联删除;
@@ -353,8 +353,8 @@ export async function clearAllRows(): Promise<void> {
 
 // 会话前缀范围删:上界必须是「数组天花板」而非 Infinity。messages 第二键是
 // 数字(seq),images 第二键是字符串(uuid),而 IDB 键序里 number < string ——
-// [id, Infinity] 罩不住 [id, "uuid…"](曾致删会话永远漏删图片字节,见
-// design/tech-review-2026-09-18.md §5.1);[id, []] 比任何 [id, 二键] 都大
+// [id, Infinity] 罩不住 [id, "uuid…"](曾致删会话永远漏删图片字节);
+// [id, []] 比任何 [id, 二键] 都大
 // (同前缀时短数组在前),两类 store 通吃
 function sessionRange(id: string): IDBKeyRange {
   return IDBKeyRange.bound([id], [id, []]);

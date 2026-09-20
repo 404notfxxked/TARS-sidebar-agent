@@ -170,7 +170,7 @@ export interface CompactionMark {
 }
 
 /** 长期记忆条目(面板展示用):与后台 MemoryRow 一致的精简形状。
- *  key/subject/tag 是卡片态可选字段,与 MemoryRow 同步改(契约 1) */
+ *  key/subject/tag 是卡片态可选字段,与 MemoryRow 同步改 */
 export interface MemoryItem {
   id: string;
   text: string;
@@ -221,7 +221,8 @@ export type AgentEvent =
       ok: boolean;
       result: unknown;
     }
-  /** 写操作确认门:SW 在执行 click_element / fill_input 前发出,
+  /** 写操作确认门:SW 在执行需确认的动作前发出(清单见 agent/confirmations.ts:
+   *  页面写动作 / 记忆持久写 / mcp_* / web_fetch 出站),
    *  面板弹确认卡,用户答复后经 CONFIRM_RESPONSE 回来;超时视为拒绝 */
   | {
       type: typeof MSG.AGENT_CONFIRM_REQUEST;

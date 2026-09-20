@@ -1,6 +1,6 @@
 // hostAccess 决策逻辑单测:grantableOriginOf 的边角 + hasOriginAccess 的
 // 授权态判定。vitest.setup 的 chrome.permissions 桩默认恒真 ——这里按桩头注
-// 的约定逐用例覆写,覆盖「未授权」分支(评审:权限模型拒绝路径零覆盖)。
+// 的约定逐用例覆写,覆盖「未授权」分支(权限模型拒绝路径此前零覆盖)。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { grantableOriginOf, hasOriginAccess } from "./hostAccess";

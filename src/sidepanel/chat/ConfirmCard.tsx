@@ -67,7 +67,7 @@ export function ConfirmCard({
       : "";
   // 链接行只展示 host + 路径:这族门的意义是「看清将要外发什么」,而外泄
   // 负载恰好藏在长查询串里 —— 查询串不逐字展示,另起一行只报长度,让
-  // 「截断」本身成为信号(评审 A2-2)
+  // 「截断」本身成为信号
   const fetchRawUrl =
     req.name === "web_fetch" && typeof args.url === "string" ? args.url : "";
   const fetchTarget = (() => {

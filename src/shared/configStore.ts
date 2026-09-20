@@ -2,7 +2,8 @@
 // - 模型服务支持多个供应商(providers 数组),每个含自己的 Base URL / API Key /
 //   模型列表;当前选择 = modelProvider(供应商 id)+ model(wire 模型名)两个字段
 // - key 一律存 chrome.storage.local(个人浏览器场景,多供应商下不再区分
-//   「记住/仅本次会话」);读取时 providers 键缺席会从旧版单供应商字段合成,
+//   「记住/仅本次会话」;loadConfig 仍读一次 storage.session 的 apiKey 作历史
+//   兼容,现无任何写入方,可择机移除);读取时 providers 键缺席会从旧版单供应商字段合成,
 //   合成只发生在内存,不写回 —— 与当年 model→models 的迁移同款策略:
 //   providers 键一旦写入,旧键整体废弃
 // - 搜索服务(search)/联网开关/主题等照旧
@@ -11,7 +12,7 @@ import { normalizeMcp, type McpConfig } from "./mcp";
 
 export type ThemePref = "system" | "light" | "dark";
 
-/** 面板 UI 语言(字典见 shared/locales);缺省 zh-CN,存量用户行为不变 */
+/** 面板 UI 语言(字典见 shared/i18n/locales);缺省 zh-CN,存量用户行为不变 */
 export type LocalePref = "zh-CN" | "en-US";
 
 /** 首开语言探测:存储值缺席时按浏览器语言落默认。
@@ -125,7 +126,8 @@ export interface AppConfig {
   theme: ThemePref;
   /** 重点色:决定整套 M3 scheme 的源色(表面底色不随它变,只换强调/主色系) */
   accent: AccentPref;
-  /** 面板 UI 语言:只影响面板渲染,SW/模型可见文案不随它变(始终英文) */
+  /** 面板 UI 语言:决定面板文案与 SW 系统通知(background/index.ts 按它取
+   *  dict.notify);SW/模型可见的其它文案不经字典(中英混杂,属已知债务) */
   locale: LocalePref;
   /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关。
    *  开启即用,无需任何配置——搜索默认走免 Key 的真实搜索引擎标签页通道
@@ -142,8 +144,11 @@ export interface AppConfig {
   /** 技能总开关:关 = / 调用不生效(菜单与技能页管理不受影响);
    *  缺省 = 开。技能是用户手动安装的本地指令文本,无网络无外传,空库零成本 */
   skills: boolean;
-  /** 写操作确认门:开 = click_element / fill_input 执行前弹面板确认卡,
-   *  超时未答复按拒绝处理;缺省 = 开(安全默认, 宁可多点一次) */
+  /** 写操作确认门(总开关:关 = 四类全放行):click_element / fill_input 等页面写
+   *  动作、memory_save / memory_delete 持久写、全部 mcp_* 工具、web_fetch 出站
+   *  (私网或来源域白名单未命中)—— 执行前弹面板确认卡;超时未答复按拒绝处理。
+   *  权威清单见 agent/confirmations.ts 的 CONFIRM_TOOLS 与 needsConfirmation;
+   *  缺省 = 开(安全默认, 宁可多点一次) */
   confirmActions: boolean;
   /** 任务完成通知:开 = run 结束且面板不可见时发系统通知;缺省 = 开 */
   notifyDone: boolean;
@@ -191,6 +196,7 @@ export type CompactLevel = "early" | "standard" | "late";
 export const COMPACT_LEVELS: CompactLevel[] = ["early", "standard", "late"];
 
 export async function loadConfig(): Promise<AppConfig> {
+  // 历史兼容:旧版曾支持「仅本次会话」的 key,现无写入方(见文件头注)
   const s = await chrome.storage.session.get("apiKey");
   const l = await chrome.storage.local.get([
     "providers",

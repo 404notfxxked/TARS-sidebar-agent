@@ -10,7 +10,7 @@
 // - run 被取消 = 立即拒绝并返回(等待不阻塞取消)
 // - 过期/未知 requestId 的答复一律忽略(面板刷新后的迟到答复打不穿)
 //
-// 排查指引(评审 B3):面板看到「确认卡悬空无人应答」= 等待期间 SW 被回收过
+// 排查指引:面板看到「确认卡悬空无人应答」= 等待期间 SW 被回收过
 // —— pending Map 随 SW 消失,迟到答复在此静默忽略,属预期兜底而非卡死。
 
 import { MSG } from "../../shared/messages";
@@ -32,7 +32,7 @@ const pending = new Map<string, (approved: boolean) => void>();
  *    读页三件套/搜索/元素查找是纯观察,不过门
  *  - memory_save / memory_delete:跨会话持久写。记忆每轮以 user 角色注入
  *    所有会话,被注入的指令可借它形成跨会话持久化操纵;delete 还是按子串
- *    的破坏性删除 —— 两者都过门(2026-09 评审 S3) */
+ *    的破坏性删除 —— 两者都过门 */
 export const CONFIRM_TOOLS: ReadonlySet<string> = new Set([
   "click_element",
   "fill_input",

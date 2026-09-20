@@ -72,7 +72,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   模板串静态段),命中三类漂移形态即 FAIL——A 逐字等于字典值;
   B 字面量(≥3 字)是字典值的子串;C 字面量以含占位符字典值的首段
   开头(插值填参形态)。2026-09-17 反转升级:旧规则只抓逐字相等,
-  插值填参与子串绑定全部漏放,本次评审实锤后收口。豁免:行内
+  插值填参与子串绑定全部漏放,实测实锤后收口。豁免:行内
   `i18n-ok`,以及 check/ok/assert/fail/console.log 第一参(断言标签与
   诊断横幅是人读输出,不是 UI 断言)。已知局限:跨行模板串、正则
   字面量不在扫描范围。`run.mjs` 每次入口先跑它;写新测试先 import
@@ -115,7 +115,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 | `interact` | `verify-interact.mjs` | 页面交互工具(独立 harness:esbuild 注入,不加载扩展;esbuild 为显式 devDep) |
 | `confirm` | `verify-confirm.mjs` | 写操作确认门(安全 V1):确认卡内容(目标页/写入/回车/定位;记忆族/外链族标题与内容)/拒绝 declined 回给模型/允许放行到内容层/web_fetch 出口判定(私网必卡/白名单命中直抓/白名单外逐个出卡 + 批准后同域复用)/设置页安全分节;断言用 readRunLogs(run 窗口),mock 环境整轮 <100ms 时间窗会串 |
 | `host-access` | `verify-host-access.mjs` | 权限拒绝路径与生产注入路径(zero/dynamic flavor):未授权工具给可行动指引且 run 正常收口(find_elements / web_fetch)/授权态无静态 content script 时按需注入真实执行(sendMessage 失败 → executeScript → 重试) |
-| `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),契约 6 硬规则的自动化防线 |
+| `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),悬浮层硬规则的自动化防线 |
 | `locale` | `probe-locale.mjs` | 语言切换:整树刷新/回首页/重载持久化 |
 | `focus` | `probe-focus.mjs` | 焦点与滚动体验:面板 autofocus/悬浮层关闭焦点回归/运行中输入框可编辑/「回到最新」出现-回底-消失/模型选择键盘导航(↑↓/Home/End/Enter/Tab/Esc)/历史搜索 autofocus |
 | `tool-labels` | `probe-en-tools.mjs` | 英文界面下工具行/摘要走面板字典(SW 侧中文 displayName 不泄漏);内置工具名 = 字典键映射,MCP 回退「服务器 · 工具名」 |

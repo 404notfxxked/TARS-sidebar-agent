@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // useAgentChannel 的 HISTORY 回包新鲜度判定:回包自带 sessionId,面板只认
 // 「响应会话 == 当前会话」的包 —— 快速切会话时迟到的旧回包不得把 A 的转写
-// 盖上 B 的 id(评审 §5.2 的串台 bug,此处钉死回归)。
+// 盖上 B 的 id(串台 bug,此处钉死回归)。
 
 import { cleanup, renderHook, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";

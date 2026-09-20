@@ -8,8 +8,8 @@
 //
 // 画布中性化:surface 七角色(surface/dim/container 五级)不取各重点色自己的
 // neutral 色板,统一用纯中性灰阶(chroma 0)—— 背景画布只有浅灰/深灰两套,
-// 不随重点色漂移、不带任何色相倾向(带暖相的画布与绿/蓝系重点色互相打架,
-// 评审 2026-09-18),重点色只落在交互角色上。
+// 不随重点色漂移、不带任何色相倾向(带暖相的画布与绿/蓝系重点色互相
+// 打架),重点色只落在交互角色上。
 // 暗色 ramp 相比 M3 官方 tone 整体抬高(surface 6→10),不再刺黑。
 //
 // 注:@material/material-color-utilities 锁 0.3.0(0.4.x 的 ESM 打包缺扩展名,Node 无法加载)。
@@ -98,7 +98,7 @@ const SURFACE_TONES = {
 };
 
 /** 画布专用 neutral 色板:纯中性灰阶(chroma 0),所有重点色共用。
- *  暖相画布与绿/蓝系重点色打架(评审 2026-09-18),色相倾向归零 */
+ *  暖相画布与绿/蓝系重点色打架,色相倾向归零 */
 const surfaceNeutral = TonalPalette.fromHueAndChroma(0, 0);
 
 // ---- 生成 ----
@@ -111,7 +111,7 @@ const themes = ACCENTS.map((a) => ({
  *  色调表按 M3 monochrome 对比规范(亮:40/100/90/10,暗:80/20/30/90)。
  *  error 四角色不在此表:error 是语义不是审美,M3 规范里 error 调色板
  *  固定红系、不随源色走 —— 石墨主题下错误气泡/危险动作必须仍然是红,
- *  否则破坏性操作与普通信息不可区分(见 design/design-review-2026-09.md P0-1) */
+ *  否则破坏性操作与普通信息不可区分 */
 const MONO_TONES = {
   light: {
     primary: 40, onPrimary: 100, primaryContainer: 90, onPrimaryContainer: 10,

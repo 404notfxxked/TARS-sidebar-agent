@@ -1,6 +1,6 @@
 // 页面交互工具:观察(DOM 语义提取)+ 动作(合成事件)
 // 自包含纯 DOM 函数,无 message / chrome 依赖,供 content script 的 runTool 分发调用。
-// 设计要点(见计划):
+// 设计要点:
 //   - selector 契约:buildSelector 生成绝对 CSS 路径,动作工具 querySelector 解析,无会话态。
 //   - 合成事件保真:完整 pointer/mouse 序列 + native setter + keyCode 补全,React 等框架才认。
 

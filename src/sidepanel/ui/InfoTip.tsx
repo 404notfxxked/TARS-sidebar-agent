@@ -1,6 +1,6 @@
 // 信息提示(ⓘ):label 旁的小图标,悬停或键盘聚焦时弹出说明气泡,点击供
 // 触屏切换。只装「查一次就懂」的定义类短说明;机制/隐私类长说明走
-// settings/parts 的 HintMore 折叠,警示类保持明面可见 —— 三层分工见 roadmap。
+// settings/parts 的 HintMore 折叠,警示类保持明面可见。
 
 import { useId, useState } from "react";
 import { useT } from "./hooks";

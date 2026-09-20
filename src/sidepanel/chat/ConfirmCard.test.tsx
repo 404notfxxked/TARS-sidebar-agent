@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // ConfirmCard 组件单测:确认卡内容组装(目标页/写入/回车提示/定位)与
-// 允许/拒绝出口。此前只有 e2e 慢链路覆盖(2026-09 评审 T6)。
+// 允许/拒绝出口。此前只有 e2e 慢链路覆盖。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -105,7 +105,7 @@ describe("ConfirmCard 确认卡", () => {
   });
 });
 
-describe("ConfirmCard web_fetch 族(评审 A2-2)", () => {
+describe("ConfirmCard web_fetch 族", () => {
   it("链接只展示 host+路径,查询串另起一行报长度且不逐字展示", () => {
     renderCard({
       name: "web_fetch",

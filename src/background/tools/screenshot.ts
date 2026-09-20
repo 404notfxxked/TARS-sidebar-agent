@@ -5,7 +5,7 @@
 // 时序纪律:标记必须在捕获前画上、捕获后立即摘除(finally 兜底),截图里的
 // 编号框才有意义且不留副作用;激活/恢复也走 finally 配平,不把 tab 切换
 // 残留给用户。三者的空间对齐前提(编号画在哪个 tab、截的是哪个 tab)由此
-// 机械保证 —— 见 design/tech-review-2026-09-18.md §6 S5 / B2。
+// 机械保证。
 // 图片字节挂在结果的 screenshot 字段返回,agent 循环剥离后转成紧随工具
 // 消息的带图 user 消息 —— 本文件不碰消息协议。
 
@@ -138,7 +138,7 @@ export async function runPageScreenshot(
  *  tab.status complete 只代表加载完 —— 激活后留一小段合成器出帧窗口,
  *  避免 captureVisibleTab 抓到未绘制帧(产品侧唯一一处固定等待,配合
  *  captureVisibleTab 的每秒限频重试一起兜底)。
- *  TODO(截后复核,评审 A2-3):捕获前后用户仍可能在这 ~150ms 内切页,
+ *  TODO(截后复核):捕获前后用户仍可能在这 ~150ms 内切页,
  *  现无「捕获时活动 tab 仍是目标」的复核;加固方向是截完 query 一次活动
  *  tab,不是目标则重试一次或明确报错(复核是缩小而非消除竞态) */
 async function activateTab(tabId: number): Promise<void> {

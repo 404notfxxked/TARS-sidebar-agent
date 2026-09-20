@@ -52,7 +52,6 @@ import { skillReq } from "../clients/skillClient";
 import { useT } from "../ui/hooks";
 import { ArchiveIcon } from "../ui/icons";
 
-// 面板侧只记时间线锚点(取消/提交),事件细节以后台日志为准
 const log = createLogger({ ctx: "panel" });
 
 export default function ChatView({

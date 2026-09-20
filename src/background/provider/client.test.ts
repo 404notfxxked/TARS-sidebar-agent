@@ -1,6 +1,6 @@
 // apiFetch 行为单测:重试决策矩阵(临时状态码重试/明确错误不重试/网络层
 // 错误重试)、Retry-After 优先、超时与用户取消不重试、请求头组装。
-// 此前 client.ts 覆盖率 8%,重试语义全部隐式(2026-09 评审 T8)。
+// 此前 client.ts 覆盖率 8%,重试语义全部隐式。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "./client";

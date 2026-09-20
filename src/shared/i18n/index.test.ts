@@ -1,5 +1,5 @@
-// i18n 单测:zh/en 字典键位一致 + 占位符一致(roadmap 里手工做的「225/225
-// 占位符比对」自动化)+ t() 插值/回落/订阅。键位缺漏另有 satisfies Dict 的
+// i18n 单测:zh/en 字典键位一致 + 占位符一致(此前人工比对,现自动化)
+// + t() 插值/回落/订阅。键位缺漏另有 satisfies Dict 的
 // 编译期校验和 scripts/check-i18n.mjs 的静态扫描,这里守运行时行为。
 
 import { beforeEach, describe, expect, it, vi } from "vitest";

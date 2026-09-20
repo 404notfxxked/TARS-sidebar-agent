@@ -1,6 +1,6 @@
 // LLM 端点异常路径 e2e:401 鉴权失败 / 流中途错误帧 / 网络层断连 /
 // finish_reason=length 截断。此前异常覆盖只有 500(摘要)/400(撞窗)/
-// 429(搜索)散在各域,LLM 侧鉴权与网络层失败零覆盖(2026-09 评审 T9)。
+// 429(搜索)散在各域,LLM 侧鉴权与网络层失败零覆盖。
 // 用法: pnpm build && node tests/verify-llm-errors.mjs
 
 import { resolve, dirname } from "path";

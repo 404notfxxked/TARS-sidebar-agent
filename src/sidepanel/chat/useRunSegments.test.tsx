@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // useRunSegments 纯状态 hook 单测:落段 / 缓冲合帧 / 收口 / 归档 / 断连兜底
-// 的状态机此前只有 e2e 慢链路覆盖,这里把转移规则钉死(2026-09 评审 T6)。
+// 的状态机此前只有 e2e 慢链路覆盖,这里把转移规则钉死。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";

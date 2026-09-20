@@ -327,7 +327,6 @@ export class AnthropicMessagesAdapter implements ChatProvider {
     }
 
     // 按 wire 下标还原块顺序:文本拼 content,wire 块保序进 wireBlocks(见下),
-    // tool_use 聚合
     const ordered = [...blocks.entries()]
       .sort(([a], [b]) => a - b)
       .map(([, b]) => b);

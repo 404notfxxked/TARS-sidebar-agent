@@ -55,8 +55,11 @@ export const MEMORY_PREAMBLE = [
   "- If irrelevant to the current question, ignore them completely",
 ].join("\n");
 
-/** 粗估 token:CJK≈1.1 token/字,西文≈4 字符/token(与 agent.estimateTokens
- *  同公式;单独放一份避免 agent ⇄ memoryStore 循环依赖) */
+/** 粗估 token:CJK≈1.1 token/字,西文≈4 字符/token。与 agent.estimateTokens
+ *  **同源不同形**(那边按 codePointAt 阈值判 CJK,这边只数 \u4e00-\u9fff + 假名,
+ *  中文标点落进「÷4」桶)。两份各自服务不同预算,允许漂移,**勿互相「对齐公式」**
+ *  —— 改了会静默挪动压缩触发线与记忆注入预算。
+ *  单独放一份是为了避免 agent ⇄ memoryStore 循环依赖。 */
 export function estimateTokens(text: string): number {
   let cjk = 0;
   for (const ch of text) if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(ch)) cjk++;

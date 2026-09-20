@@ -1,5 +1,5 @@
 // 撞窗紧急压缩纯决策单测:重试门的三条件与投影索引算术(+2 换算)。
-// 此前这段逻辑内联在 callChat 闭包里,e2e 才能碰到(2026-09 评审 T8)。
+// 此前这段逻辑内联在 callChat 闭包里,e2e 才能碰到。
 
 import { describe, expect, it } from "vitest";
 import type { InternalMsg } from "../provider";

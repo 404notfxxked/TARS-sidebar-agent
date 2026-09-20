@@ -282,7 +282,7 @@ await ask(sidepanel, "看看这个页面长什么样");
   );
 
   // 注记行的投影:全量落盘的伪 user 消息必须标 synthetic,面板据此不作
-  // 真实用户气泡渲染(曾把伪造的 user 信息当真展示,评审 2026-09-18)
+  // 真实用户气泡渲染(曾把伪造的 user 信息当真展示)
   const sessionId = await sidepanel.evaluate(
     () =>
       new Promise((resolve, reject) => {
