@@ -4,6 +4,7 @@
 
 import type { MSG, AgentEvent } from "../../shared/messages";
 import { useT } from "../ui/hooks";
+import { ConfirmIcon } from "../ui/icons";
 import { toolLabel } from "./toolNames";
 
 type ConfirmRequest = Extract<
@@ -160,24 +161,5 @@ export function ConfirmCard({
         </button>
       </div>
     </div>
-  );
-}
-
-function ConfirmIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path d="M8 1.8 13.5 4v4.2c0 3.1-2.3 5.3-5.5 6.2-3.2-.9-5.5-3.1-5.5-6.2V4L8 1.8Z" />
-      <path d="m5.6 8 1.7 1.7 3.1-3.3" strokeLinecap="round" />
-    </svg>
   );
 }

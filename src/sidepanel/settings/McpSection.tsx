@@ -10,7 +10,7 @@ import { estimateTokens } from "../../shared/memory";
 import type { McpToolInfo } from "../../shared/messages";
 import { mcpListTools, mcpTest } from "../clients/mcpClient";
 import { ensureOriginAuthorized } from "../permissions";
-import { useConfirmReset, useT } from "../ui/hooks";
+import { useConfirmDelete, useT } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
 import SwitchRow from "../ui/SwitchRow";
 import { ExpandCard, HintMore, SettingsSection, hostOf } from "./parts";
@@ -42,8 +42,6 @@ export default function McpSection({
   const t = useT();
   const [mcp, setMcp] = useState<McpConfig>(initial);
   const [expandedSid, setExpandedSid] = useState<string | null>(null);
-  const [confirmDelSid, armConfirmDel, resetConfirmDel] =
-    useConfirmReset<string>();
 
   // ── MCP 服务器增删改(整包落盘,同 providers 的保存模式) ──
   const patchServer = (
@@ -72,17 +70,14 @@ export default function McpSection({
     setExpandedSid(entry.id);
     run(savePrefs({ mcp: next }));
   };
-  const removeServer = (id: string) => {
-    if (confirmDelSid !== id) {
-      armConfirmDel(id);
-      return;
-    }
-    resetConfirmDel();
-    const next = { ...mcp, servers: mcp.servers.filter((s) => s.id !== id) };
-    setMcp(next);
-    if (expandedSid === id) setExpandedSid(null);
-    run(savePrefs({ mcp: next }));
-  };
+  const { confirmingId, remove: removeServer } = useConfirmDelete<string>(
+    (id) => {
+      const next = { ...mcp, servers: mcp.servers.filter((s) => s.id !== id) };
+      setMcp(next);
+      if (expandedSid === id) setExpandedSid(null);
+      run(savePrefs({ mcp: next }));
+    },
+  );
 
   return (
     <SettingsSection title={t("settings.sectionMcp")}>
@@ -109,7 +104,7 @@ export default function McpSection({
                   key={s.id}
                   entry={s}
                   open={expandedSid === s.id}
-                  confirming={confirmDelSid === s.id}
+                  confirming={confirmingId === s.id}
                   onToggle={() =>
                     setExpandedSid(expandedSid === s.id ? null : s.id)
                   }

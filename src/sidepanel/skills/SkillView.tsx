@@ -8,7 +8,8 @@ import { useEffect, useRef, useState } from "react";
 import { createLogger } from "../../shared/logger";
 import { skillReq, skillRawReq } from "../clients/skillClient";
 import { MSG, type SkillInfo } from "../../shared/messages";
-import { useConfirmReset, useT } from "../ui/hooks";
+import { useConfirmDelete, useT } from "../ui/hooks";
+import { SubPageEmpty } from "../ui/SubPageEmpty";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { PencilIcon, TrashIcon } from "../ui/icons";
@@ -34,8 +35,6 @@ export default function SkillView({
   const [editorError, setEditorError] = useState<string | null>(null);
   // 编辑态原文经 SKILL_RAW 异步取回,取回前 textarea 呈加载态(不留空窗闪帧)
   const [editLoading, setEditLoading] = useState(false);
-  const [confirmDelId, armConfirmDel, resetConfirmDel] =
-    useConfirmReset<string>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -108,18 +107,13 @@ export default function SkillView({
     }
   };
 
-  const remove = (id: string) => {
-    if (confirmDelId !== id) {
-      armConfirmDel(id);
-      return;
-    }
-    resetConfirmDel();
+  const { confirmingId, remove } = useConfirmDelete<string>((id) => {
     if (editor?.mode === "edit" && editor.id === id) closeEditor();
     setSkills((list) => list?.filter((s) => s.id !== id) ?? list);
     skillReq({ type: MSG.SKILL_DELETE, id })
       .then((r) => setSkills(r.skills))
       .catch(() => {}); // 乐观移除后兜底刷新
-  };
+  });
 
   const importFile = async (file: File) => {
     try {
@@ -142,14 +136,24 @@ export default function SkillView({
         {skills === null ? (
           <SkeletonRows widths={[76, 58, 68]} />
         ) : skills.length === 0 ? (
-          <EmptyState />
+          <SubPageEmpty
+            icon={
+              <>
+                <path d="M6 3h9l4 4v14H6z" />
+                <path d="M14 3v5h5" />
+                <path d="M9 13h7M9 17h5" />
+              </>
+            }
+            title={t("skills.empty")}
+            hint={t("skills.emptyHint")}
+          />
         ) : (
           <ul className="m-0 list-none space-y-0.5 p-0">
             {skills.map((s) => (
               <SkillRow
                 key={s.id}
                 skill={s}
-                confirming={confirmDelId === s.id}
+                confirming={confirmingId === s.id}
                 onEditStart={() => void startEdit(s)}
                 onToggle={() => void toggle(s)}
                 onRemove={() => remove(s.id)}
@@ -331,35 +335,5 @@ function SkillRow({
         </div>
       </div>
     </li>
-  );
-}
-
-// ---- 空态 ----
-
-function EmptyState() {
-  const t = useT();
-  return (
-    <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
-      <svg
-        width="30"
-        height="30"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        className="text-on-surface-variant opacity-60"
-      >
-        <path d="M6 3h9l4 4v14H6z" />
-        <path d="M14 3v5h5" />
-        <path d="M9 13h7M9 17h5" />
-      </svg>
-      <p className="m-0 text-[13px] text-on-surface-variant">{t("skills.empty")}</p>
-      <p className="m-0 text-[12px] leading-4 text-on-surface-variant/80">
-        {t("skills.emptyHint")}
-      </p>
-    </div>
   );
 }

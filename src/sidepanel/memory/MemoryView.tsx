@@ -17,10 +17,11 @@ import {
 import { loadConfig, selectedContextTokens } from "../../shared/configStore";
 import { createLogger } from "../../shared/logger";
 import { memReq } from "../clients/memoryClient";
-import { useConfirmReset, useT } from "../ui/hooks";
+import { useConfirmDelete, useRowStagger, useT } from "../ui/hooks";
+import { SubPageEmpty } from "../ui/SubPageEmpty";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
-import { TrashIcon } from "../ui/icons";
+import { StarIcon, TrashIcon } from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
@@ -40,9 +41,6 @@ export default function MemoryView({
   // 行内编辑:点文本进入,失焦/回车提交,清空文本视为取消
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
-  // 两段确认删除:首点进入待确认,3 秒未跟进自动复位(同历史页)
-  const [confirmDelId, armConfirmDel, resetConfirmDel] =
-    useConfirmReset<string>();
   // 右上溢出菜单:清空全部记忆(菜单内两段确认,关菜单即复位)
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -87,12 +85,7 @@ export default function MemoryView({
     }
   };
 
-  const remove = (id: string) => {
-    if (confirmDelId !== id) {
-      armConfirmDel(id);
-      return;
-    }
-    resetConfirmDel();
+  const { confirmingId, remove } = useConfirmDelete<string>((id) => {
     setMemories((list) => list?.filter((m) => m.id !== id) ?? list);
     memReq({ type: MSG.MEM_DELETE, id })
       .then(setMemories)
@@ -104,7 +97,7 @@ export default function MemoryView({
           .then(setMemories)
           .catch(() => {});
       });
-  };
+  });
 
   const clearAll = () => {
     if (!confirmClear) {
@@ -129,14 +122,7 @@ export default function MemoryView({
     () => (memories ? memoryUsedTokens(memories, contextTokens) : 0),
     [memories, contextTokens],
   );
-  // 入场 stagger:全局序号封顶 8,30ms/行(同历史页)
-  const rowDelay = useMemo(() => {
-    const m = new Map<string, number>();
-    memories?.forEach((r, i) => {
-      m.set(r.id, Math.min(i, 8) * 30);
-    });
-    return m;
-  }, [memories]);
+  const rowDelay = useRowStagger(memories);
 
   return (
     <div className="view-in flex min-h-0 flex-1 flex-col">
@@ -274,7 +260,16 @@ export default function MemoryView({
         {memories === null ? (
           <SkeletonRows widths={[80, 62, 71, 55]} />
         ) : memories.length === 0 ? (
-          <EmptyState />
+          <SubPageEmpty
+            icon={
+              <>
+                <path d="M3 7h18M4 7l1.2 12.2A2 2 0 0 0 7.2 21h9.6a2 2 0 0 0 2-1.8L20 7" />
+                <path d="M9 11h6" />
+              </>
+            }
+            title={t("memory.empty")}
+            hint={t("memory.emptyHint")}
+          />
         ) : (
           <ul className="m-0 list-none space-y-0.5 p-0">
             {memories.map((m) => (
@@ -283,7 +278,7 @@ export default function MemoryView({
                 memory={m}
                 editing={editingId === m.id}
                 editText={editingId === m.id ? editingText : ""}
-                confirming={confirmDelId === m.id}
+                confirming={confirmingId === m.id}
                 delay={rowDelay.get(m.id) ?? 0}
                 onEditStart={() => {
                   setEditingId(m.id);
@@ -420,52 +415,5 @@ function MemoryRow({
         </span>
       </div>
     </li>
-  );
-}
-
-function StarIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="block"
-    >
-      <path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.2L8 11.5l-3.8 2 .7-4.2-3.1-3 4.3-.6L8 1.8z" />
-    </svg>
-  );
-}
-
-// ---- 空态 ----
-
-function EmptyState() {
-  const t = useT();
-  return (
-    <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
-      <svg
-        width="30"
-        height="30"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        className="text-on-surface-variant opacity-60"
-      >
-        <path d="M3 7h18M4 7l1.2 12.2A2 2 0 0 0 7.2 21h9.6a2 2 0 0 0 2-1.8L20 7" />
-        <path d="M9 11h6" />
-      </svg>
-      <p className="m-0 text-[13px] text-on-surface-variant">{t("memory.empty")}</p>
-      <p className="m-0 text-[12px] leading-4 text-on-surface-variant/80">
-        {t("memory.emptyHint")}
-      </p>
-    </div>
   );
 }

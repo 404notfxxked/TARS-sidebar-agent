@@ -1,5 +1,6 @@
-// 面板 UI 小 hooks:两段确认的自动复位、复制成功的轻反馈、语言订阅。
-// 都是从设置/历史/记忆页反复出现的同款逻辑收拢而来。
+// 面板 UI 小 hooks:两段确认的自动复位与删除包装、行入场 stagger、复制成功
+// 的轻反馈、语言订阅。都是从设置/历史/记忆/技能/MCP 页反复出现的同款逻辑
+// 收拢而来。
 
 import {
   useCallback,
@@ -82,4 +83,40 @@ export function useCopyFlash(ms = 1600) {
     [ms],
   );
   return [copied, copy] as const;
+}
+
+/** 行入场延迟:全局序号封顶 8,30ms/行(记忆页/历史页共用) */
+export function useRowStagger<T extends { id: string }>(
+  items: readonly T[] | null | undefined,
+): Map<string, number> {
+  return useMemo(() => {
+    const m = new Map<string, number>();
+    items?.forEach((it, i) => {
+      m.set(it.id, Math.min(i, 8) * 30);
+    });
+    return m;
+  }, [items]);
+}
+
+/** 两段确认删除:首调进入待确认(3s 自动复位),再调执行 run(id) */
+export function useConfirmDelete<T extends string>(
+  run: (id: T) => void | Promise<void>,
+) {
+  const [confirmingId, arm, reset] = useConfirmReset<T>();
+  const runRef = useRef(run);
+  useEffect(() => {
+    runRef.current = run;
+  }); // 渲染后同步最新闭包,不在渲染期写 ref;remove 身份不随 run 漂移
+  const remove = useCallback(
+    (id: T) => {
+      if (confirmingId !== id) {
+        arm(id);
+        return;
+      }
+      reset();
+      void runRef.current(id);
+    },
+    [confirmingId, arm, reset],
+  );
+  return { confirmingId, remove, reset };
 }

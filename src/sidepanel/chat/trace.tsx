@@ -11,6 +11,7 @@ import type { LocalePref } from "../../shared/configStore";
 import type { ProcessItem } from "../../shared/messages";
 import type { TFn } from "../../shared/i18n";
 import { useCopyFlash, useLocale, useT } from "../ui/hooks";
+import { ChevronIcon, LinesIcon, SparkleIcon } from "../ui/icons";
 import { toolLabel } from "./toolNames";
 import { AssistantBubble } from "./bubbles";
 
@@ -600,39 +601,6 @@ function fmtDur(ms: number, locale: LocalePref): string {
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return zh ? `${m} 分 ${sec} 秒` : `${m}m ${sec}s`;
-}
-
-/** 四角星(SF Symbols sparkle 风):思考过程的图标 */
-function SparkleIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 2.75C8.6 5.4 10.6 7.4 13.25 8 10.6 8.6 8.6 10.6 8 13.25 7.4 10.6 5.4 8.6 2.75 8 5.4 7.4 7.4 5.4 8 2.75Z" />
-    </svg>
-  );
-}
-
-/** 三横线(文本段):中间文案行的图标 */
-function LinesIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 4.5h10M3 8h10M3 11.5h6.5" />
-    </svg>
-  );
-}
-
-/** 折叠指示箭头:单个 SVG,开合沿同一路径旋转(CSS 接管 transform) */
-function ChevronIcon() {
-  return (
-    <svg
-      className="trace-chevron"
-      width="10"
-      height="10"
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-    >
-      <path d="M4.5 2.75 8.25 6 4.5 9.25" />
-    </svg>
-  );
 }
 
 /** unknown → 可展示文本:字符串原样,对象 JSON 美化,失败退 String() */

@@ -50,7 +50,16 @@ import { EmptyState } from "./EmptyState";
 import { useAgentChannel } from "./useAgentChannel";
 import { skillReq } from "../clients/skillClient";
 import { useT } from "../ui/hooks";
-import { ArchiveIcon } from "../ui/icons";
+import {
+  ArchiveIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  HistoryIcon,
+  ImageIcon,
+  PlusIcon,
+  SettingsIcon,
+  StopIcon,
+} from "../ui/icons";
 
 const log = createLogger({ ctx: "panel" });
 
@@ -860,138 +869,5 @@ export default function ChatView({
         </div>
       </form>
     </div>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <line x1="8" y1="3" x2="8" y2="13" />
-      <line x1="3" y1="8" x2="13" y2="8" />
-    </svg>
-  );
-}
-
-/** 发送箭头(填充圆底上光学居中:杆长略短于几何高) */
-function ArrowUpIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M8 13V3.8" />
-      <path d="m3.9 7.9 4.1-4.1 4.1 4.1" />
-    </svg>
-  );
-}
-
-/** 停止方砖(运行中):36px 圆底上取 13px,太小没有「可点停」的存在感 */
-function StopIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 10 10"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <rect x="1.5" y="1.5" width="7" height="7" rx="1.2" />
-    </svg>
-  );
-}
-
-function HistoryIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="5.8" />
-      <path d="M8 4.8V8l2.3 1.6" />
-    </svg>
-  );
-}
-
-function SettingsIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      aria-hidden="true"
-    >
-      <line x1="2.5" y1="4" x2="13.5" y2="4" />
-      <circle cx="6" cy="4" r="1.7" fill="currentColor" stroke="none" />
-      <line x1="2.5" y1="8" x2="13.5" y2="8" />
-      <circle cx="10.5" cy="8" r="1.7" fill="currentColor" stroke="none" />
-      <line x1="2.5" y1="12" x2="13.5" y2="12" />
-      <circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function ImageIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="2" y="2.5" width="12" height="11" rx="2" />
-      <circle cx="5.8" cy="6.3" r="1.2" />
-      <path d="m2.5 11.5 3-3 2.5 2.5 2-2 3.5 3.5" />
-    </svg>
-  );
-}
-
-/** 回到最新:实心下箭头(滚回列表底部) */
-function ArrowDownIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M8 2.8v10.4" />
-      <path d="m3.6 9 4.4 4.2L12.4 9" />
-    </svg>
   );
 }

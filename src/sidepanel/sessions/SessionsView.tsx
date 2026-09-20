@@ -5,7 +5,8 @@ import type { TFn } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MSG, PORT_NAME, type SessionMeta } from "../../shared/messages";
 import { createLogger } from "../../shared/logger";
-import { useConfirmReset, useT } from "../ui/hooks";
+import { useConfirmDelete, useRowStagger, useT } from "../ui/hooks";
+import { SubPageEmpty } from "../ui/SubPageEmpty";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { TrashIcon } from "../ui/icons";
@@ -84,8 +85,6 @@ export default function SessionsView({
 }) {
   const t = useT();
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
-  // 两段确认删除:第一次点变「确认删除」,3s 不跟进而自动复位
-  const [confirmId, armConfirm, resetConfirm] = useConfirmReset<string>();
   const [query, setQuery] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
 
@@ -105,17 +104,12 @@ export default function SessionsView({
   const refresh = () =>
     portRef.current?.postMessage({ type: MSG.LIST_SESSIONS });
 
-  const remove = (id: string) => {
-    if (confirmId !== id) {
-      armConfirm(id);
-      return;
-    }
-    resetConfirm();
+  const { confirmingId, remove } = useConfirmDelete<string>((id) => {
     setSessions((list) => list?.filter((s) => s.id !== id) ?? list);
     portRef.current?.postMessage({ type: MSG.DELETE_SESSION, sessionId: id });
     // 删除无回执,延迟拉一次列表兜底(后台失败时列表会还原)
     window.setTimeout(refresh, 300);
-  };
+  });
 
   // 搜索:标题子串过滤(大小写不敏感,纯前端;列表本就全量在手)
   const kw = query.trim().toLowerCase();
@@ -128,14 +122,7 @@ export default function SessionsView({
     () => (filtered ? groupSessions(t, filtered) : []),
     [filtered, t],
   );
-  // 入场 stagger:全局序号封顶 8,30ms/行
-  const rowDelay = useMemo(() => {
-    const m = new Map<string, number>();
-    filtered?.forEach((s, i) => {
-      m.set(s.id, Math.min(i, 8) * 30);
-    });
-    return m;
-  }, [filtered]);
+  const rowDelay = useRowStagger(filtered);
 
   const pick = (id: string) => {
     log.debug("chat", "session picked", { id });
@@ -210,7 +197,20 @@ export default function SessionsView({
         {sessions === null ? (
           <SkeletonRows widths={[72, 55, 63, 46]} />
         ) : sessions.length === 0 ? (
-          <EmptyState onNew={onNew} />
+          <SubPageEmpty
+            icon={
+              <>
+                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                <path d="M3 4v4h4" />
+                <path d="M12 7v5l3 2" />
+              </>
+            }
+            title={t("sessions.empty")}
+          >
+            <button type="button" onClick={onNew} className="settings-btn">
+              {t("sessions.newChat")}
+            </button>
+          </SubPageEmpty>
         ) : groups.length === 0 ? (
           <p className="px-1 py-8 text-center text-[12.5px] text-on-surface-variant">
             {t("sessions.noMatch", { query: query.trim() })}
@@ -225,7 +225,7 @@ export default function SessionsView({
                     key={s.id}
                     session={s}
                     active={s.id === activeId}
-                    confirming={confirmId === s.id}
+                    confirming={confirmingId === s.id}
                     delay={rowDelay.get(s.id) ?? 0}
                     onPick={pick}
                     onRemove={remove}
@@ -304,37 +304,5 @@ function SessionRow({
         </button>
       </div>
     </li>
-  );
-}
-
-// ---- 空态 ----
-
-function EmptyState({ onNew }: { onNew: () => void }) {
-  const t = useT();
-  return (
-    <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
-      <svg
-        width="30"
-        height="30"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-        className="text-on-surface-variant opacity-60"
-      >
-        <path d="M3 12a9 9 0 1 0 3-6.7" />
-        <path d="M3 4v4h4" />
-        <path d="M12 7v5l3 2" />
-      </svg>
-      <p className="m-0 text-[13px] text-on-surface-variant">
-        {t("sessions.empty")}
-      </p>
-      <button type="button" onClick={onNew} className="settings-btn">
-        {t("sessions.newChat")}
-      </button>
-    </div>
   );
 }

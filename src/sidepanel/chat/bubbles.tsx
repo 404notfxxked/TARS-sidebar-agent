@@ -33,7 +33,14 @@ import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import type { ImageMeta } from "../../shared/messages";
 import { useCopyFlash, useT } from "../ui/hooks";
-import { ArchiveIcon, CheckIcon, CopyIcon, RefreshIcon } from "../ui/icons";
+import {
+  ArchiveIcon,
+  CheckIcon,
+  CopyIcon,
+  InfoIcon,
+  RefreshIcon,
+  WarnIcon,
+} from "../ui/icons";
 import { peekImgUrl, requestImgUrl } from "./images";
 
 // markdown 渲染配置:引用保持稳定,配合 memo 让历史消息不因无关状态重渲染/重解析
@@ -286,48 +293,4 @@ function nodeText(node: ReactNode): string {
     return nodeText((node.props as { children?: ReactNode }).children);
   }
   return "";
-}
-
-/** 信息圆标(系统提示条) */
-function InfoIcon() {
-  return (
-    <svg
-      className="mt-0.5 shrink-0"
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="6.2" />
-      <path d="M8 7.5v3.2" />
-      <path d="M8 5h.01" />
-    </svg>
-  );
-}
-
-/** 警示三角(错误消息) */
-function WarnIcon() {
-  return (
-    <svg
-      className="mt-0.5 shrink-0"
-      width="14"
-      height="14"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M8 2.2 14.6 13.4H1.4L8 2.2Z" />
-      <path d="M8 6.4v3" />
-      <path d="M8 11.7h.01" />
-    </svg>
-  );
 }
