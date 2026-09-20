@@ -15,6 +15,13 @@ import { normalizeSearch } from "../../shared/configStore";
 import type { SearchProviderId } from "../../shared/configStore";
 import { errText } from "../../shared/errors";
 import { oneLine } from "../../shared/text";
+import {
+  COOLDOWN_MS,
+  coolDown,
+  coolingDownEntry,
+  type CooldownKind,
+} from "./cooldown";
+import { passesDomainFilter } from "./domainFilter";
 import { runTabSearch } from "./tabSearch";
 
 const log = createLogger({ ctx: "bg" });
@@ -199,30 +206,11 @@ const SEARCH_PROVIDERS: Record<SearchProviderId, SearchProviderPreset> =
     brave: BRAVE,
   };
 
-// ---- 失败冷却(限流/不可达后短期跳过) ----
-// 存 storage.session:浏览器会话内有效,SW 被杀重启也不丢;浏览器重开自动清零。
-const COOLDOWN_KEY = "webSearch:engineCooldown";
-const COOLDOWN_MS = { blocked: 5 * 60_000, unreachable: 10 * 60_000 } as const;
-type CooldownKind = keyof typeof COOLDOWN_MS;
-type CooldownMap = Record<string, { until: number; kind: CooldownKind }>;
-
-async function loadCooldowns(): Promise<CooldownMap> {
-  try {
-    const bag = await chrome.storage.session.get(COOLDOWN_KEY);
-    return bag[COOLDOWN_KEY] ?? {};
-  } catch {
-    return {};
-  }
-}
+// ---- 失败冷却(storage.session,与 tab 通道共用同一张表,状态机见 ./cooldown.ts)----
+// 这里只留外壳:状态读写收口在 cooldown.ts,本通道的 warn 文案/字段留在此处。
 
 async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
-  const map = await loadCooldowns();
-  map[id] = { until: Date.now() + COOLDOWN_MS[kind], kind };
-  try {
-    await chrome.storage.session.set({ [COOLDOWN_KEY]: map });
-  } catch {
-    /* 冷却写失败无碍,下次会重新尝试 */
-  }
+  await coolDown(id, kind);
   log.warn("search", "搜索服务进入冷却,近期搜索将报错", {
     provider: id,
     kind,
@@ -234,9 +222,7 @@ async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
 async function searchCooldownKind(
   id: string,
 ): Promise<CooldownKind | null> {
-  const map = await loadCooldowns();
-  const hit = map[id];
-  return hit?.until > Date.now() ? hit.kind : null;
+  return (await coolingDownEntry(id))?.kind ?? null;
 }
 
 /** 失败分类:限流/拒绝 → blocked;超时 → unreachable;其余 → error */
@@ -505,25 +491,4 @@ function parseDomainList(v: unknown): string[] {
         .split(":")[0],
     )
     .filter((d) => d.length > 0);
-}
-
-/** 主机名匹配:等于名单项或为其子域(example.com 匹配 www.example.com) */
-function passesDomainFilter(
-  url: string,
-  allowed: string[],
-  blocked: string[],
-): boolean {
-  let hostname: string;
-  try {
-    hostname = new URL(url).hostname.toLowerCase();
-  } catch {
-    return false; // 非法 URL 视为不通过
-  }
-  if (
-    allowed.length > 0 &&
-    !allowed.some((d) => hostname === d || hostname.endsWith(`.${d}`))
-  ) {
-    return false;
-  }
-  return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
 }

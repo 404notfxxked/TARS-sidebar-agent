@@ -22,6 +22,14 @@ import {
   probeEngines,
   recordEngineReachability,
 } from "./engineHealth";
+import {
+  COOLDOWN_MS,
+  clearCooldown,
+  coolDown,
+  coolingDownEntry,
+  type CooldownKind,
+} from "./cooldown";
+import { passesDomainFilter } from "./domainFilter";
 
 const log = createLogger({ ctx: "bg" });
 
@@ -231,59 +239,30 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
   };
 }
 
-// ---- 失败冷却(storage.session,与 API 路径共用同一个 key:被标记的引擎
-//      不论走哪条路径都该跳)----
-const COOLDOWN_KEY = "webSearch:engineCooldown";
-
-type CooldownKind = "blocked" | "unreachable";
+// ---- 失败冷却(storage.session,与 API 路径共用同一张表,状态机见 ./cooldown.ts)----
+// 这里只留外壳:状态读写收口在 cooldown.ts,本通道的 warn 文案/字段留在此处。
 
 async function coolDownEngine(id: string, kind: CooldownKind): Promise<void> {
-  const minutes = kind === "blocked" ? 5 : 10;
-  try {
-    const bag = await chrome.storage.session.get(COOLDOWN_KEY);
-    const map = (bag[COOLDOWN_KEY] ?? {}) as Record<
-      string,
-      { until: number; kind: CooldownKind }
-    >;
-    map[id] = { until: Date.now() + minutes * 60_000, kind };
-    await chrome.storage.session.set({ [COOLDOWN_KEY]: map });
-  } catch {
-    /* 冷却写失败无碍 */
-  }
+  await coolDown(id, kind);
   log.warn("search", "引擎进入冷却,近期搜索将跳过", {
     engine: id,
     kind,
-    minutes,
+    minutes: COOLDOWN_MS[kind] / 60_000,
   });
 }
 
 /** 引擎在冷却期内则直接抛错(文案可转告用户),调用方跳到下一引擎 */
 async function throwIfCoolingDown(id: string): Promise<void> {
-  let bag: Record<string, unknown>;
-  try {
-    bag = await chrome.storage.session.get(COOLDOWN_KEY);
-  } catch {
-    return; /* 存储读失败视为无冷却 */
-  }
-  const hit = ((bag[COOLDOWN_KEY] ?? {}) as Record<string, { until?: number }>)[id];
-  if (hit?.until != null && hit.until > Date.now()) {
-    const min = Math.max(1, Math.round((hit.until - Date.now()) / 60_000));
-    throw new Error(`Search engine ${id} was just rate-limited and is cooling down (~${min} min left)`);
-  }
+  const hit = await coolingDownEntry(id);
+  if (!hit) return;
+  const min = Math.max(1, Math.round((hit.until - Date.now()) / 60_000));
+  throw new Error(
+    `Search engine ${id} was just rate-limited and is cooling down (~${min} min left)`,
+  );
 }
 
 function clearEngineCooldown(id: string): void {
-  void (async () => {
-    try {
-      const bag = await chrome.storage.session.get(COOLDOWN_KEY);
-      const map = bag[COOLDOWN_KEY] ?? {};
-      if (!map[id]) return;
-      delete map[id];
-      await chrome.storage.session.set({ [COOLDOWN_KEY]: map });
-    } catch {
-      /* ignore */
-    }
-  })();
+  void clearCooldown(id);
 }
 
 // ---- 标签页操作 ----
@@ -362,27 +341,4 @@ async function extractTabHtml(tabId: number): Promise<string> {
     throw new Error("Empty response");
   }
   return html;
-}
-
-// ---- 通用小件 ----
-
-/** 主机名匹配:等于名单项或为其子域(example.com 匹配 www.example.com) */
-function passesDomainFilter(
-  url: string,
-  allowed: string[],
-  blocked: string[],
-): boolean {
-  let hostname: string;
-  try {
-    hostname = new URL(url).hostname.toLowerCase();
-  } catch {
-    return false;
-  }
-  if (
-    allowed.length > 0 &&
-    !allowed.some((d) => hostname === d || hostname.endsWith(`.${d}`))
-  ) {
-    return false;
-  }
-  return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
 }
