@@ -64,20 +64,36 @@ export interface ModelEntry {
   reasoning?: boolean;
   /** 思考程度(undefined = 折中默认:发送时由 defaultThinkingEffort 取目录
    *  中间档,纯开关模型则跟随模型默认不发参数):"off" = 请求关思考,其余
-   *  为目录档位 token,wire 映射见 openai.ts thinkingParam。仅 reasoning
+   *  为目录档位 token,wire 映射见 chatCompletions.ts thinkingParam。仅 reasoning
    *  为 true 时由 agent 门控发送 */
   reasoningEffort?: string;
 }
 
-/** 模型服务供应商:一份 OpenAI 兼容端点配置 + 它自己的模型列表 */
+/** 供应商 API 协议(wire 格式,按协议而非厂商命名):chat-completions = OpenAI
+ *  兼容(缺省,历史配置零迁移);anthropic-messages = Anthropic Messages;
+ *  responses 仅预留枚举,适配器未实现(经 createChatProvider 显式报错) */
+export type ProviderKind =
+  | "chat-completions"
+  | "anthropic-messages"
+  | "responses";
+export const PROVIDER_KINDS = [
+  "chat-completions",
+  "anthropic-messages",
+  "responses",
+] as const;
+
+/** 模型服务供应商:一份端点配置 + 它自己的模型列表 */
 export interface ProviderEntry {
   /** 稳定引用(随机生成),modelProvider 与设置页展开态都用它 */
   id: string;
   /** 显示名(如 DeepSeek);留空时 UI 用 baseUrl 主机名兜底展示 */
   name: string;
-  /** OpenAI 兼容根地址,约定含 /v1 */
+  /** 兼容端点根地址,约定含 /v1 */
   baseUrl: string;
   apiKey: string;
+  /** API 协议:undefined 按缺省 chat-completions 消费(读时归一,不写回);
+   *  anthropic-messages 走 x-api-key 认证 + /messages 端点 */
+  kind?: ProviderKind;
   models: ModelEntry[];
 }
 
@@ -114,6 +130,10 @@ export interface AppConfig {
   /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关
    *  (搜索已改为 BYOK 服务,开启还需配好 search.services[...].apiKey 才真正可用) */
   webSearch: boolean;
+  /** 实验开关(服务端搜索验证):对 kind = anthropic-messages 的供应商,
+   *  请求注入 web_search server tool,联网搜索改由服务商在服务端执行并内联
+   *  返回结果块;只影响该协议,chat-completions 与本地工具行为不变。缺省 = 关 */
+  anthropicServerWebSearch: boolean;
   /** 长期记忆总开关:开 = 注册 memory_* 工具 + 每轮注入 <user-memory>;
    *  缺省 = 开。关 = 不注册工具不注入,彻底无痕 */
   memory: boolean;
@@ -192,6 +212,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "accent",
     "locale",
     "webSearch",
+    "anthropicServerWebSearch",
     "memory",
     "skills",
     "confirmActions",
@@ -235,6 +256,7 @@ export async function loadConfig(): Promise<AppConfig> {
           ),
     // 联网搜索 BYOK 化后缺省关闭:开关显式打开 + 配好 key 才对模型可用
     webSearch: l.webSearch === true,
+    anthropicServerWebSearch: l.anthropicServerWebSearch === true,
     // 长期记忆缺省开启(记忆为空时除工具 schema 外无成本;关 = 彻底无痕)
     memory: l.memory !== false,
     // 技能缺省开启(纯本地文本,空库零成本;关 = / 调用不生效)
@@ -274,17 +296,26 @@ function normalizeProviders(
   },
 ): ProviderEntry[] {
   if (Array.isArray(raw)) {
-    return (raw as ProviderEntry[]).filter(
-      (p) =>
-        p &&
-        typeof p.id === "string" &&
-        typeof p.apiKey === "string" &&
-        typeof p.baseUrl === "string" &&
-        Array.isArray(p.models) &&
-        // models 条目同 legacy 路径一样逐条校验:损坏条目放行会让下游
-        // find(m => m.id === …) 对 null 取属性直接炸
-        p.models.every((m) => m && typeof m.id === "string"),
-    );
+    return (raw as ProviderEntry[])
+      .filter(
+        (p) =>
+          p &&
+          typeof p.id === "string" &&
+          typeof p.apiKey === "string" &&
+          typeof p.baseUrl === "string" &&
+          Array.isArray(p.models) &&
+          // models 条目同 legacy 路径一样逐条校验:损坏条目放行会让下游
+          // find(m => m.id === …) 对 null 取属性直接炸
+          p.models.every((m) => m && typeof m.id === "string"),
+      )
+      .map((p) => ({
+        ...p,
+        // 协议白名单:非法值不猜、不静默改写成缺省,直接丢弃该键(undefined
+        // 即按缺省 chat-completions 消费;"responses" 保留让工厂显式报错)
+        kind: PROVIDER_KINDS.includes(p.kind as ProviderKind)
+          ? p.kind
+          : undefined,
+      }));
   }
   const legacyModels: ModelEntry[] = Array.isArray(legacy.models)
     ? (legacy.models as ModelEntry[])
@@ -355,6 +386,7 @@ export async function savePrefs(
       | "accent"
       | "locale"
       | "webSearch"
+      | "anthropicServerWebSearch"
       | "memory"
       | "skills"
       | "confirmActions"

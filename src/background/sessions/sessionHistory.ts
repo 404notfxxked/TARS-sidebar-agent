@@ -56,16 +56,18 @@ export async function loadHistory(sessionId: string): Promise<InternalMsg[]> {
   }
 }
 
-/** 组装 prompt 用的历史:与落盘同源,但两处口径收窄 ——
- *  ①滤掉失败轮错误行:错误文本不是模型说过的话,回灌会污染上下文;
- *  ②最终回答行剥离 reasoning_content:思考对 API 没有回传价值,剥掉把
- *    「未知字段」暴露面收到最小;带 toolCalls 的行保留 —— DeepSeek 新版
- *    thinking 模式要求 reasoning_content 随 tools 回传(缺失 400,见
- *    api-docs.deepseek.com/guides/thinking_mode),且 run 内内存直用的
- *    wire(openai.ts toWireMessages)本就带此字段,跨 run 与 run 内口径
- *    一致;严格网关若拒收未知字段,run 内第二轮同样会炸,非跨 run 新增
- *    风险(审计 2026-09-18 C 的冲突由此收口)。
- *  回放投影(toChatRecords)包含错误行,两层口径不同是有意设计。
+/** 组装 prompt 用的历史:与落盘同源,只滤掉失败轮错误行 —— 错误文本不是模型
+ *  说过的话,回灌会污染上下文。
+ *
+ *  reasoning_content **不剥**:DeepSeek 官方契约是「请求带 tools 时,历轮的
+ *  reasoning 必须回传 —— 含未调用工具的轮次」,缺失即 400(报错文案
+ *  `content[].thinking ... must be passed back`)。此前按「最终回答行的思考对
+ *  API 没有回传价值」剥离,正是 Messages 模式下组合任务/多轮追问失败的一条
+ *  独立根因(2026-09 修正)。两个适配器各自决定怎么用:chatCompletions 直接发
+ *  该字段;anthropicMessages 在桥接端点上据此合成 unsigned 思考块
+ *  (见 provider/anthropicMessages.ts composeAssistantBlocks)。带 toolCalls 的
+ *  行还带着 wireBlocks,同样跨 run 原样落盘、随适配器口径回传。
+ *  回放投影(toChatRecords)读同一个字段展示过程卡,两层同源不同用途。
  *
  *  返回两个口径(同一次读取给全,调用方两者都要):
  *  - prompt = 上面这套收窄后的历史(发给模型);
@@ -78,21 +80,7 @@ export async function loadTranscript(
   const msgs = await loadHistory(sessionId);
   return {
     rows: msgs.length,
-    prompt: msgs
-      .filter((m) => !(m.role === "assistant" && m.error))
-      .map((m) => {
-        if (m.role !== "assistant") return m;
-        // 带 toolCalls 的行原样回传(含 reasoning_content);最终回答行重建对象
-        // 以彻底去掉 reasoning_content 键(undefined 值可能被存储层保留)
-        if (m.toolCalls?.length) return m;
-        if (m.reasoning_content === undefined) return m;
-        return {
-          role: "assistant",
-          content: m.content,
-          ...(m.model ? { model: m.model } : {}),
-          ...(m.error ? { error: m.error } : {}),
-        };
-      }),
+    prompt: msgs.filter((m) => !(m.role === "assistant" && m.error)),
   };
 }
 
@@ -103,8 +91,9 @@ export async function loadTranscript(
  *    裁剪只影响本轮 prompt,不写回,落盘永远是全量历史)
  *  - baseSeq:该会话在库里的已有条数,即新消息的起始 seq
  *  落盘前剥离图片字节(进 images store,消息行只留引用);思考内容
- *  (reasoning_content)自 2026-09 起全量落盘作回放展示元数据,回灌 prompt
- *  前在 loadTranscript 处剥离。写失败由调用方兜底,不打断回答。 */
+ *  (reasoning_content)自 2026-09 起全量落盘,且回灌 prompt 时**不剥** ——
+ *  DeepSeek 要求带 tools 的历轮 reasoning 回传(见 loadTranscript)。写失败
+ *  由调用方兜底,不打断回答。 */
 export async function saveHistory(
   sessionId: string,
   msgs: InternalMsg[],

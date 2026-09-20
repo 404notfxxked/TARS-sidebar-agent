@@ -264,9 +264,15 @@ export const zhCN = {
     providerUnnamed: "未命名服务",
     providerName: "名称",
     providerUrl: "Base URL",
-    providerUrlHint:
-      "OpenAI 兼容端点，一般以 /v1 结尾；留空使用官方 api.openai.com/v1。",
+    providerUrlHint: "OpenAI 兼容端点，必填，一般以 /v1 结尾。",
     providerUrlPlaceholder: "https://api.deepseek.com/v1",
+    providerFormat: "API 格式",
+    formatChatCompletions: "Chat Completions（OpenAI 兼容）",
+    formatAnthropicMessages: "Anthropic Messages（Claude）",
+    providerUrlHintAnthropic:
+      "Anthropic 兼容端点，必填，一般以 /v1 结尾。部分端点未实现 /models，「获取模型列表」失败时手动添加模型即可。",
+    providerUrlPlaceholderAnthropic: "https://api.anthropic.com/v1",
+    baseUrlRequired: "请先填写 Base URL",
     namePlaceholder: "如 DeepSeek",
     apiKey: "API Key",
     models: "模型",
@@ -288,6 +294,8 @@ export const zhCN = {
     ctxPlaceholder: "如 128000",
     maxTokens: "最大输出",
     maxPlaceholder: "如 8192",
+    maxTokensAnthropicHint:
+      "Anthropic 请求必填 max_tokens；留空按 4096 发送。开启思考时会自动抬高，保证大于思考预算。",
     maxTokensField: "输出上限字段",
     maxTokensFieldHint:
       "请求携带的输出上限字段：OpenAI 推理模型只认 max_completion_tokens，其余端点用 max_tokens；「自动」按模型名推断。",
@@ -325,6 +333,9 @@ export const zhCN = {
       "搜索通过后台新开真实搜索引擎页面读取结果，读完即关，无需配置 API Key；引擎在 DuckDuckGo / Bing / Google / 百度 之间自动选择：连续失败或触发风控的引擎会进入几分钟冷却，自动换下一家；搜索词会发送至对应搜索引擎。Tavily / 博查 / Brave 的 API 通道代码仍保留，可手动写入配置启用，界面不再提供。",
     webNeedAccess:
       "联网搜索还需要「页面与网络访问」授权（设置 → 安全），未授权时无法读取搜索引擎结果页。",
+    serverWebSearch: "服务端搜索（实验）",
+    serverWebSearchHint:
+      "对「API 格式 = Anthropic Messages」的供应商，联网搜索改由服务商在服务端执行（如 DeepSeek 原生搜索），结果随回答内联返回；只影响该协议的供应商，其余搜索逻辑不变。搜索详情可在 设置 → 诊断 的日志中查看（server tool use / server tool result）。",
     // MCP
     mcpEnable: "启用 MCP 工具",
     mcpHint: "启用后，AI 可调用 MCP 服务器提供的工具。",

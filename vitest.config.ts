@@ -39,6 +39,11 @@ export default defineConfig({
         },
         "src/background/web/engineHealth.ts": { statements: 90, branches: 85, lines: 90 },
         "src/shared/i18n/**": { statements: 100, branches: 90, functions: 100, lines: 100 },
+        // provider 层:双适配器改造时随新测试钉上(2026-09,Anthropic Messages)
+        "src/background/provider/anthropicMessages.ts": { statements: 95, branches: 80, lines: 95 },
+        "src/background/provider/chatCompletions.ts": { statements: 85, branches: 78, lines: 85 },
+        "src/background/provider/client.ts": { statements: 100, branches: 100, functions: 100, lines: 100 },
+        "src/background/provider/sse.ts": { statements: 100, branches: 85, functions: 85, lines: 100 },
       },
     },
   },

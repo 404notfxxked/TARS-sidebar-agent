@@ -19,9 +19,6 @@ import InfoTip from "../ui/InfoTip";
 import { ensureOriginAuthorized } from "../permissions";
 import { ExpandCard, SettingsSection, hostOf } from "./parts";
 
-/** 官方端点兜底(Base URL 留空时),与 openai.ts 适配器的默认一致 */
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-
 /** 数字输入 → 非负整数(0 = 未设置):负数/Infinity/NaN 一律按 0 处理。
  *  裸 `Number(x) || 0` 会把 -500 当真值直通,负 max_tokens 原样发给 API、
  *  负 contextTokens 让压缩可用窗口变负 */
@@ -172,6 +169,7 @@ export default function ModelSection({
 /** 模型行:收起态 = 别名/ID + 默认标记 + chevron,点击展开每模型配置 */
 function ModelRow({
   entry,
+  kind,
   isDefault,
   open,
   confirming,
@@ -182,6 +180,9 @@ function ModelRow({
   onRemove,
 }: {
   entry: ModelEntry;
+  /** 所属供应商的 API 协议:决定行内字段可见性(maxTokensField 仅
+   *  chat-completions 有意义;anthropic 必填 max_tokens) */
+  kind: ProviderEntry["kind"];
   isDefault: boolean;
   open: boolean;
   confirming: boolean;
@@ -248,9 +249,14 @@ function ModelRow({
           />
         </div>
         <div>
-          <label className="field-label" htmlFor={`model-max-${entry.id}`}>
-            {t("settings.maxTokens")}
-          </label>
+          <div className="field-label-row">
+            <label className="field-label" htmlFor={`model-max-${entry.id}`}>
+              {t("settings.maxTokens")}
+            </label>
+            {kind === "anthropic-messages" && (
+              <InfoTip text={t("settings.maxTokensAnthropicHint")} />
+            )}
+          </div>
           <input
             id={`model-max-${entry.id}`}
             type="number"
@@ -265,34 +271,36 @@ function ModelRow({
           />
         </div>
       </div>
-      <div className="mt-1">
-        <div className="field-label-row">
-          <label className="field-label" htmlFor={`model-mtf-${entry.id}`}>
-            {t("settings.maxTokensField")}
-          </label>
-          <InfoTip text={t("settings.maxTokensFieldHint")} />
+      {kind !== "anthropic-messages" && (
+        <div className="mt-1">
+          <div className="field-label-row">
+            <label className="field-label" htmlFor={`model-mtf-${entry.id}`}>
+              {t("settings.maxTokensField")}
+            </label>
+            <InfoTip text={t("settings.maxTokensFieldHint")} />
+          </div>
+          <select
+            id={`model-mtf-${entry.id}`}
+            value={entry.maxTokensField ?? ""}
+            onChange={(e) =>
+              onPatch(
+                {
+                  maxTokensField: (e.target.value ||
+                    undefined) as ModelEntry["maxTokensField"],
+                },
+                true,
+              )
+            }
+            className="field-input"
+          >
+            <option value="">{t("settings.maxTokensAuto")}</option>
+            <option value="max_tokens">{t("settings.maxTokensCompat")}</option>
+            <option value="max_completion_tokens">
+              {t("settings.maxTokensReasoning")}
+            </option>
+          </select>
         </div>
-        <select
-          id={`model-mtf-${entry.id}`}
-          value={entry.maxTokensField ?? ""}
-          onChange={(e) =>
-            onPatch(
-              {
-                maxTokensField: (e.target.value ||
-                  undefined) as ModelEntry["maxTokensField"],
-              },
-              true,
-            )
-          }
-          className="field-input"
-        >
-          <option value="">{t("settings.maxTokensAuto")}</option>
-          <option value="max_tokens">{t("settings.maxTokensCompat")}</option>
-          <option value="max_completion_tokens">
-            {t("settings.maxTokensReasoning")}
-          </option>
-        </select>
-      </div>
+      )}
       <div className="mb-1 mt-2 flex items-center gap-3">
         {!isDefault && (
           <button
@@ -397,9 +405,17 @@ function ProviderCard({
       setFetchError(t("settings.fetchNeedKey"));
       return;
     }
+    // Base URL 必填:留空曾经「静默用官方地址」,但适配器并不认这个承诺
+    // (空串会拼出相对路径 /chat/completions),所以这里就给出可行动提示,
+    // 不再按协议兜底成官方端点
+    if (!entry.baseUrl.trim()) {
+      setFetchState("error");
+      setFetchError(t("settings.baseUrlRequired"));
+      return;
+    }
     // 按域授权:端点 origin 未授权时借本次点击发起授权请求;拒绝则不白打
     // 一次注定 CORS 失败的请求(聊天用的同一授权,点击即生效)
-    const endpoint = entry.baseUrl.trim() || DEFAULT_BASE_URL;
+    const endpoint = entry.baseUrl.trim();
     if (!(await ensureOriginAuthorized(endpoint))) {
       setFetchState("error");
       setFetchError(t("settings.accessDenied"));
@@ -415,6 +431,7 @@ function ProviderCard({
         endpoint,
         entryRef.current.apiKey.trim(),
         ctl.signal,
+        entryRef.current.kind,
       );
       // 新增条目用 models.dev 快照 + 启发式预填;已有条目回填「从未设置」的
       // 缺失字段——手动设置过/清空过的一律不碰。合并基线取 ref 镜像
@@ -471,7 +488,13 @@ function ProviderCard({
           <label className="field-label" htmlFor={`p-baseurl-${entry.id}`}>
             {t("settings.providerUrl")}
           </label>
-          <InfoTip text={t("settings.providerUrlHint")} />
+          <InfoTip
+            text={t(
+              entry.kind === "anthropic-messages"
+                ? "settings.providerUrlHintAnthropic"
+                : "settings.providerUrlHint",
+            )}
+          />
         </div>
         <input
           id={`p-baseurl-${entry.id}`}
@@ -485,11 +508,42 @@ function ProviderCard({
             if (normalized !== entry.baseUrl) onPatch({ baseUrl: normalized });
             onCommit();
           }}
-          placeholder={t("settings.providerUrlPlaceholder")}
+          placeholder={t(
+            entry.kind === "anthropic-messages"
+              ? "settings.providerUrlPlaceholderAnthropic"
+              : "settings.providerUrlPlaceholder",
+          )}
           autoComplete="off"
           spellCheck={false}
           className="field-input font-mono"
         />
+      </div>
+      <div className="settings-field">
+        <label className="field-label" htmlFor={`p-format-${entry.id}`}>
+          {t("settings.providerFormat")}
+        </label>
+        <select
+          id={`p-format-${entry.id}`}
+          value={entry.kind ?? "chat-completions"}
+          onChange={(e) =>
+            // 只切协议,不覆写已填的 baseUrl;协议决定认证头与端点路径,
+            // 立即落盘(影响下一次请求)
+            onPatch(
+              {
+                kind: (e.target.value || undefined) as ProviderEntry["kind"],
+              },
+              true,
+            )
+          }
+          className="field-input"
+        >
+          <option value="chat-completions">
+            {t("settings.formatChatCompletions")}
+          </option>
+          <option value="anthropic-messages">
+            {t("settings.formatAnthropicMessages")}
+          </option>
+        </select>
       </div>
       <div className="settings-field">
         <label className="field-label" htmlFor={`p-apikey-${entry.id}`}>
@@ -529,6 +583,7 @@ function ProviderCard({
               <ModelRow
                 key={m.id}
                 entry={m}
+                kind={entry.kind}
                 isDefault={isCurrent && currentModelId === m.id}
                 open={openModelId === m.id}
                 confirming={confirmModelId === m.id}

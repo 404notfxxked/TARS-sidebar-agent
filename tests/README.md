@@ -35,7 +35,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   thresholds 只钉已强区域防倒退,零覆盖区先出报告不设门槛
 - 现有十二篇:src/background/agent/compaction.test.ts(窗口公式/档位/切分/
   滚动合并/撞窗文案)、src/background/agent/toolBatch.test.ts(读写分组
-  并行批次)、src/background/provider/openai.test.ts(SSE 脏形态/看门狗 +
+  并行批次)、src/background/provider/chatCompletions.test.ts(SSE 脏形态/看门狗 +
   adapter 流式聚合:arguments 分片/多工具交错/name 分片/length 截断)、
   src/background/tools/toolContext.test.ts(tabId 回退链)、
   src/background/web/engineHealth.test.ts(健康表排序)、

@@ -276,9 +276,15 @@ export const enUS = {
     providerUnnamed: "Unnamed service",
     providerName: "Name",
     providerUrl: "Base URL",
-    providerUrlHint:
-      "An OpenAI-compatible endpoint, usually ending with /v1. Leave empty for the official api.openai.com/v1.",
+    providerUrlHint: "An OpenAI-compatible endpoint (required), usually ending with /v1.",
     providerUrlPlaceholder: "https://api.deepseek.com/v1",
+    providerFormat: "API format",
+    formatChatCompletions: "Chat Completions (OpenAI-compatible)",
+    formatAnthropicMessages: "Anthropic Messages (Claude)",
+    providerUrlHintAnthropic:
+      "An Anthropic-compatible endpoint (required), usually ending with /v1. Some endpoints do not implement /models — if \"Fetch models\" fails, add models manually.",
+    providerUrlPlaceholderAnthropic: "https://api.anthropic.com/v1",
+    baseUrlRequired: "Enter a Base URL first",
     namePlaceholder: "e.g. DeepSeek",
     apiKey: "API Key",
     models: "Models",
@@ -301,6 +307,8 @@ export const enUS = {
     ctxPlaceholder: "e.g. 128000",
     maxTokens: "Max output tokens",
     maxPlaceholder: "e.g. 8192",
+    maxTokensAnthropicHint:
+      "Anthropic requests require max_tokens; 4096 is sent when empty. Automatically raised above the thinking budget when thinking is on.",
     maxTokensField: "Output limit parameter",
     maxTokensFieldHint:
       "The output-limit field sent in requests: OpenAI reasoning models only accept max_completion_tokens, other endpoints use max_tokens; Auto infers it from the model name.",
@@ -338,6 +346,9 @@ export const enUS = {
       "Each search opens a real search engine page in a background tab and closes it right after reading; no API key required. Engines are selected automatically among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks cool down for a few minutes while the next one takes over. Search queries are sent to the corresponding search engine. The Tavily / Bocha / Brave API channels remain in the code and can be enabled via manual configuration, but no UI is provided.",
     webNeedAccess:
       "Web search also requires the \"Page & network access\" grant (Settings → Security); without it the search results page cannot be read.",
+    serverWebSearch: "Server-side search (experimental)",
+    serverWebSearchHint:
+      "For providers using the Anthropic Messages API format, web search is executed on the provider's servers (e.g. DeepSeek native search) and returned inline with the answer. Only affects that protocol; all other search behavior is unchanged. Search details appear in Settings → Diagnostics logs (server tool use / server tool result).",
     // MCP
     mcpEnable: "Enable MCP tools",
     mcpHint:

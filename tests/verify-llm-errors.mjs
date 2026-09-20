@@ -57,9 +57,9 @@ mock.setRoutes([
           .slice(lastUserIdx + 1)
           .some((m) => m.role === "tool");
         if (!sawTool) {
-          // 跨 run 回传契约(每次 run 首请求刷新):历史工具行必须带着
-          // reasoning_content 回来(DeepSeek thinking 缺失即 400),
-          // 历史回答行必须剥离(思考不回灌)
+          // 跨 run 回传契约(每次 run 首请求刷新):历史工具行**与回答行**都必须
+          // 带着 reasoning_content 回来 —— DeepSeek 的契约是「请求带 tools 时
+          // 历轮 reasoning 必须回传,含未调用工具的轮次」,回答行剥掉即 400
           llm.histToolReasoning = messages.some(
             (m) =>
               m.role === "assistant" &&
@@ -212,8 +212,8 @@ try {
       JSON.stringify(toolTurn)?.slice(0, 140),
     );
 
-    // 跨 run:同会话继续追问,续跑请求里的历史工具行必须带回 reasoning_content
-    // (DeepSeek thinking 缺失即 400),历史回答行必须剥离
+    // 跨 run:同会话继续追问,续跑请求里的历史工具行**与回答行**都必须带回
+    // reasoning_content(DeepSeek:带 tools 时历轮 reasoning 缺失即 400)
     const e2 = await runAskViaPort(sidepanel, "s-llm-5", "追问继续");
     check(e2.type === "agent_done", "续跑同会话正常收束", JSON.stringify(e2));
     check(
@@ -221,8 +221,8 @@ try {
       "跨 run 请求:历史工具行随 reasoning_content 回传",
     );
     check(
-      llm.histAnswerReasoning === false,
-      "跨 run 请求:历史回答行不携带 reasoning_content",
+      llm.histAnswerReasoning === true,
+      "跨 run 请求:历史回答行同样随 reasoning_content 回传(带 tools 时历轮都要)",
     );
 
     // 回放 UI:重开面板(本地态清空)→ 历史切回,两个 run 各出一张过程卡,

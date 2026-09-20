@@ -1,5 +1,5 @@
 // SSE 流式解析(共享层):LLM chat 补全与 MCP streamable HTTP 响应共用同一套
-// 帧解析与停滞看门狗 —— 脏形态(CRLF/多行 data/坏帧)的准绳在 openai.test.ts,
+// 帧解析与停滞看门狗 —— 脏形态(CRLF/多行 data/坏帧)的准绳在 chatCompletions.test.ts,
 // 两处消费方必须保持同一种消化方式(此前 MCP 侧自己手写、漏了 CRLF 归一,
 // 合规 CRLF 服务器的帧边界永远切不出来)。
 

@@ -17,13 +17,17 @@ import { HintMore, SettingsSection } from "./parts";
 
 export default function WebSection({
   initialWebSearch,
+  initialServerWebSearch,
   run,
 }: {
   initialWebSearch: boolean;
+  /** 服务端搜索实验开关(仅影响 anthropic-messages 供应商) */
+  initialServerWebSearch: boolean;
   run: (p: Promise<void>) => void;
 }) {
   const t = useT();
   const [webSearch, setWebSearch] = useState(initialWebSearch);
+  const [serverWebSearch, setServerWebSearch] = useState(initialServerWebSearch);
   const [pageAccess, setPageAccess] = useState<boolean | null>(null);
   useEffect(() => {
     let alive = true;
@@ -50,6 +54,18 @@ export default function WebSection({
 
       {/* 引擎机制细节(含「搜索词会发给搜索引擎」的隐私披露)按需展开 */}
       {webSearch && <HintMore detail={t("settings.searchHow")} />}
+
+      {/* 服务端搜索(实验):联网搜索由模型服务商在服务端执行的验证开关 */}
+      <SwitchRow
+        id="settings-server-web-search"
+        label={t("settings.serverWebSearch")}
+        checked={serverWebSearch}
+        onChange={(next) => {
+          setServerWebSearch(next);
+          run(savePrefs({ anthropicServerWebSearch: next }));
+        }}
+        hint={t("settings.serverWebSearchHint")}
+      />
 
       {/* 开着却没授权:就地给授权入口,搜索现在必然失败,别让用户撞墙 */}
       {webSearch && pageAccess === false && (

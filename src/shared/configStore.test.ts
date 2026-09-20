@@ -137,6 +137,63 @@ describe("loadConfig 读时迁移", () => {
     expect((await loadConfig()).modelProvider).toBe("only");
   });
 
+  it("providers 的 kind 协议字段:合法值保留,非法值丢弃该键(不猜不改写)", async () => {
+    await storage().set({
+      providers: [
+        {
+          id: "ant",
+          name: "A",
+          baseUrl: "https://a.example.com/v1",
+          apiKey: "k1",
+          kind: "anthropic-messages",
+          models: [],
+        },
+        {
+          id: "junk",
+          name: "B",
+          baseUrl: "https://b.example.com/v1",
+          apiKey: "k2",
+          kind: "bogus-protocol",
+          models: [],
+        },
+      ],
+      modelProvider: "ant",
+    });
+    const cfg = await loadConfig();
+    expect(cfg.providers[0].kind).toBe("anthropic-messages");
+    expect(cfg.providers[1].kind).toBeUndefined();
+  });
+
+  it("无 kind 字段的旧配置原样消费(缺省 chat-completions,零迁移)", async () => {
+    await storage().set({
+      providers: [
+        {
+          id: "p1",
+          name: "Prov",
+          baseUrl: "https://p1.example.com/v1",
+          apiKey: "sk-1",
+          models: [{ id: "m1" }],
+        },
+      ],
+      modelProvider: "p1",
+      model: "m1",
+    });
+    const cfg = await loadConfig();
+    expect(cfg.providers[0]).not.toHaveProperty("kind", "chat-completions");
+    expect(cfg.providers[0].kind).toBeUndefined();
+  });
+
+  it("anthropicServerWebSearch 实验开关:布尔保留,缺省与非布尔一律 false", async () => {
+    await storage().set({ anthropicServerWebSearch: true });
+    expect((await loadConfig()).anthropicServerWebSearch).toBe(true);
+
+    await storage().set({ anthropicServerWebSearch: "yes" });
+    expect((await loadConfig()).anthropicServerWebSearch).toBe(false);
+
+    await storage().clear();
+    expect((await loadConfig()).anthropicServerWebSearch).toBe(false);
+  });
+
   it("缺省值:联网关、记忆开、保留 7 天、standard 档、zh-CN、green", async () => {
     // navigator 缺席(无法探测)时 locale 落缺省 zh-CN,存量行为不变
     vi.stubGlobal("navigator", {});

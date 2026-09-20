@@ -8,8 +8,7 @@ import {
 } from "../../shared/messages";
 import { getTool, toProviderToolSchemas } from "../tools/tools";
 import {
-  OpenAIAdapter,
-  DEFAULT_BASE_URL,
+  createChatProvider,
   type ChatProvider,
   type ChatResult,
   type InternalMsg,
@@ -182,9 +181,21 @@ export async function runAgentLoop(
       });
       return;
     }
+    // Base URL 必填:适配器不认「留空 = 官方地址」这个曾经的承诺(空串会拼出
+    // 相对路径 /chat/completions),这里先给可行动的错误,而不是让 fetch 报一个
+    // 难懂的失败。供应商卡片与「获取模型列表」同一口径(设置页也有前置提示)
+    if (!cur.baseUrl.trim()) {
+      port.postMessage({
+        type: MSG.AGENT_ERROR,
+        error:
+          "模型服务未填写 Base URL:请在 设置 → 模型服务 的供应商卡片里填写端点地址" +
+          "(如 https://api.deepseek.com/v1)",
+      });
+      return;
+    }
     // 端点访问授权预检:SW 直连模型端点依赖 host 授权(添加服务时按域授权,
     // 或设置 → 安全的总开关)。缺失时给可行动的指引,而不是让 CORS 裸报错
-    const endpointOrigin = grantableOriginOf(cur.baseUrl || DEFAULT_BASE_URL);
+    const endpointOrigin = grantableOriginOf(cur.baseUrl);
     if (endpointOrigin && !(await hasOriginAccess(endpointOrigin))) {
       port.postMessage({
         type: MSG.AGENT_ERROR,
@@ -202,7 +213,8 @@ export async function runAgentLoop(
     const toolResultBudgetChars = modelEntry?.contextTokens
       ? Math.min(60_000, Math.max(12_000, Math.floor(modelEntry.contextTokens / 4)))
       : 60_000;
-    const provider = new OpenAIAdapter({
+    const provider = createChatProvider({
+      kind: cur.kind,
       apiKey: cur.apiKey,
       model: config.model,
       baseUrl: cur.baseUrl,
@@ -218,6 +230,11 @@ export async function runAgentLoop(
               ? defaultThinkingEffort(catalog, config.model)
               : undefined))
           : undefined,
+      // 实验开关:对 anthropic-messages 供应商注入服务端 web_search 声明
+      // (设置 → 联网 → 服务端搜索)。**挂在联网总开关下** —— 用户关掉「联网」
+      // 就是「不许任何搜索」,服务端搜索也不能例外(它同样是联网能力,只是执行
+      // 方在服务商侧);chat-completions 适配器不消费此字段
+      serverWebSearch: config.anthropicServerWebSearch && config.webSearch === true,
     });
     // 压缩用模型:摘要调用(含撞窗紧急压缩)专用,选了便宜模型就由它跑摘要
     // 省钱。没配/引用失效(供应商或模型被删)/无 key 时回落当前模型 ——
@@ -227,8 +244,9 @@ export async function runAgentLoop(
     if (config.compactProvider && config.compactModel) {
       const cp = config.providers.find((p) => p.id === config.compactProvider);
       const cm = cp?.models.find((m) => m.id === config.compactModel);
-      if (cp && cm && cp.apiKey) {
-        summarizer = new OpenAIAdapter({
+      if (cp && cm && cp.apiKey && cp.baseUrl.trim()) {
+        summarizer = createChatProvider({
+          kind: cp.kind,
           apiKey: cp.apiKey,
           model: cm.id,
           baseUrl: cp.baseUrl,
@@ -657,6 +675,13 @@ export async function runAgentLoop(
           toolCalls: result.toolCalls,
           ...(result.reasoning_content !== undefined
             ? { reasoning_content: result.reasoning_content }
+            : {}),
+          // 响应侧 wire 块(Anthropic 思考/服务端工具/带附加字段的文本):随每轮
+          // 请求按适配器口径回传,顺序即协议语义(见 provider/types.ts WireBlock)。
+          // 只在工具轮附上;最终回答行没有 wireBlocks,跨 run 的思考连续性由
+          // reasoning_content 兜底(桥接端点据此合成 unsigned 思考块)
+          ...(result.wireBlocks !== undefined
+            ? { wireBlocks: result.wireBlocks }
             : {}),
           model: config.model,
         });

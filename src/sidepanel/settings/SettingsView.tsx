@@ -119,7 +119,11 @@ export default function SettingsView({
 
             {/* ── 能力开关集群:这个 agent 能做什么 ── */}
             {/* 联网 */}
-            <WebSection initialWebSearch={config.webSearch} run={run} />
+            <WebSection
+              initialWebSearch={config.webSearch}
+              initialServerWebSearch={config.anthropicServerWebSearch}
+              run={run}
+            />
 
             {/* MCP:总开关 + 服务器卡片 */}
             <McpSection initial={config.mcp} run={run} />

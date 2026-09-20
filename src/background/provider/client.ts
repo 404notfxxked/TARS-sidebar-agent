@@ -44,6 +44,12 @@ export interface ApiFetchOptions {
   timeoutMs?: number;
   /** 网络层错误/临时状态码是否退避重试(默认开);拉模型列表这类交互请求传 false 快速失败 */
   retry?: boolean;
+  /** 认证方式:bearer = Authorization: Bearer(缺省,chat-completions 系);
+   *  custom = 不发 Authorization,认证头由 headers 自带(anthropic-messages 的
+   *  x-api-key + anthropic-version) */
+  auth?: "bearer" | "custom";
+  /** 额外请求头,与默认头合并(同名字段以此为准);auth:"custom" 时必经此传认证头 */
+  headers?: Record<string, string>;
   signal?: AbortSignal; // 外部取消(用户点取消 / agent 终止)
 }
 
@@ -56,6 +62,8 @@ export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
     body,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     retry = true,
+    auth = "bearer",
+    headers: extraHeaders,
     signal,
   } = opts;
 
@@ -80,9 +88,10 @@ export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
         headers: {
           ...(body !== undefined && { "Content-Type": "application/json" }),
           // Bearer 认证(RFC 6750):Authorization 头带 token,「持票即放行」。
-          // 注意:Anthropic Messages API 不用 Bearer,用 x-api-key + anthropic-version;
-          // 实现 anthropic 适配器时这里需支持传自定义 headers。
-          Authorization: `Bearer ${apiKey}`,
+          // Anthropic Messages API 不用 Bearer,用 x-api-key + anthropic-version:
+          // auth:"custom" 时不发 Authorization,由调用方经 headers 自带认证头
+          ...(auth === "bearer" && { Authorization: `Bearer ${apiKey}` }),
+          ...extraHeaders,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: merged,

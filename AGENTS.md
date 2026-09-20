@@ -66,7 +66,7 @@
 9. **已开始的流式请求不得自动重试**:delta 已发出,UI 与落库都在消费,
    重放必重复——只能 abort 报错交给人,「重新生成」是唯一兜底;流必须
    挂 inactivity watchdog(30s 超时只护响应头);SSE 解析的脏形态
-   (CRLF/多行 data/坏帧)以 `openai.test.ts`「readSSE 兼容端点脏形态」
+   (CRLF/多行 data/坏帧)以 `chatCompletions.test.ts`「readSSE 兼容端点脏形态」
    一组用例为准绳,改流式解析必须保持全绿
 10. **面板异步回填必须比新鲜度**:后到的异步数据替换本地视图前,必须
     带动作计数快照比对(actionSeq 模式,见 useAgentChannel),期间有

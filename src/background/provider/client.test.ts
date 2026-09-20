@@ -159,4 +159,29 @@ describe("apiFetch 错误归一与重试", () => {
     const h2 = new Headers(q2.calls[0].init.headers);
     expect(h2.get("content-type")).toBeNull();
   });
+
+  it("auth custom(anthropic-messages):不发 Authorization,认证头经 headers 自带", async () => {
+    const q = fetchQueue([ok()]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    await apiFetch({
+      ...base,
+      auth: "custom",
+      headers: { "x-api-key": "sk-abc", "anthropic-version": "2023-06-01" },
+      body: { model: "m" },
+    });
+    const h = new Headers(q.calls[0].init.headers);
+    expect(h.get("authorization")).toBeNull();
+    expect(h.get("x-api-key")).toBe("sk-abc");
+    expect(h.get("anthropic-version")).toBe("2023-06-01");
+    expect(h.get("content-type")).toBe("application/json");
+  });
+
+  it("extraHeaders 与默认头合并,bearer 模式下也可附带自定义头", async () => {
+    const q = fetchQueue([ok()]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    await apiFetch({ ...base, headers: { "x-trace": "t1" } });
+    const h = new Headers(q.calls[0].init.headers);
+    expect(h.get("authorization")).toBe("Bearer sk-abc"); // 默认头保留
+    expect(h.get("x-trace")).toBe("t1");
+  });
 });

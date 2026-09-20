@@ -152,14 +152,15 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
     );
     const records = toChatRecords(await loadHistory("s9"));
     expect(records[1].processItems).toEqual([{ kind: "reasoning", text: "思考" }]);
-    // prompt 转写:最终回答行剥离,自然也不回灌
+    // prompt 转写不剥:DeepSeek 要求带 tools 时历轮 reasoning 都回传,
+    // 最终回答行的思考同样要留着(缺失即 400,2026-09 修正)
     const { prompt: transcript } = await loadTranscript("s9");
     expect(
       transcript.some((m) => m.role === "assistant" && m.reasoning_content),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it("loadTranscript:工具行保留 reasoning_content(DeepSeek thinking 回传),回答行剥离", async () => {
+  it("loadTranscript:工具行与回答行都保留 reasoning_content(DeepSeek 要求带 tools 时历轮回传)", async () => {
     await saveHistory(
       "s8",
       [
@@ -171,18 +172,23 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
           reasoning_content: "想……",
           model: "m1",
         },
+        { role: "assistant", content: "答", reasoning_content: "答前的思考" },
         { role: "assistant", content: "Error: quota", error: true },
       ],
       0,
       0,
     );
     const { prompt: transcript } = await loadTranscript("s8");
-    // 错误行滤除;工具行带 toolCalls/model 且 reasoning_content 原样保留
-    expect(transcript).toHaveLength(2);
+    // 错误行滤除;工具行带 toolCalls/model 且 reasoning_content 原样保留,
+    // 回答行不再被剥(此前「无 toolCalls 即剥」是组合任务 400 的一条独立根因)
+    expect(transcript).toHaveLength(3);
     const toolRow = transcript[1] as Extract<InternalMsg, { role: "assistant" }>;
     expect(toolRow.toolCalls).toHaveLength(1);
     expect(toolRow.model).toBe("m1");
     expect(toolRow.reasoning_content).toBe("想……");
+    const answerRow = transcript[2] as Extract<InternalMsg, { role: "assistant" }>;
+    expect(answerRow.content).toBe("答");
+    expect(answerRow.reasoning_content).toBe("答前的思考");
   });
 
   it("投影:多轮 run 的思考/工具聚合进收尾回答的 processItems,顺序正确", async () => {
@@ -212,13 +218,13 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
       { kind: "tool", id: "t1", name: "web_search", args: {}, result: "{}", error: false },
       { kind: "reasoning", text: "最终思考" },
     ]);
-    // prompt 转写:工具行保留思考(跨 run 回传),回答行剥离
+    // prompt 转写:工具行与回答行的思考都保留(DeepSeek 带 tools 时历轮回传)
     const { prompt: transcript } = await loadTranscript("s10");
     const aRows = transcript.filter(
       (m): m is Extract<InternalMsg, { role: "assistant" }> => m.role === "assistant",
     );
     expect(aRows[0]?.reasoning_content).toBe("第一轮思考");
-    expect(aRows[1]?.reasoning_content).toBeUndefined();
+    expect(aRows[1]?.reasoning_content).toBe("最终思考");
   });
 
   it("投影:纯 toolCalls 的工具轮也进收尾回答的过程卡", async () => {

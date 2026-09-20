@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readSSE, OpenAIAdapter } from "./openai";
+import { readSSE, ChatCompletionsAdapter } from "./chatCompletions";
 import { apiFetch } from "./client";
 import type { ChatRequest } from "./types";
 
@@ -108,7 +108,7 @@ describe("readSSE 兼容端点脏形态", () => {
   });
 });
 
-// ---- OpenAIAdapter.chat:delta 聚合层 ----
+// ---- ChatCompletionsAdapter.chat:delta 聚合层 ----
 // 真实端点的 tool_calls arguments 是分片增量下发的,adapter 按 index
 // 累加拼接;此前 e2e mock 永远整包单帧,聚合逻辑零覆盖(2026-09 评审)。
 
@@ -133,13 +133,13 @@ function makeReq(overrides: Partial<ChatRequest> = {}) {
 }
 
 const adapter = () =>
-  new OpenAIAdapter({ apiKey: "sk-test", model: "test-model" });
+  new ChatCompletionsAdapter({ apiKey: "sk-test", model: "test-model" });
 
 beforeEach(() => {
   apiFetchMock.mockReset();
 });
 
-describe("OpenAIAdapter 思考程度 → wire 参数", () => {
+describe("ChatCompletionsAdapter 思考程度 → wire 参数", () => {
   /** 以指定 cfg 跑一轮,返回发给 apiFetch 的 body(取最近一次调用) */
   const bodyWith = async (cfg: {
     model: string;
@@ -149,7 +149,7 @@ describe("OpenAIAdapter 思考程度 → wire 参数", () => {
       sseResponse([frame({ content: "ok" }, "stop"), "data: [DONE]\n\n"]),
     );
     const { req } = makeReq();
-    await new OpenAIAdapter({ apiKey: "sk-test", ...cfg }).chat(req);
+    await new ChatCompletionsAdapter({ apiKey: "sk-test", ...cfg }).chat(req);
     return apiFetchMock.mock.calls.at(-1)![0].body as Record<string, unknown>;
   };
 
@@ -236,7 +236,7 @@ describe("OpenAIAdapter 思考程度 → wire 参数", () => {
   });
 });
 
-describe("OpenAIAdapter.chat 流式聚合", () => {
+describe("ChatCompletionsAdapter.chat 流式聚合", () => {
   it("tool_calls arguments 分 3 片到达,按 index 拼回完整 JSON", async () => {
     apiFetchMock.mockResolvedValue(
       sseResponse([
