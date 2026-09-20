@@ -156,6 +156,7 @@ export const enUS = {
     msgCount: "{n} messages",
     noMatch: 'No chats match "{query}"',
     empty: "No chat history yet",
+    untitled: "Untitled",
     groupToday: "Today",
     groupYesterday: "Yesterday",
     groupWeek: "Last 7 days",

@@ -149,6 +149,7 @@ export const zhCN = {
     msgCount: "{n} 条",
     noMatch: "没有找到匹配「{query}」的会话",
     empty: "还没有历史会话",
+    untitled: "未命名会话",
     groupToday: "今天",
     groupYesterday: "昨天",
     groupWeek: "7 天内",

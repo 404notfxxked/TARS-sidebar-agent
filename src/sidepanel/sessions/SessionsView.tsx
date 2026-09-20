@@ -258,6 +258,8 @@ function SessionRow({
   onRemove: (id: string) => void;
 }) {
   const t = useT();
+  /** 标题兜底:SW 对空标题回空串,用户可见文案在面板侧经字典渲染(硬规则 1) */
+  const titleOf = (s: SessionMeta): string => s.title || t("sessions.untitled");
   return (
     <li className="sessions-row-in" style={{ animationDelay: `${delay}ms` }}>
       <div
@@ -272,7 +274,7 @@ function SessionRow({
         >
           <span className="flex items-center gap-1.5">
             <span className="min-w-0 truncate text-[13px] leading-snug text-on-surface">
-              {s.title}
+              {titleOf(s)}
             </span>
             {active && (
               <span className="shrink-0 rounded-full bg-primary px-2 py-px text-[11.5px] font-medium text-on-primary">
@@ -289,8 +291,8 @@ function SessionRow({
           onClick={() => onRemove(s.id)}
           aria-label={
             confirming
-              ? t("sessions.confirmDeleteOf", { title: s.title })
-              : t("sessions.deleteOf", { title: s.title })
+              ? t("sessions.confirmDeleteOf", { title: titleOf(s) })
+              : t("sessions.deleteOf", { title: titleOf(s) })
           }
           className={`shrink-0 rounded-full p-1.5 transition-colors duration-150 ${
             confirming

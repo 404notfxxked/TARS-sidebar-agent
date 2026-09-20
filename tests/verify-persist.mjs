@@ -269,7 +269,7 @@ await sleep(300);
     titles.includes("第一条测试消息") && titles.includes("第二条测试消息"),
     JSON.stringify(titles));
   const hasEmpty = snap.rows.some(
-    (r) => r.msgCount === 0 || r.title === "未命名会话",
+    (r) => r.msgCount === 0 || !r.title,
   );
   check("没有空会话记录(懒创建)", !hasEmpty);
 }

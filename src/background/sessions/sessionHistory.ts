@@ -413,14 +413,16 @@ function deriveTitle(msgs: InternalMsg[]): string {
   const text = userRequestText(first?.content ?? "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!text) return "未命名会话";
+  // 空标题:用户可见兜底文案由面板经字典渲染(SessionsView 的 titleOf)。
+  // SW 侧不产出中文标题 —— 硬规则 1:用户可见文案一律走字典键
+  if (!text) return "";
   return text.length > TITLE_MAX_CHARS
     ? `${text.slice(0, TITLE_MAX_CHARS)}…`
     : text;
 }
 
 /** 持久化形态:剥图片字节(另行入 images store);reasoning_content 全量
- *  保留(prompt 侧剥离在 loadTranscript,见彼处注释) */
+ *  保留 —— prompt 侧同样保留(不剥,理由见 loadTranscript 注释) */
 function persistableMsg(m: InternalMsg): InternalMsg {
   if (m.role === "user" && m.images?.length) {
     return {
