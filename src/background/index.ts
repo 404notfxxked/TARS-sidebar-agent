@@ -2,10 +2,11 @@
 // 职责:管理 side panel ↔ agent loop 的长连接
 // - chrome.runtime.onConnect:监听侧栏发起的命名端口(PORT_NAME)
 // - activeRuns:记录每个正在运行的 agent 会话(带 AbortController,支持取消)
+// - port.onMessage 按域分发到 handlers/(run/session/memory/skill/mcp):
+//   单例与 port 的所有权都留在这里,handler 只经 ctx 借用
 // - content script 的调用走 shared/contentTools(onMessage),不走这里
 
 import { MSG, PORT_NAME, type SideToBg, type UserMessagePayload } from "../shared/messages";
-import { bytesToBase64 } from "../shared/imageCodec";
 import { errText } from "../shared/errors";
 import {
   LOG_HELLO,
@@ -14,57 +15,20 @@ import {
   installGlobalErrorHook,
 } from "../shared/logger";
 import { runAgentLoop, type AgentPort } from "./agent/agent";
-import { resolveConfirmation } from "./agent/confirmations";
 import { zhCN } from "../shared/i18n/locales/zh-CN";
 import { enUS } from "../shared/i18n/locales/en-US";
-import {
-  listServerTools,
-  testServer,
-} from "./mcp/mcpManager";
-import {
-  addMemory,
-  clearMemories,
-  deleteMemoryById,
-  loadMemories,
-  setMemoryPinned,
-  updateMemory,
-} from "./memory/memoryStore";
-import {
-  deleteSkill,
-  importSkill,
-  listSkills,
-  setSkillEnabled,
-  updateSkill,
-} from "./skills/skillStore";
-import { renderSkillMarkdown } from "../shared/skills";
-import type { SkillInfo } from "../shared/messages";
 import { loadConfig } from "../shared/configStore";
 import {
-  clearAllSessions,
-  deleteSession,
-  getCompactionMark,
-  listSessions,
-  loadImage,
-  loadHistory,
   migrateLegacySessionStorage,
-  prepareRegenerate,
   pruneExpiredSessions,
-  toChatRecords,
 } from "./sessions/sessionHistory";
-import { getSkillRow } from "./sessions/sessionDb";
-
-/** SkillRow → 面板展示形状(不含正文;chars 做量级提示) */
-async function skillInfos(): Promise<SkillInfo[]> {
-  return (await listSkills()).map((r) => ({
-    id: r.id,
-    name: r.name,
-    description: r.description,
-    enabled: r.enabled,
-    updatedAt: r.updatedAt,
-    chars: r.body.length,
-  }));
-}
 import { maybeProbeEngines } from "./web/engineHealth";
+import type { PanelState, PortCtx, RunState } from "./handlers/context";
+import { handleRunMessage } from "./handlers/runHandlers";
+import { handleSessionMessage } from "./handlers/sessionHandlers";
+import { handleMemoryMessage } from "./handlers/memoryHandlers";
+import { handleSkillMessage } from "./handlers/skillHandlers";
+import { handleMcpMessage } from "./handlers/mcpHandlers";
 
 const log = createLogger({ ctx: "bg" });
 installGlobalErrorHook(log);
@@ -109,16 +73,6 @@ void maybeProbeEngines();
 // (都有内部捕获,失败只记日志,不阻塞 SW 启动)
 void migrateLegacySessionStorage().then(() => pruneExpiredSessions());
 
-/** 单个 agent 运行的状态:持有一个 AbortController,取消时中断正在进行的网络请求 */
-interface RunState {
-  abort: AbortController;
-  /** 提交时激活的 tab(可观测性,暂未消费) */
-  tabId?: number;
-  /** 归属面板的 port:每个浏览器窗口各有一个侧栏实例,断开/取消只处理
-   *  自己名下的 run,不殃及其他窗口正在进行的对话 */
-  port: chrome.runtime.Port;
-}
-
 // 每个运行中的 agent 会话 → 取消句柄(以 sessionId 为 key)
 // 注意:SW 休眠时此 Map 会被清空(内存态,本就不该跨唤醒存活);
 // 需跨唤醒存活的持久数据走 IndexedDB(见 sessions/sessionHistory.ts),不在这里。
@@ -137,7 +91,7 @@ function sessionBusy(sessionId: string): boolean {
 
 // 面板可见性(每个窗口的侧栏实例各一份):任务完成通知据此判断
 // 「这个 run 的主人是否正看着」。面板不可见 = 收到通知才有意义
-const panels = new Map<chrome.runtime.Port, { hidden: boolean }>();
+const panels = new Map<chrome.runtime.Port, PanelState>();
 
 /** 通知正文里的任务名:用户首条消息截断 */
 function taskLabel(text: string): string {
@@ -271,293 +225,23 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   });
 
   // 每条消息运行时都是任意形状(Chrome 类型里是 any),
-  // 所以先 as 断言到协议类型,再用 switch 做真正的收窄
+  // 所以先 as 断言到协议类型,再由各域 handler 用 switch 收窄
   port.onMessage.addListener(async (raw: unknown) => {
     const msg = raw as SideToBg;
-    switch (msg.type) {
-      case MSG.USER_MESSAGE: {
-        // 会话级防重:同会话已有 run 在途时拒绝(双窗口同会话 / 面板异步
-        // 门控的竞窗都会打到这)。面板在提交时乐观置 thinking,拒绝必须
-        // 回包(AGENT_ERROR 会让面板归位 idle 并显示错误),否则卡死在思考态
-        const sessionId = msg.payload.sessionId ?? crypto.randomUUID();
-        if (sessionBusy(sessionId)) {
-          log.warn("agent", "user message ignored, run in progress", {
-            sessionId,
-          });
-          try {
-            port.postMessage({
-              type: MSG.AGENT_ERROR,
-              error: "该会话已有正在进行的任务,请等它结束后再发送新消息",
-            });
-          } catch {
-            /* 端口已断开 */
-          }
-          break;
-        }
-        await launchRun(port, { ...msg.payload, sessionId });
-        break;
-      }
-      case MSG.REGENERATE: {
-        // 已有 run 在跑(或截库在途)的会话不接受重答。SW 侧防重是权威防线
-        // (面板的 idle 门控读渲染闭包,异步窗口内不保证拦住),面板门控只是
-        // 第一道 Filter
-        if (sessionBusy(msg.sessionId)) {
-          log.warn("agent", "regenerate ignored, run in progress", {
-            sessionId: msg.sessionId,
-          });
-          break;
-        }
-        // 占位登记一直持有到 launchRun 收口(内部随即写 activeRuns,两者对
-        // 防重等价):中途不留「登记空窗」,哪条退出路径都不会漏放
-        preparingSessions.add(msg.sessionId);
-        try {
-          // 截库失败同样要回包:面板已乐观截断本地消息并置 thinking,静默
-          // break 会把面板卡死在思考态(切会话/新对话都被 idle 门控拦住)
-          let prep: UserMessagePayload | null = null;
-          try {
-            prep = await prepareRegenerate(msg.sessionId);
-          } catch (err) {
-            log.warn("agent", "regenerate prepare failed", {
-              sessionId: msg.sessionId,
-              error: errText(err),
-            });
-          }
-          if (!prep) {
-            try {
-              port.postMessage({
-                type: MSG.AGENT_ERROR,
-                error:
-                  "没有可重新生成的消息:该会话可能尚未成功保存到本地,请直接发送新消息",
-              });
-            } catch {
-              /* 端口已断开 */
-            }
-            break;
-          }
-          // tabId 不还原:重答按当时的活动 tab 取页面上下文,与手发一致
-          await launchRun(port, prep);
-        } finally {
-          preparingSessions.delete(msg.sessionId);
-        }
-        break;
-      }
-      case MSG.CANCEL_RUN: {
-        const run = activeRuns.get(msg.sessionId);
-        log.warn("agent", "cancel requested", {
-          sessionId: msg.sessionId,
-          found: run !== undefined && run.port === port,
-        });
-        // 只响应归属面板的取消:历史列表是跨窗口共享的,别的窗口
-        // 正在运行的会话不该被这里误杀
-        if (run && run.port === port) run.abort.abort();
-        break;
-      }
-      case MSG.PANEL_VISIBILITY: {
-        // 面板可见性:任务完成通知的「是否打扰」判据(按面板实例记账)
-        const panel = panels.get(port);
-        if (panel) panel.hidden = msg.hidden;
-        break;
-      }
-      case MSG.CONFIRM_RESPONSE: {
-        // 确认卡的答复;未知/过期 requestId 在确认门内静默忽略
-        resolveConfirmation(msg.requestId, msg.approved);
-        break;
-      }
-      case MSG.LOAD_HISTORY: {
-        // 从历史列表切回某会话时,把该会话消息回给前端渲染;
-        // 有压缩时带上压缩点,面板据此渲染分隔条(历史本身始终全量)。
-        // resync = 断连重同步,原样回显给面板走「按库替换」分支。
-        // sessionId 必须回带:面板按「响应会话 == 当前会话」判定新鲜度,
-        // 缺了它,快速切会话时旧回包会把 A 的转写盖上 B 的 id
-        const history = await loadHistory(msg.sessionId);
-        const compaction = await getCompactionMark(msg.sessionId);
-        port.postMessage({
-          type: MSG.HISTORY,
-          sessionId: msg.sessionId,
-          messages: toChatRecords(history),
-          ...(compaction ? { compaction } : {}),
-          ...(msg.resync ? { resync: true } : {}),
-        });
-        break;
-      }
-      case MSG.LIST_SESSIONS: {
-        const sessions = await listSessions();
-        port.postMessage({ type: MSG.SESSIONS, sessions });
-        break;
-      }
-      case MSG.DELETE_SESSION: {
-        await deleteSession(msg.sessionId);
-        break;
-      }
-      case MSG.CLEAR_ALL_HISTORY: {
-        await clearAllSessions();
-        break;
-      }
-      case MSG.GET_IMAGE: {
-        // 历史气泡渲染图片:字节单独走这条通道(消息列表只带元数据)。
-        // base64 传输 —— port 消息是 JSON 语义,TypedArray 过不去
-        const img = await loadImage(msg.id).catch(() => undefined);
-        try {
-          port.postMessage({
-            type: MSG.IMAGE_DATA,
-            id: msg.id,
-            ...(img
-              ? {
-                  mime: img.mime,
-                  base64: bytesToBase64(img.bytes),
-                  w: img.w,
-                  h: img.h,
-                }
-              : {}),
-          });
-        } catch {
-          /* 端口已断开,面板侧反正也收不到 */
-        }
-        break;
-      }
-      case MSG.MEM_LIST: {
-        port.postMessage({
-          type: MSG.MEMORIES,
-          memories: await loadMemories(),
-        });
-        break;
-      }
-      case MSG.MEM_ADD: {
-        await addMemory(msg.text, "user");
-        port.postMessage({
-          type: MSG.MEMORIES,
-          memories: await loadMemories(),
-        });
-        break;
-      }
-      case MSG.MEM_UPDATE: {
-        await updateMemory(msg.id, msg.text);
-        port.postMessage({
-          type: MSG.MEMORIES,
-          memories: await loadMemories(),
-        });
-        break;
-      }
-      case MSG.MEM_PIN: {
-        await setMemoryPinned(msg.id, msg.pinned);
-        port.postMessage({
-          type: MSG.MEMORIES,
-          memories: await loadMemories(),
-        });
-        break;
-      }
-      case MSG.MEM_DELETE: {
-        await deleteMemoryById(msg.id);
-        port.postMessage({
-          type: MSG.MEMORIES,
-          memories: await loadMemories(),
-        });
-        break;
-      }
-      case MSG.MEM_CLEAR: {
-        await clearMemories();
-        port.postMessage({
-          type: MSG.MEMORIES,
-          memories: await loadMemories(),
-        });
-        break;
-      }
-      case MSG.SKILL_LIST: {
-        port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
-        break;
-      }
-      case MSG.SKILL_ADD: {
-        // 解析失败(缺字段/超限)不静默:错误随 SKILLS 回面板就地展示,
-        // 列表仍回后台实际状态 —— 面板不需要再发一次 LIST
-        try {
-          await importSkill(msg.raw);
-          port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
-        } catch (err) {
-          log.warn("skills", "技能导入失败", {
-            error: errText(err),
-          });
-          port.postMessage({
-            type: MSG.SKILLS,
-            skills: await skillInfos(),
-            error: errText(err),
-          });
-        }
-        break;
-      }
-      case MSG.SKILL_GET: {
-        // 编辑视图:行重组回 SKILL.md 原文(frontmatter 由 name/description 还原)
-        const row = await getSkillRow(msg.id).catch(() => undefined);
-        port.postMessage({
-          type: MSG.SKILL_RAW,
-          id: msg.id,
-          ...(row
-            ? {
-                raw: renderSkillMarkdown(row.name, row.description, row.body),
-              }
-            : {}),
-        });
-        break;
-      }
-      case MSG.SKILL_UPDATE: {
-        try {
-          await updateSkill(msg.id, msg.raw);
-          port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
-        } catch (err) {
-          log.warn("skills", "技能更新失败", {
-            error: errText(err),
-          });
-          port.postMessage({
-            type: MSG.SKILLS,
-            skills: await skillInfos(),
-            error: errText(err),
-          });
-        }
-        break;
-      }
-      case MSG.SKILL_TOGGLE: {
-        try {
-          await setSkillEnabled(msg.id, msg.enabled);
-          port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
-        } catch (err) {
-          port.postMessage({
-            type: MSG.SKILLS,
-            skills: await skillInfos(),
-            error: errText(err),
-          });
-        }
-        break;
-      }
-      case MSG.SKILL_DELETE: {
-        await deleteSkill(msg.id);
-        port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
-        break;
-      }
-      case MSG.MCP_TEST: {
-        // 测试连接:连 tools/list 一起拉(同一条缓存,成功即预热下次 run)
-        try {
-          port.postMessage({ type: MSG.MCP_TEST_RESULT, ...(await testServer(msg.server)) });
-        } catch (err) {
-          port.postMessage({
-            type: MSG.MCP_TEST_RESULT,
-            ok: false,
-            error: errText(err),
-          });
-        }
-        break;
-      }
-      case MSG.MCP_TOOLS: {
-        try {
-          port.postMessage({ type: MSG.MCP_TOOLS_RESULT, tools: await listServerTools(msg.server) });
-        } catch (err) {
-          port.postMessage({
-            type: MSG.MCP_TOOLS_RESULT,
-            tools: [],
-            error: errText(err),
-          });
-        }
-        break;
-      }
+    // 面板可见性:port 生命周期的事,留在入口(任务完成通知的「是否打扰」判据,
+    // 按面板实例记账),不属任何域
+    if (msg.type === MSG.PANEL_VISIBILITY) {
+      const panel = panels.get(port);
+      if (panel) panel.hidden = msg.hidden;
+      return;
     }
+    const ctx: PortCtx = { port, activeRuns, panels, preparingSessions, sessionBusy, launchRun };
+    if (await handleRunMessage(msg, ctx)) return;
+    if (await handleSessionMessage(msg, ctx)) return;
+    if (await handleMemoryMessage(msg, ctx)) return;
+    if (await handleSkillMessage(msg, ctx)) return;
+    if (await handleMcpMessage(msg, ctx)) return;
+    // 未知类型:原 switch 无 default(静默忽略),保持现状 —— 不要加日志
   });
 });
 
