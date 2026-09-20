@@ -33,7 +33,9 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   vitest 优先读 vitest.config.ts,与扩展构建的 vite.config.js 互不干扰)。
   coverage 口径是 all:true 全量文件(默认只报被 import 的文件,数字虚高);
   thresholds 只钉已强区域防倒退,零覆盖区先出报告不设门槛
-- 现有十二篇:src/background/agent/compaction.test.ts(窗口公式/档位/切分/
+- **完整清单现取**:`find src -name '*.test.ts*'`(截至 2026-09-20 为 30 篇
+  ——别在本文件手抄篇数,只举例说明覆盖)。既有用例覆盖(举例):
+  src/background/agent/compaction.test.ts(窗口公式/档位/切分/
   滚动合并/撞窗文案)、src/background/agent/toolBatch.test.ts(读写分组
   并行批次)、src/background/provider/chatCompletions.test.ts(SSE 脏形态/看门狗 +
   adapter 流式聚合:arguments 分片/多工具交错/name 分片/length 截断)、
