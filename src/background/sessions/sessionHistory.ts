@@ -16,6 +16,7 @@ import type {
   UserMessagePayload,
 } from "../../shared/messages";
 import { bytesToBase64 } from "../../shared/imageCodec";
+import { errText } from "../../shared/errors";
 import { createLogger } from "../../shared/logger";
 import * as db from "./sessionDb";
 
@@ -50,7 +51,7 @@ export async function loadHistory(sessionId: string): Promise<InternalMsg[]> {
   } catch (err) {
     log.warn("agent", "load history failed", {
       sessionId,
-      error: err instanceof Error ? err.message : String(err),
+      error: errText(err),
     });
     return [];
   }
@@ -352,7 +353,7 @@ export async function pruneExpiredSessions(): Promise<void> {
     if (expired.length > 0) await db.deleteSessions(expired);
   } catch (err) {
     log.warn("bg", "prune sessions failed", {
-      error: err instanceof Error ? err.message : String(err),
+      error: errText(err),
     });
   }
 }
@@ -381,7 +382,7 @@ export async function migrateLegacySessionStorage(): Promise<void> {
     await chrome.storage.session.remove("sessionId:default");
   } catch (err) {
     log.warn("bg", "legacy history migration failed", {
-      error: err instanceof Error ? err.message : String(err),
+      error: errText(err),
     });
   }
 }

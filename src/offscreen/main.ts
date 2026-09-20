@@ -14,8 +14,10 @@ import {
   type VirtualDoc,
 } from "./pipeline";
 import { fetchBuild, fetchRead } from "./fetchDoc";
+import { lruEvict } from "./lru";
 import { parseSearchResults } from "./searchParse";
 import { createLogger, installGlobalErrorHook } from "../shared/logger";
+import { errText } from "../shared/errors";
 
 const log = createLogger({ ctx: "off" });
 installGlobalErrorHook(log);
@@ -30,21 +32,6 @@ interface CacheEntry {
 
 const snapshots = new Map<number, CacheEntry>();
 const inflight = new Map<number, Promise<VirtualDoc>>();
-
-function lruEvict(): void {
-  while (snapshots.size > DOC_CACHE_MAX) {
-    let oldestId = -1;
-    let oldestAt = Infinity;
-    for (const [id, entry] of snapshots) {
-      if (entry.capturedAt < oldestAt) {
-        oldestAt = entry.capturedAt;
-        oldestId = id;
-      }
-    }
-    if (oldestId < 0) break;
-    snapshots.delete(oldestId);
-  }
-}
 
 /**
  * 经 SW 中继抓取页面快照(docBridge 转发给目标 tab 的 capture_doc;
@@ -109,7 +96,7 @@ async function ensureSnapshot(tabId: number, refresh?: boolean): Promise<Virtual
         title: cap.title ?? "",
       });
       snapshots.set(tabId, { doc, capturedAt: Date.now() });
-      lruEvict();
+      lruEvict(snapshots, DOC_CACHE_MAX, (e) => e.capturedAt);
       // 快照重建是 page_* 工具最常见的第一跳,耗时与输入/输出体量记下来:
       // htmlBytes 大而 mdChars 异常小 = 采集到了但解析/分节丢内容,排查入口
       log.info("doc", `快照已重建(tab ${tabId})`, {
@@ -123,7 +110,7 @@ async function ensureSnapshot(tabId: number, refresh?: boolean): Promise<Virtual
       });
       return doc;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = errText(e);
       throw new Error(
         `无法读取目标页面(tab ${tabId}):${msg}。可能是受限页(chrome://、PDF、商店页)、` +
           `已关闭的 tab 或页面尚未加载完成;请先确认目标再重试`,
@@ -216,7 +203,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
         sendResponse({ type: "DOC_TOOL_RESULT", id: msg.id, ok: true, result }),
       )
       .catch((e: unknown) => {
-        const error = e instanceof Error ? e.message : String(e);
+        const error = errText(e);
         log.error("doc", `${msg.name ?? "?"} 失败`, {
           targetTabId: msg.targetTabId,
           error,
@@ -236,7 +223,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
         sendResponse({ type: "PARSE_RESULT", id: msg.id, ok: true, result }),
       )
       .catch((e) => {
-        const error = e instanceof Error ? e.message : String(e);
+        const error = errText(e);
         log.error("parse", `${msg.kind ?? "?"} 解析失败`, { error });
         sendResponse({ type: "PARSE_RESULT", id: msg.id, ok: false, error });
       });

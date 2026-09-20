@@ -8,6 +8,7 @@
 // Anthropic Context Editing(先清工具结果再摘要的两层策略)
 
 import type { CompactLevel } from "../../shared/configStore";
+import { errText } from "../../shared/errors";
 import { createLogger } from "../../shared/logger";
 import type { ChatProvider, InternalMsg } from "../provider";
 
@@ -249,7 +250,7 @@ export async function compactHistory(
 
 /** 识别「超上下文窗口」类错误(各家文案取并集,撞窗重试用) */
 export function isContextOverflow(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errText(err);
   return /context[._ ]?length|maximum context length|prompt is too long|input (is )?too long|too many (input )?tokens|tokens? exceed/i.test(
     msg,
   );

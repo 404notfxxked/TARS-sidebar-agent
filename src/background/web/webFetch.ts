@@ -24,6 +24,7 @@
 // 不受影响,结果会被丢弃)。
 
 import { callOffscreenParser, ensureOffscreenDocument } from "../../shared/docBridge";
+import { errText } from "../../shared/errors";
 import { hasOriginAccess } from "../../shared/hostAccess";
 import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext";
 import { createLogger } from "../../shared/logger";
@@ -120,7 +121,7 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
       res = await fetch(url, { signal });
     } catch (e) {
       if (cancelSignal?.aborted) throw new Error("Page read cancelled by the user");
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = errText(e);
       if (/timeout/i.test(msg)) {
         throw new Error(`Page fetch timed out after ${FETCH_TIMEOUT_MS / 1000}s: ${url}`);
       }
@@ -157,7 +158,7 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
         return await res.arrayBuffer();
       } catch (e) {
         if (cancelSignal?.aborted) throw new Error("Page read cancelled by the user");
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = errText(e);
         if (/timeout/i.test(msg)) {
           throw new Error(`Page fetch timed out after ${FETCH_TIMEOUT_MS / 1000}s: ${url}`);
         }

@@ -12,6 +12,8 @@ import {
   ensureOffscreenDocument,
 } from "../../shared/docBridge";
 import { hasPageAccess } from "../../shared/hostAccess";
+import { errText } from "../../shared/errors";
+import { oneLine } from "../../shared/text";
 import { getToolExecutionContext } from "../tools/toolContext";
 import { createLogger } from "../../shared/logger";
 import type { WebSearchResult } from "./webSearch";
@@ -109,7 +111,7 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
     try {
       await throwIfCoolingDown(engine.id);
     } catch (e) {
-      const msg = errorMessage(e);
+      const msg = errText(e);
       failures.push(`${engine.id}: ${msg}`);
       log.info("search", "引擎冷却中,跳过", { engine: engine.id, error: msg });
       continue;
@@ -170,27 +172,27 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
         failures.push(`${engine.id}: no results`);
         log.info("search", "引擎无结果,切换下一个", {
           engine: engine.id,
-          query: clipLog(query, 40),
+          query: oneLine(query, 40),
         });
         continue;
       }
       clearEngineCooldown(engine.id);
       void recordEngineReachability(engine.id, "ok");
       log.info("search", "web_search 完成", {
-        query: clipLog(query, 40),
+        query: oneLine(query, 40),
         engine: engine.id,
         mode: "tab",
         count: filtered.length,
         ms: Date.now() - startedAt,
         results: filtered.slice(0, limit).map((r) => ({
-          t: clipLog(r.title, 80),
+          t: oneLine(r.title, 80),
           u: r.url,
-          s: clipLog(r.snippet, 120),
+          s: oneLine(r.snippet, 120),
         })),
       });
       return { query, engine: engine.id, results: filtered.slice(0, limit) };
     } catch (e) {
-      const msg = errorMessage(e);
+      const msg = errText(e);
       if (cancelSignal?.aborted) throw new Error("Search cancelled by the user");
       if (/timeout/i.test(msg)) {
         await coolDownEngine(engine.id, "unreachable");
@@ -383,15 +385,4 @@ function passesDomainFilter(
     return false;
   }
   return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
-}
-
-/** 日志预览字段截断(标题/摘要/query 用),压平空白。query 在日志里只留
- *  前 40 字符:完整原文已在工具结果与轨迹卡里,导出诊断日志时不必带走长 query */
-function clipLog(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
-}
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
 }

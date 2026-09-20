@@ -34,6 +34,7 @@ import {
   allowlistDomainOf,
 } from "../web/outboundGuard";
 import { deriveFetchAllowlist } from "../web/fetchAllowlist";
+import { errText } from "../../shared/errors";
 import {
   defaultThinkingEffort,
   loadCatalog,
@@ -386,7 +387,7 @@ export async function runAgentLoop(
         // 摘要失败退回溢出裁剪;用户取消则继续上抛(外层静默退出)
         if (signal?.aborted) throw err;
         log.warn("agent", "上下文压缩失败,回退溢出裁剪", {
-          error: err instanceof Error ? err.message : String(err),
+          error: errText(err),
         });
       }
     }
@@ -460,7 +461,7 @@ export async function runAgentLoop(
         );
       } catch (err) {
         log.warn("agent", "save error row failed", {
-          error: err instanceof Error ? err.message : String(err),
+          error: errText(err),
         });
       }
     };
@@ -548,7 +549,7 @@ export async function runAgentLoop(
           throw err;
         log.warn("agent", "请求超出上下文窗口,紧急压缩后重试", {
           turn: turnNo,
-          error: err instanceof Error ? err.message : String(err),
+          error: errText(err),
         });
         try {
           // 压缩输入去掉 system(下标整体 −1),产出的 uptoSeq 也是 −1 系,
@@ -565,7 +566,7 @@ export async function runAgentLoop(
           };
         } catch (cErr) {
           log.warn("agent", "紧急压缩失败,放弃重试", {
-            error: cErr instanceof Error ? cErr.message : String(cErr),
+            error: errText(cErr),
           });
           throw err; // 原始撞窗错误更有诊断价值
         }
@@ -662,7 +663,7 @@ export async function runAgentLoop(
       ) {
         void markReasoningObserved(cur.id, config.model).catch((e) =>
           log.warn("agent", "推理标记回写失败", {
-            err: e instanceof Error ? e.message : String(e),
+            err: errText(e),
           }),
         );
       }
@@ -731,7 +732,7 @@ export async function runAgentLoop(
                   });
                   throw err;
                 }
-                const errMsg = err instanceof Error ? err.message : String(err);
+                const errMsg = errText(err);
                 log.error("tool", `${tc.name} 失败`, {
                   ms: Date.now() - startedAt,
                   args: redactToolArgsForLog(tc.name, tc.args),
@@ -842,7 +843,7 @@ export async function runAgentLoop(
           });
         } catch (err) {
           log.warn("agent", "save ctx baseline failed", {
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
         }
       }
@@ -865,7 +866,7 @@ export async function runAgentLoop(
       });
       return;
     }
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errText(err);
     log.error("agent", message, {
       sessionId: payload.sessionId,
       turn: turnNo,
@@ -1026,10 +1027,7 @@ function trimHistoryForWindow(
   const { contextTokens, maxTokens } = opts;
   if (!contextTokens || history.length === 0) return history;
   // 预留输出上限 + 20% 余量;下限 1/4 窗口,防 contextTokens 配小后把历史裁到只剩一轮
-  const limit = Math.max(
-    contextTokens - (maxTokens ?? 4096) - Math.floor(contextTokens * 0.2),
-    Math.floor(contextTokens / 4),
-  );
+  const limit = usableTokens(contextTokens, maxTokens);
   const sum = (from: number) => opts.currentEstimate + estimateRange(history, from);
   if (sum(0) <= limit) return history;
   // 每轮起始 = 真实 user 消息的下标(截图等系统注记是上一轮的附件延续,

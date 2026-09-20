@@ -21,6 +21,8 @@ import type { Tool } from "../tools/tools";
 import type { McpConfig, McpServerEntry } from "../../shared/mcp";
 import { MCP_TOOL_PREFIX, mcpWireName, sanitizeWirePart } from "../../shared/mcp";
 import { createLogger } from "../../shared/logger";
+import { errText } from "../../shared/errors";
+import { hostOf } from "../../shared/url";
 import { getToolExecutionContext } from "../tools/toolContext";
 import { McpClient, encodeHeaderValue } from "./mcpClient";
 
@@ -176,14 +178,6 @@ async function refreshServer(server: McpServerEntry): Promise<CacheEntry> {
     names: entry.tools.map((t) => t.name),
   });
   return entry;
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
-  }
 }
 
 /** 服务器没命名时的 key 兜底:主机名(端口号保留,防同主机不同端口互撞) */
@@ -385,7 +379,7 @@ export async function testServer(
     const entry = await refreshServer(server);
     return { ok: true, toolCount: entry.tools.length, era: entry.client.eraLabel };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errText(err) };
   }
 }
 

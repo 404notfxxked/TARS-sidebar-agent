@@ -8,6 +8,8 @@
 //   枚举所有 log:* key 按时间合并。扩展沙箱无法直接写文件系统,
 //   「下载后放进仓库」这步手动拷贝是设计内的一次点击成本
 
+import { errText } from "./errors";
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogCtx = "bg" | "panel" | "off" | "cs";
 
@@ -103,7 +105,7 @@ export function installGlobalErrorHook(log: Logger): void {
     const r = ev.reason;
     log.error(
       "crash",
-      `未处理的 rejection:${r instanceof Error ? r.message : String(r)}`,
+      `未处理的 rejection:${errText(r)}`,
       { stack: r instanceof Error ? r.stack : undefined },
     );
   });

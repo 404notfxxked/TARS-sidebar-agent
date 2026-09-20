@@ -13,6 +13,8 @@ import { abortWithTimeout, getToolExecutionContext } from "../tools/toolContext"
 import { createLogger } from "../../shared/logger";
 import { normalizeSearch } from "../../shared/configStore";
 import type { SearchProviderId } from "../../shared/configStore";
+import { errText } from "../../shared/errors";
+import { oneLine } from "../../shared/text";
 import { runTabSearch } from "./tabSearch";
 
 const log = createLogger({ ctx: "bg" });
@@ -243,7 +245,7 @@ function classifyFailure(
   cancelled: boolean,
 ): "cancelled" | "timeout" | "blocked" | "error" {
   if (cancelled) return "cancelled";
-  const msg = e instanceof Error ? e.message : String(e);
+  const msg = errText(e);
   if (/timeout/i.test(msg)) return "timeout";
   if (/HTTP (403|429)/.test(msg)) return "blocked";
   return "error";
@@ -373,7 +375,7 @@ async function runApiSearch(
     ) {
       // 域名过滤把结果全滤掉了:重试大概率也一样,直接说明
       log.info("search", "结果全被域名过滤排除", {
-        query: clipLog(query, 40),
+        query: oneLine(query, 40),
         provider: mode.provider,
         allowed,
         blocked,
@@ -389,7 +391,7 @@ async function runApiSearch(
     const finalResults = filtered.slice(0, limit);
     // 搜索质量复盘档案:一次搜索的完整链路(词/过滤参数/服务/结果预览)一条记全
     log.info("search", "web_search 完成", {
-      query: clipLog(query, 40),
+      query: oneLine(query, 40),
       ...(market ? { market } : {}),
       ...(recency ? { recency } : {}),
       ...(allowed.length ? { allowed } : {}),
@@ -399,14 +401,14 @@ async function runApiSearch(
       count: finalResults.length,
       ms: Date.now() - startedAt,
       results: finalResults.map((r) => ({
-        t: clipLog(r.title, 80),
+        t: oneLine(r.title, 80),
         u: r.url,
-        s: clipLog(r.snippet, 120),
+        s: oneLine(r.snippet, 120),
       })),
     });
     if (finalResults.length === 0) {
       log.info("search", "搜索无结果", {
-        query: clipLog(query, 40),
+        query: oneLine(query, 40),
         ...(market ? { market } : {}),
         engine: mode.provider,
         ms: Date.now() - startedAt,
@@ -430,7 +432,7 @@ async function runApiSearch(
         kind === "timeout" ? "unreachable" : "blocked",
       );
     }
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errText(e);
     log.warn("search", "搜索服务失败", { provider: mode.provider, error: msg });
     throw new Error(`搜索服务(${mode.provider})请求失败:${msg}`);
   }
@@ -524,11 +526,4 @@ function passesDomainFilter(
     return false;
   }
   return !blocked.some((d) => hostname === d || hostname.endsWith(`.${d}`));
-}
-
-/** 日志预览字段截断(标题/摘要/query 用),压平空白。query 在日志里只留
- *  前 40 字符:完整原文已在工具结果与轨迹卡里,导出诊断日志时不必带走长 query */
-function clipLog(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }

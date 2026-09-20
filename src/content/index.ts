@@ -60,6 +60,8 @@ if (!WIN.__tarsContentReady) {
         sendResponse(response);
       })
       .catch((err: unknown) => {
+        // 不用 shared/errors 的 errText:content 入口不可有运行时 shared 依赖
+        // (Rollup 会拆共享 chunk → content.js 顶层 import → 经典脚本 SyntaxError,见文件头注)
         const error = err instanceof Error ? err.message : String(err);
         log.error("tool", `${name} 失败`, {
           ms: Date.now() - startedAt,

@@ -5,6 +5,7 @@
 // 解析」分工一致;这里只做纯 DOM/文本运算,不做网络。
 
 import { buildVirtualDoc, runPageRead, type VirtualDoc } from "./pipeline";
+import { lruEvict } from "./lru";
 import { createLogger } from "../shared/logger";
 
 const log = createLogger({ ctx: "off" });
@@ -13,21 +14,6 @@ const log = createLogger({ ctx: "off" });
 const FETCH_CACHE_MAX = 6;
 
 const cache = new Map<string, { doc: VirtualDoc; at: number }>();
-
-function lruEvict(): void {
-  while (cache.size > FETCH_CACHE_MAX) {
-    let oldestUrl = "";
-    let oldestAt = Infinity;
-    for (const [url, entry] of cache) {
-      if (entry.at < oldestAt) {
-        oldestAt = entry.at;
-        oldestUrl = url;
-      }
-    }
-    if (!oldestUrl) break;
-    cache.delete(oldestUrl);
-  }
-}
 
 /** offscreen → SW 的稳定协议前缀:缓存里没有这个 URL(SW 据此走抓取路径) */
 const NOT_CACHED_PREFIX = "NOT_CACHED:";
@@ -50,7 +36,7 @@ export function fetchBuild(args: { url: string; html: string; base: string }): v
   );
   const doc = buildVirtualDoc({ html: args.html, baseURI: args.base, url: args.base, title });
   cache.set(args.url, { doc, at: Date.now() });
-  lruEvict();
+  lruEvict(cache, FETCH_CACHE_MAX, (e) => e.at);
   log.info("fetch", "网页已解析入库", {
     ms: Date.now() - startedAt,
     htmlBytes: args.html.length,

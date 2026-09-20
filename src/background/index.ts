@@ -6,6 +6,7 @@
 
 import { MSG, PORT_NAME, type SideToBg, type UserMessagePayload } from "../shared/messages";
 import { bytesToBase64 } from "../shared/imageCodec";
+import { errText } from "../shared/errors";
 import {
   LOG_HELLO,
   LOG_HELLO_ACK,
@@ -178,7 +179,7 @@ async function maybeNotifyRunEnd(opts: {
     });
   } catch (err) {
     log.warn("notify", "run-end notification failed", {
-      error: err instanceof Error ? err.message : String(err),
+      error: errText(err),
     });
   }
 }
@@ -318,7 +319,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           } catch (err) {
             log.warn("agent", "regenerate prepare failed", {
               sessionId: msg.sessionId,
-              error: err instanceof Error ? err.message : String(err),
+              error: errText(err),
             });
           }
           if (!prep) {
@@ -473,12 +474,12 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
         } catch (err) {
           log.warn("skills", "技能导入失败", {
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
           port.postMessage({
             type: MSG.SKILLS,
             skills: await skillInfos(),
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
         }
         break;
@@ -503,12 +504,12 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           port.postMessage({ type: MSG.SKILLS, skills: await skillInfos() });
         } catch (err) {
           log.warn("skills", "技能更新失败", {
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
           port.postMessage({
             type: MSG.SKILLS,
             skills: await skillInfos(),
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
         }
         break;
@@ -521,7 +522,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           port.postMessage({
             type: MSG.SKILLS,
             skills: await skillInfos(),
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
         }
         break;
@@ -539,7 +540,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           port.postMessage({
             type: MSG.MCP_TEST_RESULT,
             ok: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
         }
         break;
@@ -551,7 +552,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
           port.postMessage({
             type: MSG.MCP_TOOLS_RESULT,
             tools: [],
-            error: err instanceof Error ? err.message : String(err),
+            error: errText(err),
           });
         }
         break;

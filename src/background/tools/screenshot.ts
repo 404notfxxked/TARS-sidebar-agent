@@ -19,6 +19,7 @@ import {
   pageAccessHint,
 } from "../../shared/hostAccess";
 import { createLogger } from "../../shared/logger";
+import { errText } from "../../shared/errors";
 import type { ToolScreenshot } from "../../shared/toolTypes";
 import {
   getToolExecutionContext,
@@ -126,7 +127,7 @@ export async function runPageScreenshot(
     await callContentTool(tabId, "screenshot_cleanup").catch((e) => {
       log.warn("screenshot", "摘标记失败(标记框可能残留在页面)", {
         tabId,
-        err: e instanceof Error ? e.message : String(e),
+        err: errText(e),
       });
     });
     // 活动 tab 配平恢复:尽力而为(原 tab 可能已被用户关掉),失败不吞掉主流程错误
@@ -166,7 +167,7 @@ async function captureAndEncode(windowId: number): Promise<{
       quality: 85,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errText(err);
     // Chrome 限每秒 2 次 captureVisibleTab(MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND):
     // 「截图 → 滚动 → 再截」的视觉循环一秒内就能撞上,退避一秒重试一次
     if (/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/i.test(msg)) {
@@ -177,7 +178,7 @@ async function captureAndEncode(windowId: number): Promise<{
           quality: 85,
         });
       } catch (retryErr) {
-        throw new Error(`page_screenshot: 截图失败(${retryErr instanceof Error ? retryErr.message : String(retryErr)})`);
+        throw new Error(`page_screenshot: 截图失败(${errText(retryErr)})`);
       }
     } else {
       throw new Error(

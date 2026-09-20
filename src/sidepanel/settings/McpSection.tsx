@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
+import { errText } from "../../shared/errors";
 import type { McpConfig, McpServerEntry } from "../../shared/mcp";
 import { estimateTokens } from "../../shared/memory";
 import type { McpToolInfo } from "../../shared/messages";
@@ -209,7 +210,7 @@ function McpServerCard({
       .catch((e) => {
         if (alive) {
           setTools(null);
-          setToolsError(e instanceof Error ? e.message : String(e));
+          setToolsError(errText(e));
           setToolsLoading(false);
         }
       });
@@ -232,7 +233,7 @@ function McpServerCard({
     const r = await mcpTest(entry).catch(
       (e): { ok: boolean; toolCount?: number; era?: string; error?: string } => ({
         ok: false,
-        error: e instanceof Error ? e.message : String(e),
+        error: errText(e),
       }),
     );
     setTestState("done");

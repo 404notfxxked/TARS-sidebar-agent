@@ -104,6 +104,7 @@ try {
     );
   });
   window.addEventListener("unhandledrejection", (ev) => {
+    // 就地取 message:content 入口不可引 shared(会拆共享 chunk,见 content/index.ts 头注)
     const r = (ev as PromiseRejectionEvent).reason;
     emit(
       "error",

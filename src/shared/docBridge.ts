@@ -12,6 +12,8 @@
 //   已知残缝:bfcache 前进后退与同 url 动态更新不触发任何事件,
 //   靠工具层的 refresh=true 由模型显式重建(代码注释与提示词均已声明)
 
+import { isNoReceiverError } from "./chromeErrors";
+import { errText } from "./errors";
 import { callContentTool } from "./contentTools";
 
 const OFFSCREEN_URL = "offscreen.html";
@@ -38,7 +40,7 @@ export async function ensureOffscreenDocument(): Promise<void> {
     .then(() => undefined)
     .catch((e: unknown) => {
       // "Only a single offscreen document..." = 并发竞态下对方先建好了,无害
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = errText(e);
       if (!msg.includes("single offscreen")) throw e;
     });
   try {
@@ -49,10 +51,6 @@ export async function ensureOffscreenDocument(): Promise<void> {
 }
 
 let callCounter = 0;
-
-function isNoReceiverError(e: unknown): boolean {
-  return e instanceof Error && e.message.includes("Receiving end does not exist");
-}
 
 /**
  * 向 offscreen 发一条请求消息并等待同 id 的配对响应(统一超时/错误语义)。
@@ -146,7 +144,7 @@ function wireDocumentLifecycleListeners(): void {
         sendResponse({
           type: "CAPTURE_DOC_RESPONSE",
           ok: false,
-          error: e instanceof Error ? e.message : String(e),
+          error: errText(e),
         }),
       );
     return true; // 异步响应

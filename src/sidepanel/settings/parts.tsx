@@ -4,6 +4,9 @@
 import { useState, type ReactNode } from "react";
 import { useT } from "../ui/hooks";
 
+// hostOf 迁至 shared/url(三处重复实现收口);重导出保住设置分节们的现有 import
+export { hostOf } from "../../shared/url";
+
 /** 分节:眉题 + 白卡。卡内子块节奏由 .settings-card > * + * 的 margin 管
  *  (勿给子块另垫上下 padding)。首个分节 mt-3,其余 mt-5
  *  (分节之间多给一档呼吸,眉题才压得住卡) */
@@ -163,12 +166,3 @@ export function HintMore({ detail }: { detail: string }) {
     </div>
   );
 }
-
-/** baseUrl → 主机名(供应商/服务器未命名时的展示兜底) */
-export const hostOf = (url: string): string => {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return "";
-  }
-};

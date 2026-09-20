@@ -3,6 +3,7 @@
 // 与 chatCompletions.ts 的结构对称:同样只发 stream:true,流中无重试(硬规则 9)
 
 import { apiFetch } from "./client";
+import { safeParse } from "./json";
 import { readSSE } from "./sse";
 import { bytesToBase64 } from "../../shared/imageCodec";
 import { createLogger } from "../../shared/logger";
@@ -728,12 +729,4 @@ function assistantEchoShape(msgs: InternalMsg[], policy: ReplayPolicy): string {
     if (shape.length) parts.push(shape.join("|"));
   }
   return parts.join(" ; ");
-}
-
-function safeParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return {};
-  }
 }

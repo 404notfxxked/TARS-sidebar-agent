@@ -2,6 +2,7 @@
 // background（agent loop 用）和 side panel（UI 直接调用）都通过这里
 
 import { createLogger } from "./logger";
+import { isNoReceiverError } from "./chromeErrors";
 import {
   grantableOriginOf,
   hasOriginAccess,
@@ -136,13 +137,6 @@ function humanizeTabError(tabId: number, raw: string): string {
     return `目标 tab(${tabId})不存在或已关闭,<context> 清单可能已过期;用 get_tabs 获取最新清单重新选择`;
   }
   return raw;
-}
-
-/** "Receiving end does not exist" = 目标 tab 没有 content script 接收者(旧 tab / 特殊页),值得注入兜底 */
-function isNoReceiverError(err: unknown): boolean {
-  return (
-    err instanceof Error && err.message.includes("Receiving end does not exist")
-  );
 }
 
 /**

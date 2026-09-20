@@ -4,6 +4,7 @@
 // 类型用本地 SSEChunk / ToolSchema 即可,暂不引入第三方类型包(@open-schemas/types)
 
 import { apiFetch } from "./client";
+import { safeParse } from "./json";
 import { readSSE } from "./sse";
 import { bytesToBase64 } from "../../shared/imageCodec";
 import type {
@@ -278,12 +279,4 @@ function toWireTool(tool: ToolSchema) {
       parameters: tool.parameters,
     },
   };
-}
-
-function safeParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return {};
-  }
 }

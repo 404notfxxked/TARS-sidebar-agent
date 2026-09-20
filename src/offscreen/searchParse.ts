@@ -6,6 +6,8 @@
 // 不能依赖 a.href 自动解析。百度的 /link?url= 是加密跳转,无法本地还原,
 // 保留包装 URL(SW fetch 读取时会跟随重定向到真实 URL)。
 
+import { oneLine } from "../shared/text";
+
 export interface ParsedSearchResult {
   title: string;
   url: string;
@@ -172,16 +174,10 @@ function unwrapDdgRedirect(url: string): string {
 
 function clean(r: ParsedSearchResult): ParsedSearchResult {
   return {
-    title: clip(r.title, TITLE_MAX_CHARS),
+    title: oneLine(r.title, TITLE_MAX_CHARS),
     url: r.url,
-    snippet: clip(r.snippet, SNIPPET_MAX_CHARS),
+    snippet: oneLine(r.snippet, SNIPPET_MAX_CHARS),
   };
-}
-
-/** 压平空白并截断;截断在词边界不苛求,补省略号表示不完整 */
-function clip(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
 function textOf(el: Element | null): string {
