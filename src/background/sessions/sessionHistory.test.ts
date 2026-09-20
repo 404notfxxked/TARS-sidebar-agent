@@ -95,9 +95,11 @@ describe("失败轮错误行(回放语义)", () => {
     expect(records[1].content).toContain("401");
 
     // prompt 转写不含错误行;全量读取仍在
-    const transcript = await loadTranscript("s4");
+    const { prompt: transcript, rows } = await loadTranscript("s4");
     expect(transcript).toHaveLength(1);
     expect(transcript[0].role).toBe("user");
+    // rows 是库行数(seq 锚点):错误行被滤掉但照样占着它的 seq
+    expect(rows).toBe(2);
   });
 
   it("重新生成截掉错误行:还原真实提问", async () => {
@@ -151,7 +153,7 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
     const records = toChatRecords(await loadHistory("s9"));
     expect(records[1].processItems).toEqual([{ kind: "reasoning", text: "思考" }]);
     // prompt 转写:最终回答行剥离,自然也不回灌
-    const transcript = await loadTranscript("s9");
+    const { prompt: transcript } = await loadTranscript("s9");
     expect(
       transcript.some((m) => m.role === "assistant" && m.reasoning_content),
     ).toBe(false);
@@ -174,7 +176,7 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
       0,
       0,
     );
-    const transcript = await loadTranscript("s8");
+    const { prompt: transcript } = await loadTranscript("s8");
     // 错误行滤除;工具行带 toolCalls/model 且 reasoning_content 原样保留
     expect(transcript).toHaveLength(2);
     const toolRow = transcript[1] as Extract<InternalMsg, { role: "assistant" }>;
@@ -211,7 +213,7 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
       { kind: "reasoning", text: "最终思考" },
     ]);
     // prompt 转写:工具行保留思考(跨 run 回传),回答行剥离
-    const transcript = await loadTranscript("s10");
+    const { prompt: transcript } = await loadTranscript("s10");
     const aRows = transcript.filter(
       (m): m is Extract<InternalMsg, { role: "assistant" }> => m.role === "assistant",
     );
@@ -419,6 +421,37 @@ describe("listSessions(列表条数口径)", () => {
     // 结果已回填:下次开列表命中缓存,不再逐会话读消息行
     expect((await getSession("s9"))?.visibleCount).toBe(2);
   });
+
+  it("覆写路径(baseSeq 落在库区间内):条数按库重算,不因增量口径永久偏高", async () => {
+    await saveHistory(
+      "s11",
+      [
+        { role: "user", content: "<user-request>\n第一问\n</user-request>" },
+        { role: "assistant", content: "第一答" },
+      ],
+      0,
+      0,
+    );
+    expect((await listSessions()).find((x) => x.id === "s11")?.msgCount).toBe(2);
+
+    // 模拟锚点回退:库里已有 2 行(msgCount=2)却从 seq 1 起写 ——
+    // 覆写 seq1,新增 seq2。增量口径会算成 2+2=4,真实只有 3 条可见气泡
+    await saveHistory(
+      "s11",
+      [
+        { role: "user", content: "<user-request>\n第一问\n</user-request>" },
+        { role: "user", content: "<user-request>\n第二问\n</user-request>" },
+        { role: "assistant", content: "第二答" },
+      ],
+      1,
+      1,
+    );
+
+    const rows = await loadMessageRows("s11");
+    expect(rows.map((r) => r.seq)).toEqual([0, 1, 2]);
+    expect((await getSession("s11"))?.visibleCount).toBe(3);
+    expect((await listSessions()).find((x) => x.id === "s11")?.msgCount).toBe(3);
+  });
 });
 
 describe("损坏行保序(数组下标 = seq 的地基)", () => {
@@ -440,7 +473,9 @@ describe("损坏行保序(数组下标 = seq 的地基)", () => {
     expect(rows).toHaveLength(3); // 占位保序,不跳位
     expect((rows[2] as { error?: true }).error).toBe(true);
     // prompt 转写滤除占位行(错误文本不回灌),回放投影保留错误语义
-    expect(await loadTranscript("s8")).toHaveLength(2);
+    expect((await loadTranscript("s8")).prompt).toHaveLength(2);
+    // 占位行同样占 seq:行数口径必须按库算,否则追加写会从错的 seq 起
+    expect((await loadTranscript("s8")).rows).toBe(3);
     expect(
       toChatRecords(rows).some((r) => r.role === "assistant" && r.error === true),
     ).toBe(true);

@@ -268,6 +268,40 @@ try {
       "过程卡下方回答气泡照常",
     );
   }
+
+  // ---- F. 失败轮落盘行不被覆写(seq 锚点必须取库行数) ----
+  // 失败轮会追加一条 error 行;下一轮同会话的追加若拿「发给模型的历史长度」
+  // 当 seq 锚点(错误行被滤掉,长度偏小),就会从更低的 seq 起写,把 error 行
+  // 覆写掉,并让 visibleCount 永久偏高(2026-09 审计)
+  console.log("\n── F. 失败后同会话追问:失败行不被覆写 ──");
+  {
+    const sid = "s-llm-same-session";
+    llm.mode = "401";
+    await runAskViaPort(sidepanel, sid, "先失败一次");
+    llm.mode = "length"; // 走兜底分支:一条正常收束的截断回答(无工具、无确认门)
+    await runAskViaPort(sidepanel, sid, "同会话再问一次");
+
+    const rows = (await idbGetAll(sidepanel, "messages"))
+      .filter((r) => r.sessionId === sid)
+      .sort((a, b) => a.seq - b.seq);
+    check(
+      rows.length === 4 && rows.map((r) => r.seq).join(",") === "0,1,2,3",
+      "四行齐在且 seq 连续(问/错误行/问/答)",
+      JSON.stringify(rows.map((r) => [r.seq, r.msg?.role, !!r.msg?.error])),
+    );
+    check(
+      !!rows[1]?.msg?.error,
+      "失败轮 error 行未被下一次追问覆写",
+      JSON.stringify(rows[1]?.msg)?.slice(0, 100),
+    );
+    const sess = (await idbGetAll(sidepanel, "sessions")).find((r) => r.id === sid);
+    check(sess?.msgCount === 4, "msgCount = 库真实行数", `msgCount=${sess?.msgCount}`);
+    check(
+      sess?.visibleCount === 4,
+      "visibleCount 与可见气泡一致(问+错误气泡+问+答,无漂移)",
+      `visibleCount=${sess?.visibleCount}`,
+    );
+  }
 } catch (err) {
   check(false, "套件执行异常", err.stack ?? String(err));
 } finally {

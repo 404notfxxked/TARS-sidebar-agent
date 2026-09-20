@@ -65,24 +65,35 @@ export async function loadHistory(sessionId: string): Promise<InternalMsg[]> {
  *    wire(openai.ts toWireMessages)本就带此字段,跨 run 与 run 内口径
  *    一致;严格网关若拒收未知字段,run 内第二轮同样会炸,非跨 run 新增
  *    风险(审计 2026-09-18 C 的冲突由此收口)。
- *  回放投影(toChatRecords)包含错误行,两层口径不同是有意设计 */
-export async function loadTranscript(sessionId: string): Promise<InternalMsg[]> {
+ *  回放投影(toChatRecords)包含错误行,两层口径不同是有意设计。
+ *
+ *  返回两个口径(同一次读取给全,调用方两者都要):
+ *  - prompt = 上面这套收窄后的历史(发给模型);
+ *  - rows = 库里的真实消息行数 —— **追加写盘的 seq 锚点必须用它**。被滤掉的
+ *    行同样占着 seq,拿 prompt 长度当锚点会让新一轮从更低的 seq 起写,把
+ *    它们覆写掉(2026-09 审计实测:失败轮同会话追问把 error 行写没了) */
+export async function loadTranscript(
+  sessionId: string,
+): Promise<{ prompt: InternalMsg[]; rows: number }> {
   const msgs = await loadHistory(sessionId);
-  return msgs
-    .filter((m) => !(m.role === "assistant" && m.error))
-    .map((m) => {
-      if (m.role !== "assistant") return m;
-      // 带 toolCalls 的行原样回传(含 reasoning_content);最终回答行重建对象
-      // 以彻底去掉 reasoning_content 键(undefined 值可能被存储层保留)
-      if (m.toolCalls?.length) return m;
-      if (m.reasoning_content === undefined) return m;
-      return {
-        role: "assistant",
-        content: m.content,
-        ...(m.model ? { model: m.model } : {}),
-        ...(m.error ? { error: m.error } : {}),
-      };
-    });
+  return {
+    rows: msgs.length,
+    prompt: msgs
+      .filter((m) => !(m.role === "assistant" && m.error))
+      .map((m) => {
+        if (m.role !== "assistant") return m;
+        // 带 toolCalls 的行原样回传(含 reasoning_content);最终回答行重建对象
+        // 以彻底去掉 reasoning_content 键(undefined 值可能被存储层保留)
+        if (m.toolCalls?.length) return m;
+        if (m.reasoning_content === undefined) return m;
+        return {
+          role: "assistant",
+          content: m.content,
+          ...(m.model ? { model: m.model } : {}),
+          ...(m.error ? { error: m.error } : {}),
+        };
+      }),
+  };
 }
 
 /** 追加保存:只落本轮新增的消息。
@@ -147,6 +158,24 @@ export async function saveHistory(
     ...(prev?.ctx ? { ctx: prev.ctx } : {}),
   };
   await db.appendMessages(sessionId, meta, fresh, baseSeq, imageRows);
+  // 覆写路径:baseSeq 落在库里已有区间内(seq 锚点回退/重跑)时,被覆写的行的
+  // 可见性没从基线里扣掉,上面的增量口径不再成立 —— 缓存会永久偏高。回落按库
+  // 重算覆盖。重算失败不打断保存(偏高是小偏差,下次覆写再纠)
+  if (prev && baseSeq < prev.msgCount) {
+    log.warn("agent", "history append overwrote existing rows", {
+      sessionId,
+      baseSeq,
+      prevRows: prev.msgCount,
+    });
+    try {
+      await db.patchVisibleCount(
+        sessionId,
+        countVisibleRows(await db.loadMessageRows(sessionId)),
+      );
+    } catch {
+      /* 重算失败:保留旧缓存 */
+    }
+  }
   // 顺带做一次保留期清理(内部自捕获,失败不影响本次保存)
   void pruneExpiredSessions();
 }
@@ -205,7 +234,7 @@ export async function listSessions(): Promise<SessionMeta[]> {
     if (msgCount === undefined) {
       msgCount = await displayRowCount(row.id);
       // 回填缓存(旧版本行的一次性迁移),失败不影响列表:下次开列表再扫
-      await db.patchVisibleCount(row.id, msgCount).catch(() => {});
+      await db.patchVisibleCount(row.id, msgCount, true).catch(() => {});
     }
     out.push({
       id: row.id,
@@ -234,14 +263,18 @@ function isVisibleBubbleMsg(m: InternalMsg): boolean {
  *  只作 visibleCount 缓存缺省时的回落扫描(旧版本会话行) */
 async function displayRowCount(sessionId: string): Promise<number> {
   try {
-    const rows = await db.loadMessageRows(sessionId);
-    return rows.filter((r) => {
-      const m = r.msg as InternalMsg;
-      return !!m && typeof m === "object" && isVisibleBubbleMsg(m);
-    }).length;
+    return countVisibleRows(await db.loadMessageRows(sessionId));
   } catch {
     return 0;
   }
+}
+
+/** 消息行 → 可见气泡数(纯统计,读取失败的语义留给调用方) */
+function countVisibleRows(rows: db.MessageRow[]): number {
+  return rows.filter((r) => {
+    const m = r.msg as InternalMsg;
+    return !!m && typeof m === "object" && isVisibleBubbleMsg(m);
+  }).length;
 }
 
 export function deleteSession(sessionId: string): Promise<void> {

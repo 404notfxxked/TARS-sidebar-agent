@@ -280,18 +280,22 @@ export async function runAgentLoop(
       mcpTools: mcpSchemas.length,
     });
 
-    // prompt 组装走 loadTranscript:失败轮错误行只供回放,不回灌模型
-    const history = await loadTranscript(payload.sessionId ?? "");
+    // prompt 组装走 loadTranscript:失败轮错误行只供回放,不回灌模型。
+    // rows 是库里的真实行数,做落盘 seq 锚点 —— 被滤掉的行(错误行、损坏
+    // 占位行)同样占着 seq,锚点若取 prompt 长度会从更低的 seq 起写,把
+    // 它们覆写掉(2026-09 审计:失败轮同会话追问把 error 行写没了)
+    const { prompt: history, rows: persistedSeqs } = await loadTranscript(
+      payload.sessionId ?? "",
+    );
     // 会话来源域白名单:web_fetch 的确认门判定用(用户消息 URL / 搜索结果 /
     // 已成功抓取的域直抓,其余确认)。从落盘全量历史推导,SW 被杀不丢;
     // 本轮用户原文显式传入(此刻尚未落盘),本轮内批准的新域在确认门处
     // 追加进集合,同 run 后续抓取不再重复问
     const fetchAllowlist = deriveFetchAllowlist(history, payload.text ?? "");
-    // 追加写的两个锚点:persistedSeqs = 库里已有条数(新消息起始 seq);
+    // 追加写的两个锚点:persistedSeqs = 库里已有条数(新消息起始 seq,上面已取);
     // persistedInCtx = 本轮 prompt 里携带的旧内容条数(新消息在领域数组里的
     // 起始下标)。溢出裁剪与压缩摘要都会让 prompt 前缀变短,使两者错开 ——
     // 裁剪、摘要都只影响本轮 prompt,不写回库里,落盘保持全量历史
-    const persistedSeqs = history.length;
     // 随消息附带的图片:分配 id 后挂到本轮 user 消息上(字节只存内存,
     // 落盘时进 images store;历史里的旧图发送前按需水合)
     const runImages: MessageImage[] = (payload.images ?? []).map((im) => ({

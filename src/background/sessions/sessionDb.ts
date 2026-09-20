@@ -216,19 +216,21 @@ export async function saveSessionInfo(
   await settled(tx);
 }
 
-/** 读侧回填可见条数缓存:只在会话行尚无该字段(旧版本行)时写入,已有值一律
- *  不碰 —— 读侧算出的基线可能比并发 saveHistory 刚写的旧。读与写同在一个
- *  事务内(条件写),与保存侧的增量不会互相覆盖 */
+/** 写回可见条数缓存。fillOnly = 只在会话行尚无该字段时写(读侧回落的旧版本
+ *  行迁移,不碰并发保存刚写的值);缺省整值覆盖(覆写路径的回落重算)。
+ *  读与写同在一个事务内(条件写),与保存侧的增量不会互相覆盖 */
 export async function patchVisibleCount(
   sessionId: string,
   visibleCount: number,
+  fillOnly = false,
 ): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(SESSIONS, "readwrite");
   const store = tx.objectStore(SESSIONS);
   const prev = await p<SessionRow | undefined>(store.get(sessionId));
   if (!prev) return;
-  if (prev.visibleCount === undefined) store.put({ ...prev, visibleCount });
+  if (fillOnly && prev.visibleCount !== undefined) return;
+  store.put({ ...prev, visibleCount });
   await settled(tx);
 }
 
