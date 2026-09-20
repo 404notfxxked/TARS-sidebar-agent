@@ -29,6 +29,8 @@ import {
   MAX_ATTACHMENTS,
   cacheImgUrl,
   compressImage,
+  ownsImgUrl,
+  releaseAllImgUrls,
   type PendingImage,
 } from "./images";
 import { ReplayProcessCard, RunZone } from "./trace";
@@ -99,12 +101,14 @@ export default function ChatView({
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // 切会话时清空输入草稿与待发附件:为 A 会话贴的图不该在 B 会话里发出
-  // (预览 objectURL 一并回收);「新对话」按钮的清空在调用点自理。
+  // (预览 objectURL 一并回收);上一屏气泡的图片 URL 也在此时回收(新会话
+  // 的图缺缓存会重新走 GET_IMAGE)。「新对话」按钮的清空在调用点自理。
   // biome-ignore lint/correctness/useExhaustiveDependencies: 只随 resumeSessionId 触发,clearAttachments 读 ref + 稳定 setter,无过期闭包问题
   useEffect(() => {
     if (resumeSessionId !== null) {
       setInput("");
       clearAttachments();
+      releaseAllImgUrls();
     }
   }, [resumeSessionId]);
 
@@ -332,9 +336,15 @@ export default function ChatView({
     el.style.overflowY = el.scrollHeight > 116 ? "auto" : "hidden";
   }, [input, chatInputRef]);
 
-  /** 清空待发附件(切会话/新对话/发送后):预览 objectURL 一并回收 */
+  /** 清空待发附件(切会话/新对话/发送后):预览 objectURL 一并回收。
+   *  已交棒给气泡缓存的(发送出去的图)不在这里撤:气泡的 <img> 是重渲染时
+   *  才创建的,此刻撤销会让它加载失败(浏览器对「先撤销、后新建元素」必失败),
+   *  那批 URL 的生命周期随之归消息列表 —— 切会话/新对话时由 releaseAllImgUrls
+   *  统一回收 */
   const clearAttachments = () => {
-    for (const p of pendingImagesRef.current) URL.revokeObjectURL(p.url);
+    for (const p of pendingImagesRef.current) {
+      if (!ownsImgUrl(p.id)) URL.revokeObjectURL(p.url);
+    }
     commitPendingImages([]);
     setAttachHint("");
   };
@@ -479,6 +489,7 @@ export default function ChatView({
                   chat.resetConversation();
                   setInput("");
                   clearAttachments();
+                  releaseAllImgUrls();
                 }}
                 disabled={busy}
                 aria-label={t("chat.newChat")}

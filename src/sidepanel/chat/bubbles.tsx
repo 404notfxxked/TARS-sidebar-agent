@@ -236,6 +236,9 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
         src={url}
         alt={t("chat.imageAlt", { w: meta.w, h: meta.h })}
         className="max-h-48 rounded-md object-contain"
+        // URL 失效(已被回收/字节被清理)时退到失效占位:否则是破图 + 点开
+        // 死链(气泡缓存里的 blob URL 会随会话切换回收)
+        onError={() => setFailed(true)}
       />
     </a>
   );

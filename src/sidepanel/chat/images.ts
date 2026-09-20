@@ -100,6 +100,20 @@ export function peekImgUrl(id: string): string | null {
   return imgUrlCache.get(id) ?? null;
 }
 
+/** 缓存是否已持有该图片的本地 URL(= 该 URL 的生命周期已归消息列表,
+ *  待发清单不该再回收它。见 ChatView 的 clearAttachments) */
+export function ownsImgUrl(id: string): boolean {
+  return imgUrlCache.has(id);
+}
+
+/** 回收全部本地图片 URL(会话切换/新对话:这一屏气泡连同缓存一起让位)。
+ *  字节在库里,再渲染同 id 会重新走 GET_IMAGE 取,图不丢;不回收则会随
+ *  面板寿命一直累积 blob URL */
+export function releaseAllImgUrls(): void {
+  for (const url of imgUrlCache.values()) URL.revokeObjectURL(url);
+  imgUrlCache.clear();
+}
+
 export function requestImgUrl(id: string): Promise<string | null> {
   const cached = imgUrlCache.get(id);
   if (cached) return Promise.resolve(cached);

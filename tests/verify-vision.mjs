@@ -148,6 +148,25 @@ await ask(sidepanel, "这张图是什么");
     isParts && userMsg.content[0].type === "text" && userMsg.content[0].text.includes("这张图是什么"),
   );
   check("模型有回复", await sidepanel.getByText("收到").first().isVisible().catch(() => false));
+  // 本地回显气泡的图片必须真能解码:预览 objectURL 交棒给气泡缓存后,待发
+  // 清单的清理不能把它撤掉(先撤销、后新建 <img> 的加载必失败,2026-09 审计)
+  {
+    const bubble = sidepanel.locator('img[alt^="图片"]').first();
+    await bubble.waitFor({ timeout: 8000 }).catch(() => {});
+    let decoded = false;
+    for (let i = 0; i < 20 && !decoded; i++) {
+      decoded = await bubble
+        .evaluate((el) => (el instanceof HTMLImageElement ? el.naturalWidth > 0 : false))
+        .catch(() => false);
+      if (!decoded) await sleep(100);
+    }
+    const src = await bubble.getAttribute("src").catch(() => null);
+    check(
+      "发送后气泡图片立即解码(预览 URL 未被回收)",
+      decoded,
+      `src=${String(src).slice(0, 24)}`,
+    );
+  }
 }
 
 // ---- V3 持久化 ----
