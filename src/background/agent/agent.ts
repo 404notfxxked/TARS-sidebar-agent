@@ -264,7 +264,7 @@ export async function runAgentLoop(
         });
       }
     }
-    // 联网开关:开关打开即暴露 web_* 工具——auto 模式(免 Key 抓取兜底)无需配置;
+    // 联网开关:开关打开即暴露 web_* 工具——auto 模式(免 Key 标签页通道兜底)无需配置;
     // 选了服务商但没填 key 时视为 auto 兜底,不再隐藏工具
     const webEnabled = config.webSearch === true;
     // 长期记忆开关:开 = 注册 memory_* 工具 + 每轮注入 <user-memory>;关 = 彻底无痕

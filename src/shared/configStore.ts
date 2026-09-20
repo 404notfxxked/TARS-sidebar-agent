@@ -127,8 +127,10 @@ export interface AppConfig {
   accent: AccentPref;
   /** 面板 UI 语言:只影响面板渲染,SW/模型可见文案不随它变(始终英文) */
   locale: LocalePref;
-  /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关
-   *  (搜索已改为 BYOK 服务,开启还需配好 search.services[...].apiKey 才真正可用) */
+  /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关。
+   *  开启即用,无需任何配置——搜索默认走免 Key 的真实搜索引擎标签页通道
+   *  (webSearch.readSearchRoute 的 auto 兜底);配了 search.services[].apiKey
+   *  才改走该服务商的 API */
   webSearch: boolean;
   /** 实验开关(服务端搜索验证):对 kind = anthropic-messages 的供应商,
    *  请求注入 web_search server tool,联网搜索改由服务商在服务端执行并内联
@@ -147,7 +149,7 @@ export interface AppConfig {
   notifyDone: boolean;
   /** 空态每日一句:开 = 空态标题下展示 quote(来源悬停显形);缺省 = 开 */
   quote: boolean;
-  /** 搜索服务配置;开关开着但当前服务 apiKey 为空时 web_search 退回免 Key 抓取 */
+  /** 搜索服务配置;选了服务商但 apiKey 为空时 web_search 退回免 Key 标签页通道 */
   search: SearchConfig;
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
   historyRetention: number;
@@ -184,19 +186,9 @@ export interface SearchConfig {
   services: Record<SearchProviderId, SearchServiceEntry>;
 }
 
-/** 各选项展示名(设置页下拉用;文案在 i18n 字典,这里只定键序) */
-
-
 /** 上下文压缩触发档位:占可用窗口(contextTokens − maxTokens − 余量)的比例 */
 export type CompactLevel = "early" | "standard" | "late";
 export const COMPACT_LEVELS: CompactLevel[] = ["early", "standard", "late"];
-
-/** 各档位展示名(设置页 segmented 用),数值与 compaction.THRESHOLDS 对应 */
-export const COMPACT_LABELS: Record<CompactLevel, string> = {
-  early: "提前 60%",
-  standard: "标准 75%",
-  late: "用满 90%",
-};
 
 export async function loadConfig(): Promise<AppConfig> {
   const s = await chrome.storage.session.get("apiKey");

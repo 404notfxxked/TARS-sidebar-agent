@@ -13,7 +13,8 @@ import type { ChatProvider, InternalMsg } from "../provider";
 
 const log = createLogger({ ctx: "bg" });
 
-/** 各档位触发阈值:占可用窗口的比例(展示名见 configStore.COMPACT_LABELS) */
+/** 各档位触发阈值:占可用窗口的比例(展示名走 i18n 键 settings.compactEarly/
+ *  compactStandard/compactLate,别在源码里另建一份中文名) */
 export const THRESHOLDS: Record<CompactLevel, number> = {
   early: 0.6,
   standard: 0.75,
