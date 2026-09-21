@@ -1,10 +1,28 @@
 // 单测全局环境:内存版 chrome.storage 桩。
-// 被测模块大多不直接依赖 chrome,但两条路径会碰到:
+// 被测模块大多不直接依赖 chrome,但三条路径会碰到:
 //  - logger 在 emit 时写 chrome.storage.local(compaction 的 info 日志)
 //  - loadConfig 读 chrome.storage.session / local
+//  - SW 模块(tools.ts → docBridge)在模块求值期注册 chrome 事件监听
+//    (启动时序,有意为之)—— 测试文件的静态 import 早于 beforeEach,
+//    求值期桩垫在下方;import 链需要的 API 面以报错为准逐个补齐
 // 每个用例前换新实例,用例间互不污染。
 
 import { beforeEach } from "vitest";
+
+// 求值期最小桩:只接住「模块顶层 addListener」的注册动作,无行为;
+// 不含 storage —— 依赖 storage 的调用都发生在 beforeEach 之后
+(globalThis as Record<string, unknown>).chrome ??= {
+  runtime: {
+    lastError: null,
+    onMessage: { addListener: () => {} },
+    sendMessage: () => {},
+  },
+  tabs: {
+    onUpdated: { addListener: () => {} },
+    onRemoved: { addListener: () => {} },
+    onReplaced: { addListener: () => {} },
+  },
+};
 
 function makeStorageArea() {
   const data = new Map<string, unknown>();
@@ -42,7 +60,17 @@ function makeStorageArea() {
 beforeEach(() => {
   (globalThis as Record<string, unknown>).chrome = {
     storage: { local: makeStorageArea(), session: makeStorageArea() },
-    runtime: { lastError: null },
+    runtime: {
+      lastError: null,
+      // docBridge 的 capture_doc 中继 / tabs 生命周期监听(SW 启动时序)
+      onMessage: { addListener: () => {} },
+      sendMessage: () => {},
+    },
+    tabs: {
+      onUpdated: { addListener: () => {} },
+      onRemoved: { addListener: () => {} },
+      onReplaced: { addListener: () => {} },
+    },
     // hostAccess 的权限查询桩:默认视为已授权(生产 manifest 走
     // optional_host_permissions,contains 由运行时授予态决定;单测里
     // 需要验证「未授权」路径的用例自行覆写此桩)

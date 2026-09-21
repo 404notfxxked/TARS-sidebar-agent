@@ -22,6 +22,10 @@ import { getMcpTool } from "../mcp/mcpManager";
 export interface Tool<P = unknown, R = unknown> extends ToolSchema {
   /** 面板展示名;只在注册表条目上,不进 ToolSchema(那是给 LLM 的 wire 契约) */
   displayName?: string;
+  /** 声明该工具会改动页面或持久状态(写工具);读/观察工具不标。
+   *  只做注册表侧元数据,不进 wire。测试锁它与确认门 CONFIRM_TOOLS 的
+   *  双向一致(硬规则 15②:新增写工具先入集合再上线)—— 见 tools.test.ts */
+  write?: boolean;
   execute: (args: P) => Promise<R>;
 }
 
@@ -41,6 +45,13 @@ export function getTool(name: string): Tool | undefined {
 // 导出为 provider 需要的 function calling schema
 // Tool 继承了 ToolSchema,直接返回即可(多余的 execute 字段对消费方无影响)
 export function toProviderToolSchemas(): ToolSchema[] {
+  return registry;
+}
+
+/** 只读枚举内置注册表,给测试用:锁 write 标记与确认门 CONFIRM_TOOLS 的
+ *  双向一致(tools.test.ts);wire 契约走 toProviderToolSchemas,
+ *  不携带 write/displayName 这类注册表侧元数据 */
+export function listTools(): readonly Tool[] {
   return registry;
 }
 
@@ -264,12 +275,12 @@ registerTool<WebSearchArgs, WebSearchResult>({
       market: {
         type: "string",
         description:
-          "Result language market, as \"language-REGION\": zh-CN / zh-TW / ja-JP / en-US / ko-KR etc. Match the query's language (Chinese query → zh-CN, Japanese content → ja-JP); only effective with a configured search provider (Brave maps it to a locale param, others ignore it); the default tab channel ignores it",
+          "Result language market, as \"language-REGION\": zh-CN / zh-TW / ja-JP / en-US / ko-KR etc. Match the query's language (Chinese query → zh-CN, Japanese content → ja-JP); only the API-key search channel uses it (Brave maps it to a locale param), the default keyless tab channel ignores it",
       },
       recency: {
         type: "string",
         enum: ["day", "week", "month", "year"],
-        description: "Time filter: restrict to the last day / week / month / year; use for time-sensitive queries (news, releases), omit otherwise. Only effective with a configured search provider; the default tab channel ignores it",
+        description: "Time filter: restrict to the last day / week / month / year; use for time-sensitive queries (news, releases), omit otherwise. Only the API-key search channel applies this filter; the default keyless tab channel ignores it",
       },
       allowed_domains: {
         type: "array",
@@ -413,6 +424,10 @@ registerTool<
 >({
   type: "function",
   name: "scroll_page",
+  // 非破坏性页面状态变更(改的是视图滚动位置,刷新即还原),有意不过确认门、
+  // 显式标 write: false —— 门是给「替用户动手/持久写」的,滚动不属此列
+  // (审计 §9.1 待定夺项的表态,2026-09-21)
+  write: false,
   description:
     "Scroll the page, or bring an element into view. Without selector: scrolls the window by `pages` viewport-heights in `direction` (down/up, or top/bottom to jump to the very start/end). With `selector`: scrolls that element into view instead.\nWhen to use: (1) triggering lazy-loaded / infinite-feed content, then re-reading or re-shooting; (2) bringing a below-the-fold element into the viewport right before page_screenshot — screenshot marks only cover the visible viewport; (3) checking whether more content remains (at_bottom in the result).\nWhen NOT to use: reading content — page_read / page_find work on the fully extracted document and are NOT affected by scrolling; acting on an off-screen element is also fine — click_element / fill_input scroll it into view automatically. Do not scroll just to \"look around\": page_outline maps the whole page without scrolling.\nReturns the resulting geometry: scroll_y / scroll_height / viewport_height / at_bottom.",
   parameters: {
@@ -443,6 +458,7 @@ registerTool<
 registerTool<{ selector: string; tabId?: number }, { clicked?: string }>({
   type: "function",
   name: "click_element",
+  write: true,
   description:
     "Click a page element, firing the full pointer / mouse event sequence (pointerover→pointerdown→mousedown→pointerup→mouseup→click) — equivalent to a real click, correctly perceived by React and similar frameworks.\nWhen to use: opening links, expanding collapsibles, switching tabs / switches, submit / cancel buttons — anything that needs a simulated user click. The selector must come from the most recent find_elements result.\nWhen NOT to use: not for reading content; never guess or hand-craft selectors (they go stale after re-renders). If it reports \"element not found\" or \"obscured\", re-run find_elements instead of retrying blind.",
   parameters: {
@@ -466,6 +482,7 @@ registerTool<
 >({
   type: "function",
   name: "fill_input",
+  write: true,
   description:
     "Write text into an input control and fire input / change events (React controlled components perceive it correctly). Supports input, textarea, select (picks an option) and contenteditable (rich text); pressEnterAfter=true appends an Enter keypress (keyCode=13) after writing, saving a separate submit step.\nWhen to use: filling search boxes, forms, comment fields, or selecting dropdown options. Selectors come from find_elements.\nWhen NOT to use: only for input controls — never on plain div / button; do not guess selectors. On error, re-run find_elements.",
   parameters: {
@@ -509,6 +526,7 @@ registerTool<
 >({
   type: "function",
   name: "memory_save",
+  write: true,
   description:
     "Save long-term, stable information about the user to memory; it persists across sessions (preferred name, language and conciseness preferences, dietary restrictions, long-running project context, etc.).\nWhen to use: the user says \"remember…\"; or states a clearly reusable personal preference / fact.\nWhen NOT to use: one-off task details, temporary context and ordinary chit-chat are never saved. Memory should be sparse and high-signal — one self-contained sentence per item; when in doubt, do not save.\nTwo forms:\n- Profile card (pass key): stable, slot-like facts — identity, preferences, health, ongoing projects. Saving again with the same key+subject overwrites the previous value in place, so prefer cards for facts that may change over time (e.g. key \"diet\" for food restrictions).\n- Plain note (no key): one-off contextual facts that fit no slot.\nRules: if <user-memory> already contains the same information, do not save again. If new information contradicts an entry you can SEE in <user-memory>, replace it via replaceOf instead of saving a conflicting second entry — never replace entries you cannot see there. When a value is true only under conditions (time, place, who it is about), state the condition inside the sentence, e.g. \"As of 2026-05, the user works at X\".",
   parameters: {
@@ -565,6 +583,7 @@ registerTool<
 registerTool<{ match: string }, { deleted: number; texts: string[] }>({
   type: "function",
   name: "memory_delete",
+  write: true,
   description:
     "Delete saved memories by keyword (substring match against memory text, case-insensitive; all matches are deleted together). Use when the user asks to \"forget / delete a memory\"; keep match precise to avoid deleting the wrong entries. The result lists what was actually deleted.",
   parameters: {
