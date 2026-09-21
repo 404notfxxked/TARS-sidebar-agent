@@ -6,11 +6,10 @@ import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
 import { errText } from "../../shared/errors";
 import type { McpConfig, McpServerEntry } from "../../shared/mcp";
-import { estimateTokens } from "../../shared/memory";
 import type { McpToolInfo } from "../../shared/messages";
-import { mcpListTools, mcpTest } from "../clients/mcpClient";
-import { ensureOriginAuthorized } from "../permissions";
+import { mcpListTools } from "../clients/mcpClient";
 import { useConfirmDelete, useT } from "../ui/hooks";
+import { McpTestRow, McpToolsPanel } from "./McpCardParts";
 import InfoTip from "../ui/InfoTip";
 import SwitchRow from "../ui/SwitchRow";
 import { ExpandCard, HintMore, SettingsSection, hostOf } from "./parts";
@@ -159,9 +158,6 @@ function McpServerCard({
   onRemove: () => void;
 }) {
   const t = useT();
-  const [testState, setTestState] = useState<"idle" | "loading" | "done">("idle");
-  const [testMsg, setTestMsg] = useState("");
-  const [testOk, setTestOk] = useState(false);
   const [tools, setTools] = useState<McpToolInfo[] | null>(null);
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsError, setToolsError] = useState("");
@@ -175,13 +171,6 @@ function McpServerCard({
   /** headers 逐行编辑、失焦整包提交,序列化后作依赖:提交才触发重拉
    *  (不能直接依赖 entry —— 每次按键 onChange 都换对象身份) */
   const headersKey = JSON.stringify(entry.headers);
-
-  // 端点或鉴权头变了,上一次的连接测试结果就不再成立,静默复位
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 依赖即触发条件本身(url + 序列化后的 headers)
-  useEffect(() => {
-    setTestState("idle");
-    setTestMsg("");
-  }, [entry.url, headersKey]);
 
   // 展开时拉工具清单(与「测试连接」同一条后台缓存,成功即预热下次 run);
   // 提交后的 url 或请求头变了就重拉。失败只标注在工具清单区,不挡其他字段的编辑
@@ -213,38 +202,6 @@ function McpServerCard({
       alive = false;
     };
   }, [open, committedUrl, headersKey]);
-
-  const runTest = async () => {
-    if (testState === "loading") return;
-    setTestState("loading");
-    // 按域授权:借本次点击为服务器 origin 发起授权请求(与聊天调用共用
-    // 同一授权);拒绝时直接以失败呈现在测试结果里,不白连一次
-    if (!(await ensureOriginAuthorized(entry.url))) {
-      setTestState("done");
-      setTestOk(false);
-      setTestMsg(t("settings.accessDenied"));
-      return;
-    }
-    const r = await mcpTest(entry).catch(
-      (e): { ok: boolean; toolCount?: number; era?: string; error?: string } => ({
-        ok: false,
-        error: errText(e),
-      }),
-    );
-    setTestState("done");
-    setTestOk(r.ok);
-    setTestMsg(
-      r.ok
-        ? t("settings.testOk", { n: r.toolCount ?? 0, era: r.era ?? "" })
-        : r.error ?? t("settings.testFailed"),
-    );
-  };
-
-  const toolsTokens =
-    tools?.reduce(
-      (n, tool) => n + estimateTokens(`${tool.name}${tool.description}`),
-      0,
-    ) ?? 0;
 
   return (
     <ExpandCard
@@ -334,57 +291,14 @@ function McpServerCard({
         />
       </div>
 
-      <div className="mb-1 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={runTest}
-          disabled={testState === "loading" || !entry.url.trim()}
-          className="btn-text"
-        >
-          {testState === "loading" ? t("settings.testing") : t("settings.testConnection")}
-        </button>
-        {testState === "done" && (
-          <span
-            className={`text-[11.5px] ${testOk ? "text-on-surface-variant" : "text-error"}`}
-          >
-            {testMsg}
-          </span>
-        )}
-      </div>
+      <McpTestRow entry={entry} headersKey={headersKey} />
 
       {/* 工具清单:启用前审阅描述 —— MCP 工具描述是外部文本,这是注入防线的一环 */}
-      {toolsLoading && (
-        <p className="field-hint">{t("settings.toolsLoading")}</p>
-      )}
-      {!toolsLoading && (tools || toolsError) && (
-        <div className="settings-block">
-          <div className="flex items-center justify-between">
-            <span className="settings-row-label">
-              {t("settings.tools")}{tools ? t("settings.toolsMeta", { n: tools.length, tokens: toolsTokens }) : ""}
-            </span>
-          </div>
-          {toolsError ? (
-            <p className="field-hint text-error">{t("settings.toolsLoadFailed", { error: toolsError })}</p>
-          ) : (
-            <div className="model-list">
-              {tools?.map((tool) => (
-                <div key={tool.name} className="py-1">
-                  <p className="m-0 font-mono text-[12px] text-on-surface" title={tool.name}>
-                    {tool.name}
-                  </p>
-                  <p
-                    className="m-0 text-[12px] leading-snug text-on-surface-variant"
-                    title={tool.description}
-                  >
-                    {tool.description.slice(0, 120)}
-                    {tool.description.length > 120 ? "…" : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <McpToolsPanel
+        tools={tools}
+        toolsLoading={toolsLoading}
+        toolsError={toolsError}
+      />
 
       <div className="danger-divider mb-1">
         <button
