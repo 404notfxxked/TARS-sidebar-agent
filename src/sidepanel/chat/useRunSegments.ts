@@ -54,72 +54,70 @@ export function useRunSegments(
   /** 已展开回看的过程卡(以卡内首段在 segs 中的下标为 key,段序列只追加、下标即稳定身份) */
   const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
 
-  // ---- 思考流缓冲:delta 先进缓冲,按固定节拍合入状态 ----
-  // 流式期间只渲染单行 ticker(尾部内容),行高恒定不推挤后续消息;
-  // 渲染频率从「每 delta 一次」降到 ~10Hz
+  // ---- 流式缓冲:思考流/正文流各一套,按 kind 参数化成一组原语 ----
+  // delta 先进缓冲,按固定节拍(~10Hz)合入状态:流式期间只渲染单行
+  // ticker(思考),正文避免「每 delta 全量重解析 markdown」的 O(n²) 重复
+  // 解析,合帧后重解析频率与段长解耦。两套的差异只在合入条件:
+  // 思考缓冲要求末段是「活跃思考段」,正文缓冲只要求末段是文本段
   const reasoningBufRef = useRef("");
   const reasoningFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ---- 正文流缓冲:同一节拍策略。否则每个 delta 全量重解析该段 markdown,
-  // 长回答是 O(n²) 重复解析;合帧到 ~10Hz 后,重解析频率与段长解耦 ----
   const textBufRef = useRef("");
   const textFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  type StreamKind = "reasoning" | "text";
+  const bufOf = (kind: StreamKind) =>
+    kind === "reasoning" ? reasoningBufRef : textBufRef;
+  const timerOf = (kind: StreamKind) =>
+    kind === "reasoning" ? reasoningFlushRef : textFlushRef;
 
-  /** 把缓冲同步合入最后一个活跃思考段(节拍到期 / 阶段收口前调用) */
-  const flushReasoning = () => {
-    if (reasoningFlushRef.current !== null) {
-      clearTimeout(reasoningFlushRef.current);
-      reasoningFlushRef.current = null;
+  /** 合入条件:思考缓冲要求末段是活跃思考段;正文缓冲只要求末段是文本段 */
+  const fitsLast = (
+    kind: StreamKind,
+    last: RunSegment | undefined,
+  ): last is ReasoningSeg | TextSeg =>
+    kind === "reasoning"
+      ? last?.kind === "reasoning" && last.active
+      : last?.kind === "text";
+
+  /** 把缓冲同步合入末段(节拍到期 / 阶段收口前调用);末段不满足合入条件
+   *  (时序异常)时缓冲无从归属,丢弃 */
+  const flushBuf = (kind: StreamKind) => {
+    const flushRef = timerOf(kind);
+    if (flushRef.current !== null) {
+      clearTimeout(flushRef.current);
+      flushRef.current = null;
     }
-    const buf = reasoningBufRef.current;
+    const bufRef = bufOf(kind);
+    const buf = bufRef.current;
     if (!buf) return;
-    reasoningBufRef.current = "";
+    bufRef.current = "";
     const segs = runSegsRef.current;
     const last = segs[segs.length - 1];
-    if (last?.kind === "reasoning" && last.active) {
-      applySegs([...segs.slice(0, -1), { ...last, text: last.text + buf }]);
-    }
-    // 活跃段已被收口(异常时序),缓冲无从归属,丢弃
+    if (!fitsLast(kind, last)) return;
+    applySegs([...segs.slice(0, -1), { ...last, text: last.text + buf }]);
   };
 
   /** 直接丢弃缓冲(新一轮开始 / 清空对话:旧缓冲不属于任何段) */
-  const dropReasoningBuf = () => {
-    if (reasoningFlushRef.current !== null) {
-      clearTimeout(reasoningFlushRef.current);
-      reasoningFlushRef.current = null;
+  const dropBuf = (kind: StreamKind) => {
+    const flushRef = timerOf(kind);
+    if (flushRef.current !== null) {
+      clearTimeout(flushRef.current);
+      flushRef.current = null;
     }
-    reasoningBufRef.current = "";
+    bufOf(kind).current = "";
   };
 
-  /** 把缓冲同步合入最后一个文本段(节拍到期 / 阶段收口前调用);
-   *  末段已不是文本段(时序异常)时缓冲无从归属,丢弃 */
-  const flushText = () => {
-    if (textFlushRef.current !== null) {
-      clearTimeout(textFlushRef.current);
-      textFlushRef.current = null;
+  /** delta 入缓冲并排定节拍合入 */
+  const pushBuf = (kind: StreamKind, delta: string) => {
+    const bufRef = bufOf(kind);
+    bufRef.current += delta;
+    const flushRef = timerOf(kind);
+    if (flushRef.current === null) {
+      flushRef.current = setTimeout(() => flushBuf(kind), 100);
     }
-    const buf = textBufRef.current;
-    if (!buf) return;
-    textBufRef.current = "";
-    const segs = runSegsRef.current;
-    const last = segs[segs.length - 1];
-    if (last?.kind === "text") {
-      applySegs([...segs.slice(0, -1), { ...last, text: last.text + buf }]);
-    }
-  };
-
-  /** 直接丢弃正文缓冲(同 dropReasoningBuf) */
-  const dropTextBuf = () => {
-    if (textFlushRef.current !== null) {
-      clearTimeout(textFlushRef.current);
-      textFlushRef.current = null;
-    }
-    textBufRef.current = "";
   };
 
   // reasoning delta → 入缓冲;末段不是活跃思考段则先开新段(行立即出现,文本由节拍供给)
   const appendReasoning = (delta: string) => {
-    reasoningBufRef.current += delta;
     const segs = runSegsRef.current;
     const last = segs[segs.length - 1];
     if (!(last?.kind === "reasoning" && last.active)) {
@@ -128,15 +126,13 @@ export function useRunSegments(
         { kind: "reasoning", text: "", active: true, t: Date.now() },
       ]);
     }
-    if (reasoningFlushRef.current === null) {
-      reasoningFlushRef.current = setTimeout(flushReasoning, 100);
-    }
+    pushBuf("reasoning", delta);
   };
 
   // 任何「下一阶段」事件(工具开始 / 文本开始)→ 先冲刷两种缓冲(别丢尾部字符),再收口活跃思考段
   const collapseReasoning = () => {
-    flushReasoning();
-    flushText();
+    flushBuf("reasoning");
+    flushBuf("text");
     const segs = runSegsRef.current;
     if (segs.some((s) => s.kind === "reasoning" && s.active)) {
       applySegs(
@@ -152,19 +148,16 @@ export function useRunSegments(
     const segs = runSegsRef.current;
     const last = segs[segs.length - 1];
     if (streamingRef.current && last?.kind === "text") {
-      textBufRef.current += delta;
-      if (textFlushRef.current === null) {
-        textFlushRef.current = setTimeout(flushText, 100);
-      }
+      pushBuf("text", delta);
     } else {
-      flushText(); // 防御:残留缓冲仍归属上一个文本段
+      flushBuf("text"); // 防御:残留缓冲仍归属上一个文本段
       streamingRef.current = true;
       applySegs([...segs, { kind: "text", text: delta, t: Date.now() }]);
     }
   };
 
   const pushTool = (evt: ToolCallEvent) => {
-    flushText(); // 正文缓冲归属前一段,先落盘再追加工具段
+    flushBuf("text"); // 正文缓冲归属前一段,先落盘再追加工具段
     const segs = runSegsRef.current;
     applySegs([
       ...segs,
@@ -195,8 +188,8 @@ export function useRunSegments(
   /** 结束兜底:冲刷缓冲、归一残留 running 工具(防 spinner 卡死)、收口思考段、记录结束时刻 */
   const settleRun = () => {
     streamingRef.current = false;
-    flushReasoning();
-    flushText();
+    flushBuf("reasoning");
+    flushBuf("text");
     const segs = runSegsRef.current;
     const next = segs.map((s) => {
       if (s.kind === "reasoning") return s.active ? { ...s, active: false } : s;
@@ -213,8 +206,8 @@ export function useRunSegments(
    *  在追加下一条 user 消息之前调用,保证旧答案永远排在新问题之前;
    *  过程段不归档(不持久化),由随后的 newRound 丢弃 */
   const archiveTexts = () => {
-    flushReasoning();
-    flushText();
+    flushBuf("reasoning");
+    flushBuf("text");
     streamingRef.current = false;
     const segs = runSegsRef.current;
     // 空白文本段与渲染侧同规则跳过:不归档成空气消息
@@ -228,7 +221,7 @@ export function useRunSegments(
 
   /** 新一轮:清空段序列与回看开关 */
   const newRound = () => {
-    dropReasoningBuf();
+    dropBuf("reasoning");
     streamingRef.current = false;
     applySegs([]);
     setRunEndedAt(null);
@@ -251,8 +244,8 @@ export function useRunSegments(
   useEffect(
     () => () => {
       streamingRef.current = false;
-      dropReasoningBuf();
-      dropTextBuf();
+      dropBuf("reasoning");
+      dropBuf("text");
     },
     [],
   );

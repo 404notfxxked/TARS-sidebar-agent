@@ -124,6 +124,188 @@ export function useAgentChannel({
     ]);
   });
 
+  // ---- port 事件的 case 正文(拆自 connect 的 switch,语义逐字不变)。
+  //  监听器只注册一次、闭包停留在首帧:这些函数访问的 setter 均稳定、
+  //  可变状态一律经 ref(与拆分前的内联 case 同一约束,见文件头注) ----
+  const applyStarted = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_STARTED }>) => {
+    sessionRef.current = evt.sessionId;
+    updateStatus("thinking");
+    setMemorySaved(0); // 新一轮,轻提示重新累计
+    run.onStarted();
+  };
+
+  const applyThinking = () => {
+    run.onThinking();
+    updateStatus("thinking");
+  };
+
+  const applyReasoning = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_REASONING }>) => {
+    run.onReasoningDelta(evt.delta);
+  };
+
+  const applyMessage = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_MESSAGE }>) => {
+    updateStatus("streaming");
+    run.onMessageDelta(evt.delta);
+  };
+
+  const applyToolCall = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_TOOL_CALL }>) => {
+    run.onToolCall(evt);
+    updateStatus("thinking");
+  };
+
+  const applyConfirmRequest = (
+    evt: Extract<AgentEvent, { type: typeof MSG.AGENT_CONFIRM_REQUEST }>,
+  ) => {
+    setConfirmReq(evt);
+  };
+
+  const applyToolResult = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_TOOL_RESULT }>) => {
+    run.onToolResult(evt);
+    // 记忆落库轻提示:成功的非重复保存累计,回复尾渲染「已写入 N 条」
+    if (evt.name === "memory_save" && evt.ok) {
+      const r = evt.result as { duplicate?: boolean } | null;
+      if (!r?.duplicate) setMemorySaved((n) => n + 1);
+    }
+  };
+
+  // AGENT_DONE:正常收口;步数耗尽/输出截断再补一条系统级提示
+  const applyDone = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_DONE }>) => {
+    run.onSettled();
+    updateStatus("idle");
+    setConfirmReq(null); // 确认卡随 run 收口清掉(超时拒绝后台已兜底)
+    // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示;
+    // 输出截断:回答半截收束,同样明示
+    if (evt.reason === "max-turns" || evt.reason === "truncated") {
+      const kind = evt.reason;
+      setMessages((ms) => [
+        ...ms,
+        {
+          role: "assistant",
+          content: "",
+          sessionId: sessionRef.current,
+          notice: true,
+          noticeKind: kind,
+        },
+      ]);
+    }
+  };
+
+  /** AGENT_ERROR:错误详情由后台日志记录,面板只负责呈现(独立错误样式,不走 markdown) */
+  const applyError = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_ERROR }>) => {
+    run.onSettled();
+    updateStatus("idle");
+    setConfirmReq(null);
+    setMessages((ms) => [
+      ...ms,
+      {
+        role: "assistant",
+        content: evt.error,
+        sessionId: sessionRef.current,
+        error: true,
+      },
+    ]);
+  };
+
+  /** HISTORY:断连重同步对账 + 常规历史回填(两条路径,见各自注释) */
+  const applyHistory = (evt: Extract<AgentEvent, { type: typeof MSG.HISTORY }>) => {
+    // 断连重同步:run 期间后台被杀过 → 按库替换本地视图(库是全量
+    // 真相,本地可能停在截断处)。请求发出后发生过任何本地动作
+    // (提交/重答/切会话)→ 本地更新鲜,迟到的响应作废;
+    // 响应会话 != 当前会话(请求后切走过)同样作废。
+    // 内容无差异(断连时本来就空闲收尾)→ 不换不打扰
+    if (evt.resync) {
+      if (
+        evt.sessionId !== sessionRef.current ||
+        resyncSeqRef.current !== actionSeqRef.current
+      ) {
+        return;
+      }
+      const sid = sessionRef.current;
+      setMessages((ms) => {
+        const sig = (arr: ChatMsg[]) =>
+          JSON.stringify(
+            arr.map((m) => [m.role, m.content, m.images?.length ?? 0]),
+          );
+        const local = ms.filter((m) => m.sessionId === sid);
+        const localContent = local.filter(
+          (m) => m.noticeKind !== "disconnected",
+        );
+        const incoming = evt.messages.map((m) => ({
+          ...m,
+          sessionId: sid,
+        }));
+        const notice: ChatMsg = {
+          role: "assistant",
+          content: "",
+          sessionId: sid,
+          notice: true,
+          noticeKind: "disconnected",
+        };
+        // 内容已一致且提示气泡在场 → 无事发生,不动
+        if (
+          sig(localContent) === sig(incoming) &&
+          local.some((m) => m.noticeKind === "disconnected")
+        ) {
+          return ms;
+        }
+        return [...incoming, notice];
+      });
+      setCompaction(evt.compaction ?? null);
+      return;
+    }
+    // 后端回的历史 → 填入该会话。回包自带 sessionId:只认「响应会话 ==
+    // 当前会话」的包 —— 快速切会话时先到的旧回包不能盖上新会话的 id
+    // (曾因回包无 sessionId、靠「最后请求 == 当前会话」推断而串台)。
+    // 本地已有该会话记录则保留本地(本地更新过/正在用),idempotent。
+    if (evt.sessionId === sessionRef.current) {
+      setMessages((ms) => {
+        if (ms.some((m) => m.sessionId === evt.sessionId)) return ms;
+        return evt.messages.map((m) => ({ ...m, sessionId: evt.sessionId }));
+      });
+      setCompaction(evt.compaction ?? null);
+      setCurrentSession(evt.sessionId);
+    }
+  };
+
+  /** IMAGE_DATA:历史图片字节回填 → 换成 objectURL 交给气泡 */
+  const applyImageData = (evt: Extract<AgentEvent, { type: typeof MSG.IMAGE_DATA }>) => {
+    resolveImageData(evt);
+  };
+
+  /** port 断连:清连接与在途图片请求;run 在途 = 后台被杀,落袋为安 +
+   *  落「断连中」提示,并采样 resync 基线(必须在断连时刻,理由见上头注) */
+  const handlePortDisconnected = () => {
+    log.warn("chat", "port disconnected");
+    portRef.current = null;
+    // 在途图片字节请求随连接死亡:按缺失收场,不让骨架屏永久转圈
+    failPendingImages();
+    // run 在途时断连 = 后台被杀,事件不会再来了:落袋为安 + 明示,
+    // 不让用户盯着无声截断的回答。空闲时断连(后台闲置被回收)无感
+    const runWasActive = statusRef.current !== "idle";
+    run.onPortDisconnected();
+    updateStatus("idle");
+    setConfirmReq(null);
+    if (runWasActive) {
+      resyncPendingRef.current = true;
+      resyncSessionRef.current = sessionRef.current;
+      resyncSeqRef.current = actionSeqRef.current; // 断连时刻的动作基线
+      setMessages((ms) =>
+        ms.some((m) => m.noticeKind === "disconnected")
+          ? ms
+          : [
+              ...ms,
+              {
+                role: "assistant" as const,
+                content: "",
+                sessionId: sessionRef.current,
+                notice: true,
+                noticeKind: "disconnected" as const,
+              },
+            ],
+      );
+    }
+  };
+
   const connect = (): chrome.runtime.Port => {
     // 复用已有连接(没断开就不新建)
     if (portRef.current) return portRef.current;
@@ -131,172 +313,35 @@ export function useAgentChannel({
     const port = chrome.runtime.connect({ name: PORT_NAME });
     portRef.current = port;
 
+    // 事件分发:11 个 case 的正文都在上方 apply* 函数里(逐字搬移)
     port.onMessage.addListener((evt: AgentEvent) => {
       switch (evt.type) {
         case MSG.AGENT_STARTED:
-          sessionRef.current = evt.sessionId;
-          updateStatus("thinking");
-          setMemorySaved(0); // 新一轮,轻提示重新累计
-          run.onStarted();
-          break;
+          return applyStarted(evt);
         case MSG.AGENT_THINKING:
-          run.onThinking();
-          updateStatus("thinking");
-          break;
+          return applyThinking();
         case MSG.AGENT_REASONING:
-          run.onReasoningDelta(evt.delta);
-          break;
+          return applyReasoning(evt);
         case MSG.AGENT_MESSAGE:
-          updateStatus("streaming");
-          run.onMessageDelta(evt.delta);
-          break;
+          return applyMessage(evt);
         case MSG.AGENT_TOOL_CALL:
-          run.onToolCall(evt);
-          updateStatus("thinking");
-          break;
+          return applyToolCall(evt);
         case MSG.AGENT_CONFIRM_REQUEST:
-          setConfirmReq(evt);
-          break;
+          return applyConfirmRequest(evt);
         case MSG.AGENT_TOOL_RESULT:
-          run.onToolResult(evt);
-          // 记忆落库轻提示:成功的非重复保存累计,回复尾渲染「已写入 N 条」
-          if (evt.name === "memory_save" && evt.ok) {
-            const r = evt.result as { duplicate?: boolean } | null;
-            if (!r?.duplicate) setMemorySaved((n) => n + 1);
-          }
-          break;
+          return applyToolResult(evt);
         case MSG.AGENT_DONE:
-          run.onSettled();
-          updateStatus("idle");
-          setConfirmReq(null); // 确认卡随 run 收口清掉(超时拒绝后台已兜底)
-          // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示;
-          // 输出截断:回答半截收束,同样明示
-          if (evt.reason === "max-turns" || evt.reason === "truncated") {
-            const kind = evt.reason;
-            setMessages((ms) => [
-              ...ms,
-              {
-                role: "assistant",
-                content: "",
-                sessionId: sessionRef.current,
-                notice: true,
-                noticeKind: kind,
-              },
-            ]);
-          }
-          break;
+          return applyDone(evt);
         case MSG.AGENT_ERROR:
-          // 错误详情由后台日志记录,面板只负责呈现(独立错误样式,不走 markdown)
-          run.onSettled();
-          updateStatus("idle");
-          setConfirmReq(null);
-          setMessages((ms) => [
-            ...ms,
-            {
-              role: "assistant",
-              content: evt.error,
-              sessionId: sessionRef.current,
-              error: true,
-            },
-          ]);
-          break;
+          return applyError(evt);
         case MSG.HISTORY:
-          // 断连重同步:run 期间后台被杀过 → 按库替换本地视图(库是全量
-          // 真相,本地可能停在截断处)。请求发出后发生过任何本地动作
-          // (提交/重答/切会话)→ 本地更新鲜,迟到的响应作废;
-          // 响应会话 != 当前会话(请求后切走过)同样作废。
-          // 内容无差异(断连时本来就空闲收尾)→ 不换不打扰
-          if (evt.resync) {
-            if (
-              evt.sessionId !== sessionRef.current ||
-              resyncSeqRef.current !== actionSeqRef.current
-            ) {
-              break;
-            }
-            const sid = sessionRef.current;
-            setMessages((ms) => {
-              const sig = (arr: ChatMsg[]) =>
-                JSON.stringify(
-                  arr.map((m) => [m.role, m.content, m.images?.length ?? 0]),
-                );
-              const local = ms.filter((m) => m.sessionId === sid);
-              const localContent = local.filter(
-                (m) => m.noticeKind !== "disconnected",
-              );
-              const incoming = evt.messages.map((m) => ({
-                ...m,
-                sessionId: sid,
-              }));
-              const notice: ChatMsg = {
-                role: "assistant",
-                content: "",
-                sessionId: sid,
-                notice: true,
-                noticeKind: "disconnected",
-              };
-              // 内容已一致且提示气泡在场 → 无事发生,不动
-              if (
-                sig(localContent) === sig(incoming) &&
-                local.some((m) => m.noticeKind === "disconnected")
-              ) {
-                return ms;
-              }
-              return [...incoming, notice];
-            });
-            setCompaction(evt.compaction ?? null);
-            break;
-          }
-          // 后端回的历史 → 填入该会话。回包自带 sessionId:只认「响应会话 ==
-          // 当前会话」的包 —— 快速切会话时先到的旧回包不能盖上新会话的 id
-          // (曾因回包无 sessionId、靠「最后请求 == 当前会话」推断而串台)。
-          // 本地已有该会话记录则保留本地(本地更新过/正在用),idempotent。
-          if (evt.sessionId === sessionRef.current) {
-            setMessages((ms) => {
-              if (ms.some((m) => m.sessionId === evt.sessionId)) return ms;
-              return evt.messages.map((m) => ({ ...m, sessionId: evt.sessionId }));
-            });
-            setCompaction(evt.compaction ?? null);
-            setCurrentSession(evt.sessionId);
-          }
-          break;
+          return applyHistory(evt);
         case MSG.IMAGE_DATA:
-          // 历史图片字节回填 → 换成 objectURL 交给气泡
-          resolveImageData(evt);
-          break;
+          return applyImageData(evt);
       }
     });
 
-    port.onDisconnect.addListener(() => {
-      log.warn("chat", "port disconnected");
-      portRef.current = null;
-      // 在途图片字节请求随连接死亡:按缺失收场,不让骨架屏永久转圈
-      failPendingImages();
-      // run 在途时断连 = 后台被杀,事件不会再来了:落袋为安 + 明示,
-      // 不让用户盯着无声截断的回答。空闲时断连(后台闲置被回收)无感
-      const runWasActive = statusRef.current !== "idle";
-      run.onPortDisconnected();
-      updateStatus("idle");
-      setConfirmReq(null);
-      if (runWasActive) {
-        resyncPendingRef.current = true;
-        resyncSessionRef.current = sessionRef.current;
-        resyncSeqRef.current = actionSeqRef.current; // 断连时刻的动作基线
-        setMessages((ms) =>
-          ms.some((m) => m.noticeKind === "disconnected")
-            ? ms
-            : [
-                ...ms,
-                {
-                  role: "assistant" as const,
-                  content: "",
-                  sessionId: sessionRef.current,
-                  notice: true,
-                  noticeKind: "disconnected" as const,
-                },
-              ],
-        );
-      }
-    });
+    port.onDisconnect.addListener(handlePortDisconnected);
 
     // 重连(上个动作触发的 connect):run 期间断过连 → 静默拉库对账,
     // 把本地视图补到落盘的完整处。空闲断连无需对账;期间切过会话同样
