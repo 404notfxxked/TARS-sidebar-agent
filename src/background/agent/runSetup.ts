@@ -46,7 +46,7 @@ import {
   resolveInvokedSkill,
 } from "./prompt";
 import {
-  estimateRange,
+  estimateBaselineTokens,
   estimateTokens,
   IMAGE_TOKEN_ESTIMATE,
   trimHistoryForWindow,
@@ -296,6 +296,9 @@ export async function assemblePrompt(
     payload.sessionId ?? "",
   );
   loop.persistedSeqs = rows;
+  // 压缩基线切分基准:已滤错误行的行数(与消费端 history 同一索引空间;
+  // persistedSeqs 含错误行,不能拿来切)
+  loop.libraryRowsAtStart = history.length;
   // 会话来源域白名单:web_fetch 的确认门判定用(用户消息 URL / 搜索结果 /
   // 已成功抓取的域直抓,其余确认)。从落盘全量历史推导,SW 被杀不丢;
   // 本轮用户原文显式传入(此刻尚未落盘),本轮内批准的新域在确认门处
@@ -345,11 +348,11 @@ export async function assemblePrompt(
     estimateTokens(userContent) +
     (memoryMsg ? estimateTokens(memoryMsg.content) : 0) +
     loop.runImages.length * IMAGE_TOKEN_ESTIMATE;
-  const baselineTokens =
-    (sessionInfo.ctx && sessionInfo.ctx.msgs <= history.length
-      ? sessionInfo.ctx.promptTokens +
-        estimateRange(history, sessionInfo.ctx.msgs)
-      : estimateRange(history, 0)) + fixedEstimate;
+  const baselineTokens = estimateBaselineTokens(
+    sessionInfo.ctx,
+    history,
+    fixedEstimate,
+  );
   const usable = modelEntry?.contextTokens
     ? usableTokens(modelEntry.contextTokens, modelEntry.maxTokens)
     : 0;

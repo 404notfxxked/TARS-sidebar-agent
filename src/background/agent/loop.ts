@@ -12,7 +12,7 @@ import {
 } from "../../shared/configStore";
 import { stripScreenshot, takeScreenshot } from "../../shared/toolTypes";
 import { createLogger } from "../../shared/logger";
-import { enforceToolResultBudget } from "./tokenBudget";
+import { coveredLibraryRows, enforceToolResultBudget } from "./tokenBudget";
 import { needsConfirmation } from "./confirmations";
 import { partitionToolBatches } from "./toolBatch";
 import { redactToolArgsForLog } from "./toolLog";
@@ -235,16 +235,20 @@ export async function runTurns(
   // 不写回 —— 库里保持全量历史,每轮 prompt 在内存里重新裁
   if (sessionId) {
     await persistNewMessages(loop, sessionId);
-    // 实测基线:最终轮请求的 prompt tokens + 当时的消息条数。下次 run 用
-    // 它叠加新增部分算压缩触发基线,比纯估算准;失败不影响本次回答。
-    // 撞窗紧急压缩发生过的轮次例外:promptTokens 是「摘要 + 尾部投影」的
-    // 实测,而 msgs 记的是全量条数,两个口径对不上会让下次基线系统性低估
-    // —— 宁可弃测回落纯估算,也不落一个错基线
+    // 实测基线:最终轮请求的 prompt tokens + 测量时刻的库行数。下次 run
+    // 用它叠加「测量后新增的库行」算压缩触发基线,比纯估算准;失败不影响
+    // 本次回答。rows 走 coveredLibraryRows(已滤口径,与消费端 history 同一
+    // 索引空间)+ 本轮新落盘条数 —— 算式与消费端同在 tokenBudget.ts、由
+    // tokenBudget.test.ts 锁契约;与 prompt 条数无关,压缩/裁剪只改本轮
+    // prompt 形状,切分点永远成立(审计 §1.1 及其错误行残留)。撞窗紧急
+    // 压缩发生过的轮次例外:promptTokens 是「摘要 + 尾部投影」的实测,
+    // 与库行覆盖对不上,宁可弃测回落纯估算,也不落一个错基线
     if (loop.lastUsage && !loop.emergency) {
       try {
         await saveCtx(sessionId, {
           promptTokens: loop.lastUsage.promptTokens,
           msgs: loop.messages.length - 1,
+          rows: coveredLibraryRows(loop),
         });
       } catch (err) {
         log.warn("agent", "save ctx baseline failed", {

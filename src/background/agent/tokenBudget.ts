@@ -96,6 +96,38 @@ export function estimateRange(history: InternalMsg[], from: number): number {
   return n;
 }
 
+/** 压缩触发基线:实测部分 + 测量后新增库行的估算 + 固定开销。
+ *  ctx.rows = 测量时刻(run 收口)的库总行数:promptTokens 覆盖到当时的
+ *  全部历史(压缩会话 = 摘要 + 尾部,普通会话 = 全量),新增部分只有之后
+ *  追加的行,按 rows 切与压缩与否无关 —— 旧实现用 prompt 消息条数(msgs)
+ *  当切分点,压缩过的会话把摘要已覆盖的行重复计入,基线系统性虚高
+ *  (审计 §1.1)。旧行无 rows(或越界,如库被清理)回落全量估算:
+ *  粗一点,但不继承错基线 */
+export function estimateBaselineTokens(
+  ctx: { promptTokens: number; rows?: number } | undefined,
+  history: InternalMsg[],
+  fixedEstimate: number,
+): number {
+  if (ctx && ctx.rows !== undefined && ctx.rows <= history.length) {
+    return ctx.promptTokens + estimateRange(history, ctx.rows) + fixedEstimate;
+  }
+  return estimateRange(history, 0) + fixedEstimate;
+}
+
+/** 生产端:测量时刻(run 收口)「已滤口径」的库行数 —— ctx.rows 的唯一
+ *  算式。生产端(存什么)与消费端(怎么切)是同一份契约的两半,放同一
+ *  模块、同一测试文件钉住。只认三个落盘锚点,用结构类型而故意**不收
+ *  persistedSeqs**(未滤库行数,error 行也占 seq):含错误行的会话里它
+ *  > 已滤行数,混进算式会超出消费端已滤 history 的长度,实测基线被整轮
+ *  丢弃(审计 §1.1 的错误行残留,tokenBudget.test.ts 锁此契约) */
+export function coveredLibraryRows(loop: {
+  libraryRowsAtStart: number;
+  savedUpTo: number;
+  persistedInCtx: number;
+}): number {
+  return loop.libraryRowsAtStart + (loop.savedUpTo - loop.persistedInCtx);
+}
+
 export function trimHistoryForWindow(
   history: InternalMsg[],
   opts: {

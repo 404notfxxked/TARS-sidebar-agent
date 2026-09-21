@@ -26,6 +26,10 @@ const log = createLogger({ ctx: "bg" });
 export interface RunLoopState {
   messages: InternalMsg[];
   persistedSeqs: number;
+  /** run 开始时「已滤错误行」的库行数:压缩基线的切分基准(消费端的
+   *  history 已滤错误行,同一索引空间)。persistedSeqs 是未滤口径,
+   *  含错误行的会话里它 > 已滤行数,拿去切会把实测基线整轮丢弃 */
+  libraryRowsAtStart: number;
   persistedInCtx: number;
   savedUpTo: number;
   /** 随本轮 user 消息附带的图片(分配 id 后构建一次;只读,随 loop 传递) */
@@ -69,6 +73,7 @@ export async function runAgentLoop(
   const loop: RunLoopState = {
     messages: [],
     persistedSeqs: 0,
+    libraryRowsAtStart: 0,
     persistedInCtx: 0,
     savedUpTo: 0,
     runImages: [],

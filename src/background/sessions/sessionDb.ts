@@ -68,11 +68,16 @@ export interface SessionCompaction {
   at: number;
 }
 
-/** 实测上下文基线:上次 run 最终轮请求的 prompt tokens 与对应的历史条数。
- *  下次 run 用它 + 估算新增部分,得到比纯估算准的压缩触发基线 */
+/** 实测上下文基线:上次 run 最终轮请求的 prompt tokens 与测量时刻的
+ *  库总行数。下次 run 用它 + 估算新增部分,得到比纯估算准的压缩触发基线。
+ *  rows(2026-09-21 起)是切分点:promptTokens 覆盖测量前的全部历史
+ *  (压缩会话 = 摘要+尾部),新增只有之后追加的行 —— 旧字段 msgs 记的
+ *  是 prompt 消息条数,压缩过的会话口径错位(基线系统性虚高,审计 §1.1),
+ *  保留只为兼容旧数据;消费端以 rows 为准,无 rows 回落全量估算 */
 export interface SessionCtx {
   promptTokens: number;
   msgs: number;
+  rows?: number;
 }
 
 /** 会话元数据行(sessions store) */
