@@ -5,9 +5,15 @@
 import { MSG, type MemoryItem } from "../../shared/messages";
 import { portReq } from "./portRequest";
 
-export async function memReq(
-  msg: Record<string, unknown>,
-): Promise<MemoryItem[]> {
-  const evt = await portReq<{ memories?: MemoryItem[] }>(msg, MSG.MEMORIES);
-  return evt.memories ?? [];
+/** MEM_* 请求 → MEMORIES 应答(全量列表 + 可选 error:存储抛错时后台
+ *  仍回包,面板就地展示 —— 调用方拿列表照常刷新,错误按需呈现) */
+export async function memReq(msg: Record<string, unknown>): Promise<{
+  memories: MemoryItem[];
+  error?: string;
+}> {
+  const evt = await portReq<{ memories?: MemoryItem[]; error?: string }>(
+    msg,
+    MSG.MEMORIES,
+  );
+  return { memories: evt.memories ?? [], error: evt.error };
 }

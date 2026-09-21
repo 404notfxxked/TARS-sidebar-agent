@@ -29,7 +29,7 @@ export default function MemorySection({
 
   useEffect(() => {
     memReq({ type: MSG.MEM_LIST })
-      .then(setMemories)
+      .then((r) => setMemories(r.memories))
       .catch(() => {}); // 列表加载失败不打断设置页,下次打开重试
   }, []);
 

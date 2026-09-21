@@ -251,7 +251,13 @@ export type AgentEvent =
       resync?: boolean;
     }
   | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
-  | { type: typeof MSG.MEMORIES; memories: MemoryItem[] }
+  | {
+      type: typeof MSG.MEMORIES;
+      memories: MemoryItem[];
+      /** 操作失败原因(存储抛错等):面板就地展示;列表仍以后台实际
+       *  状态为准 —— 保证任何情况下都有回包,面板不挂死(同 SKILLS.error) */
+      error?: string;
+    }
   /** 技能列表:增删改/启停后都回全量(同 MEMORIES);error = 操作失败原因
    *  (解析错误等),面板就地展示,列表仍以后台实际状态为准 */
   | { type: typeof MSG.SKILLS; skills: SkillInfo[]; error?: string }

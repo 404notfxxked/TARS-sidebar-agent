@@ -16,7 +16,8 @@ export async function mcpTest(server: McpServerEntry) {
     toolCount?: number;
     era?: string;
     error?: string;
-  }>({ type: MSG.MCP_TEST, server }, MSG.MCP_TEST_RESULT);
+    // 后端 MCP 超时 60s(background/mcp/mcpClient.ts),面板侧只能更长
+  }>({ type: MSG.MCP_TEST, server }, MSG.MCP_TEST_RESULT, undefined, 70_000);
   return {
     ok: e.ok === true,
     toolCount: e.toolCount,
@@ -30,6 +31,8 @@ export async function mcpListTools(server: McpServerEntry): Promise<McpToolInfo[
   const e = await portReq<{ error?: string; tools?: McpToolInfo[] }>(
     { type: MSG.MCP_TOOLS, server },
     MSG.MCP_TOOLS_RESULT,
+    undefined,
+    70_000, // 同上:略大于后端 60s,先让后端的明确错误先到
   );
   if (typeof e.error === "string") throw new Error(e.error);
   return e.tools ?? [];

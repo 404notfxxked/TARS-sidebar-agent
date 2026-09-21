@@ -36,6 +36,11 @@ export default function SkillView({
   // 编辑态原文经 SKILL_RAW 异步取回,取回前 textarea 呈加载态(不留空窗闪帧)
   const [editLoading, setEditLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // 请求序号守卫(硬规则 10,同 useAgentChannel 的 actionSeq):连点两条
+  // 技能时先点的请求可能后回,迟到的原文若仍回填,会把 A 的内容存进 B
+  // (save 用 editor.id + 当前 draft)。每次 startEdit 取递增序号,回包
+  // 过期即丢弃;关闭/切添加同样递增,作废全部在途请求。渲染期不写 ref
+  const editSeqRef = useRef(0);
 
   useEffect(() => {
     skillReq({ type: MSG.SKILL_LIST })
@@ -44,31 +49,36 @@ export default function SkillView({
   }, []);
 
   const startAdd = () => {
+    editSeqRef.current++;
     setDraft("");
     setEditorError(null);
     setEditor({ mode: "add" });
   };
 
   const startEdit = async (s: SkillInfo) => {
+    const seq = ++editSeqRef.current;
     setDraft("");
     setEditorError(null);
     setEditor({ mode: "edit", id: s.id });
     setEditLoading(true);
     try {
       const { raw } = await skillRawReq(s.id);
+      if (seq !== editSeqRef.current) return; // 迟到的回包:编辑器已指向别条/已关闭
       if (raw === undefined) {
         setEditorError(t("skills.gone"));
         return;
       }
       setDraft(raw);
     } catch {
+      if (seq !== editSeqRef.current) return;
       setEditorError(t("skills.gone"));
     } finally {
-      setEditLoading(false);
+      if (seq === editSeqRef.current) setEditLoading(false);
     }
   };
 
   const closeEditor = () => {
+    editSeqRef.current++; // 作废在途原文请求:关掉后迟到的回包不再回填
     setEditor(null);
     setDraft("");
     setEditorError(null);

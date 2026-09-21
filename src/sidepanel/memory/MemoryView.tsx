@@ -4,7 +4,7 @@ import type { TFn } from "../../shared/i18n";
 // 结构沿用历史会话页的范式:吸顶头部 + 顶部添加条 + 行悬停操作 + 两段确认删除。
 // 数据经 MEM_* 消息走后台(memoryClient),本视图不碰 IDB。
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MSG, type MemoryItem } from "../../shared/messages";
 import {
   type MemoryTag,
@@ -44,11 +44,25 @@ export default function MemoryView({
   // 右上溢出菜单:清空全部记忆(菜单内两段确认,关菜单即复位)
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  // 列表回填序号守卫(硬规则 10,同 useAgentChannel 的 actionSeq):写动作
+  // 回包是全量快照,两个在途请求的回包乱序时,迟到的旧快照若仍整体替换,
+  // 置顶/删除/新增会互相回滚。每次请求取递增序号,回包过期即丢弃;
+  // 乐观本地变更(删除/清空)取新序号,天然作废此前在途请求。渲染期不写 ref
+  const listSeqRef = useRef(0);
+  // 后台兜底回包携带的操作错误(MEMORIES.error),就地展示不挂起
+  const [listError, setListError] = useState<string | null>(null);
 
   useEffect(() => {
+    const seq = ++listSeqRef.current;
     memReq({ type: MSG.MEM_LIST })
-      .then(setMemories)
-      .catch(() => setMemories([])); // 加载失败按空列表呈现,重开页面重试
+      .then((r) => {
+        if (seq !== listSeqRef.current) return;
+        setMemories(r.memories);
+        setListError(r.error ?? null);
+      })
+      .catch(() => {
+        if (seq === listSeqRef.current) setMemories([]); // 加载失败按空列表呈现,重开页面重试
+      });
     loadConfig()
       .then((c) => setContextTokens(selectedContextTokens(c)))
       .catch(() => {});
@@ -57,8 +71,12 @@ export default function MemoryView({
   const add = async () => {
     const text = newMemory.trim();
     if (!text) return;
+    const seq = ++listSeqRef.current;
     try {
-      setMemories(await memReq({ type: MSG.MEM_ADD, text }));
+      const r = await memReq({ type: MSG.MEM_ADD, text });
+      if (seq !== listSeqRef.current) return;
+      setMemories(r.memories);
+      setListError(r.error ?? null);
       setNewMemory("");
     } catch (e) {
       log.error("memory", "记忆添加失败", { err: String(e) });
@@ -68,33 +86,47 @@ export default function MemoryView({
   const commitEdit = async (id: string, text: string) => {
     setEditingId(null);
     if (!text.trim()) return;
+    const seq = ++listSeqRef.current;
     try {
-      setMemories(await memReq({ type: MSG.MEM_UPDATE, id, text: text.trim() }));
+      const r = await memReq({ type: MSG.MEM_UPDATE, id, text: text.trim() });
+      if (seq !== listSeqRef.current) return;
+      setMemories(r.memories);
+      setListError(r.error ?? null);
     } catch (e) {
       log.error("memory", "记忆更新失败", { err: String(e) });
     }
   };
 
   const togglePin = async (m: MemoryItem) => {
+    const seq = ++listSeqRef.current;
     try {
-      setMemories(
-        await memReq({ type: MSG.MEM_PIN, id: m.id, pinned: !m.pinned }),
-      );
+      const r = await memReq({ type: MSG.MEM_PIN, id: m.id, pinned: !m.pinned });
+      if (seq !== listSeqRef.current) return;
+      setMemories(r.memories);
+      setListError(r.error ?? null);
     } catch (e) {
       log.error("memory", "记忆置顶失败", { err: String(e) });
     }
   };
 
   const { confirmingId, remove } = useConfirmDelete<string>((id) => {
+    const seq = ++listSeqRef.current; // 乐观本地变更:作废此前在途请求
     setMemories((list) => list?.filter((m) => m.id !== id) ?? list);
     memReq({ type: MSG.MEM_DELETE, id })
-      .then(setMemories)
+      .then((r) => {
+        if (seq !== listSeqRef.current) return;
+        setMemories(r.memories);
+        setListError(r.error ?? null);
+      })
       .catch((e) => {
         // 乐观移除后兜底刷新:失败也要重拉一次真实状态,不能让已删的行
         // 凭空留在视图里(port 中途断开时回包永远不来,必须主动还原)
         log.error("memory", "记忆删除失败", { err: String(e) });
+        const seq2 = ++listSeqRef.current;
         memReq({ type: MSG.MEM_LIST })
-          .then(setMemories)
+          .then((r) => {
+            if (seq2 === listSeqRef.current) setMemories(r.memories);
+          })
           .catch(() => {});
       });
   });
@@ -106,9 +138,14 @@ export default function MemoryView({
     }
     setConfirmClear(false);
     setMenuOpen(false);
+    const seq = ++listSeqRef.current; // 乐观本地变更:作废此前在途请求
     setMemories([]);
     memReq({ type: MSG.MEM_CLEAR })
-      .then(setMemories)
+      .then((r) => {
+        if (seq !== listSeqRef.current) return;
+        setMemories(r.memories);
+        setListError(r.error ?? null);
+      })
       .catch(() => {});
   };
 
@@ -254,6 +291,7 @@ export default function MemoryView({
             )}
           </p>
         )}
+        {listError && <p className="field-hint text-error">{listError}</p>}
       </div>
 
       <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
