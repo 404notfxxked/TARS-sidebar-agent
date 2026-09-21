@@ -228,7 +228,7 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
     // 下一搜就能按新环境排序
     void probeEngines();
     throw new Error(
-      `All search engines failed (${failures.join("; ")}). Check the network or configure a search provider (Tavily / Bocha / Brave) in Settings → Web search for stable results`,
+      `All search engines failed (${failures.join("; ")}). Check the network or retry later; if the task allows, use another information source instead (e.g. web_fetch a known URL directly)`,
     );
   }
   return {
