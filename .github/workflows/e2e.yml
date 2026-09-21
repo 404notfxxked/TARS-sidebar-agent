@@ -75,15 +75,18 @@ jobs:
             xvfb-run -a node tests/run.mjs --all
           fi
 
-      # 截图产物(/tmp/tars-m3)上传成 artifact——runner 销毁后唯一能回看
-      # 的东西,在该次运行详情页底部 Artifacts 区下载(默认留 90 天)。
-      # if: always() = 前面步骤失败也执行:失败现场的截图恰恰最有价值。
+      # 截图产物上传成 artifact——runner 销毁后唯一能回看的东西,在该次
+      # 运行详情页底部 Artifacts 区下载(默认留 90 天)。/tmp/tars-* 覆盖
+      # 各探针套件各自的 OUT 目录(actions/en/focus/locale/quote/m3),
+      # glob 命中多个目录时 artifact 内按目录名分桶。名字沿用 tars-m3-shots
+      # (历史叫法,内容已不止 m3)。if: always() = 前面步骤失败也执行:
+      # 失败现场的截图恰恰最有价值。
       - name: Upload screenshots(视觉留档)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tars-m3-shots
-          path: /tmp/tars-m3
+          path: /tmp/tars-*
           if-no-files-found: ignore
 
       # nightly 失败自动开 issue:断裂在 24h 内暴露还要有人被通知才算数。

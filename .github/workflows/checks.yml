@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 以下四步与本地开发完全同源(见 package.json scripts)。
+      # 以下各步与本地开发完全同源(见 package.json scripts)。
       # CI 的意义:用一台干净的陌生机器重放这些检查,防「在我机器上是好的」。
       - name: Lint (biome)
         run: pnpm lint
@@ -60,9 +60,23 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Unit tests (vitest)
-        run: pnpm test
+      # UI 文案断言规范(tests/README「UI 文案断言规范」)的常驻门禁:
+      # 只需 esbuild,秒级;此前只在 e2e 入口跑,手抄文案的 PR 能过 checks,
+      # 最长 24h 后才被 nightly 拦下
+      - name: UI copy assertion guard (check-test-strings)
+        run: node tests/check-test-strings.mjs
+
+      # 固定等待计数棘轮(硬规则 3:e2e 等待一律事件驱动/轮询):按文件
+      # 计数,超基线即红;规范、基线与豁免见 check-fixed-waits.mjs 头注
+      - name: Fixed-wait ratchet (check-fixed-waits)
+        run: node tests/check-fixed-waits.mjs
+
+      # test:coverage = 全部单测 + 覆盖率收集 + thresholds 校验(硬规则 7
+      # 的棘轮只在收集覆盖率时评估):一步拿「单测绿 + 棘轮未倒退」两个信号
+      - name: Unit tests + coverage thresholds (vitest)
+        run: pnpm test:coverage
 
       # build 串了 tsc --noEmit + check-version + check-i18n 门禁 + vite 产物
+      # + postbuild-offscreen(offscreen.html 挪到 dist 根)
       - name: Build (含 check-version / check-i18n 门禁)
         run: pnpm build

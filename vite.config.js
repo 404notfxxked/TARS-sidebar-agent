@@ -46,15 +46,14 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    // sidepanel 单 chunk 708KB(2026-09-21,S5-5b 视图拆分 +12KB 后)触发过
-    // Vite 的 500KB 警告,已确认是有意识的取舍:构成 ≈ react 全家 31% +
-    // markdown 渲染栈 39%(其中 highlight.js 22%,rehype-highlight 默认带
-    // ~37 种语言)+ 自有代码个位数百分比。扩展从本地磁盘加载,无下载成本,
-    // 解析多花十几毫秒;拆 manualChunks 无用(单入口静态引用,全量加载)。
-    // 阈值 750 = 当前体积 + ~6% 余量:守卫的用途是抓「误引入重依赖」这类
-    // 意外跳变,而不是拦住已知的结构性改动。真正的杠杆是把 highlight.js
-    // 换成小语言子集(如 js/ts/html/css/json/python/bash),min 后可省
-    // 约 100-150KB —— 见 memory/project-roadmap.md「代码高亮瘦身」。
+    // sidepanel 单 chunk ~712KB(2026-09-21 实测)触发过 Vite 的 500KB 警告,
+    // 已确认是有意识的取舍:构成 ≈ react 全家 31% +
+    // markdown 渲染栈 39%(其中 highlight.js 22%)+ 自有代码个位数百分比。
+    // 扩展从本地磁盘加载,无下载成本,解析多花十几毫秒;拆 manualChunks 无用
+    // (单入口静态引用,全量加载)。highlight.js 已按需引入 14 个语言子集
+    // (见 src/sidepanel/chat/bubbles.tsx),不是 rehype-highlight 默认的全量集。
+    // 阈值 750 = 当前体积 + ~5% 余量:守卫的用途是抓「误引入重依赖」这类
+    // 意外跳变,而不是拦住已知的结构性改动。
     chunkSizeWarningLimit: 750,
     rollupOptions: {
       input: {

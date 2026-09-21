@@ -43,10 +43,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # tag push 不触发 checks(main 分支过滤),门禁在这里全部补齐
-      - name: Unit tests (vitest)
-        run: pnpm test
+      # (顺序与 checks.yml 一致:lint → 单测+覆盖率棘轮 → build → 全量 e2e)
+      - name: Lint (biome)
+        run: pnpm lint
+
+      # thresholds 只在收集覆盖率时评估:发版路径同样要过硬规则 7 的棘轮
+      - name: Unit tests + coverage thresholds (vitest)
+        run: pnpm test:coverage
 
       # build 串 tsc --noEmit + check-version + check-i18n 门禁 + vite 产物
+      # + postbuild-offscreen(与 checks.yml 的 Build 注释同源)
       - name: Build
         run: pnpm build
 
