@@ -76,8 +76,12 @@ describe("ConfirmCard 确认卡", () => {
       name: "click_element",
       args: { selector: "#submit-btn" },
     });
-    expect(screen.queryByText(/将写入:/)).not.toBeInTheDocument();
-    expect(screen.queryByText("写入后将回车提交")).not.toBeInTheDocument();
+    // 期望串从字典键派生(前缀子串匹配):非 fill 时这行整体不渲染,
+    // 半角/全角不再造成恒真,回归时才会真 FAIL
+    expect(
+      screen.queryByText(zhCN.chat.confirmFillText.split("{")[0], { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(zhCN.chat.confirmSubmitHint)).not.toBeInTheDocument();
     expect(
       screen.getByText(zhCN.chat.confirmSelectorLabel.replace("{selector}", "#submit-btn")),
     ).toBeInTheDocument();
@@ -93,7 +97,10 @@ describe("ConfirmCard 确认卡", () => {
 
   it("tabUrl 非法且无 tabTitle 时目标页行整个不渲染(不崩)", () => {
     renderCard({ tabUrl: "::bad-url::", tabTitle: undefined });
-    expect(screen.queryByText(/目标页面:/)).not.toBeInTheDocument();
+    // 前缀子串匹配:目标页行(目标页面：…)整个不渲染,措辞/标点改动跟随字典
+    expect(
+      screen.queryByText(zhCN.chat.confirmTarget.split("{")[0], { exact: false }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
 
@@ -134,7 +141,11 @@ describe("ConfirmCard web_fetch 族", () => {
     expect(
       screen.getByText(zhCN.chat.confirmWebFetchUrl.replace("{url}", "example.com/a/b")),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/查询串/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(zhCN.chat.confirmWebFetchQuery.split("{")[0].trim(), {
+        exact: false,
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("无法解析的 url 原样截断展示(不崩,由工具自身报错)", () => {

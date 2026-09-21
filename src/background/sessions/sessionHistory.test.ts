@@ -145,13 +145,13 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
       "s9",
       [
         { role: "user", content: "<user-request>\n问\n</user-request>" },
-        { role: "assistant", content: "答", reasoning_content: "思考" },
+        { role: "assistant", content: "答", reasoning_content: "思考" }, // i18n-ok:自播种 reasoning 内容,非 UI 断言
       ],
       0,
       0,
     );
     const records = toChatRecords(await loadHistory("s9"));
-    expect(records[1].processItems).toEqual([{ kind: "reasoning", text: "思考" }]);
+    expect(records[1].processItems).toEqual([{ kind: "reasoning", text: "思考" }]); // i18n-ok:断言种子往返不变形,非 UI 断言
     // prompt 转写不剥:DeepSeek 要求带 tools 时历轮 reasoning 都回传,
     // 最终回答行的思考同样要留着(缺失即 400,2026-09 修正)
     const { prompt: transcript } = await loadTranscript("s9");

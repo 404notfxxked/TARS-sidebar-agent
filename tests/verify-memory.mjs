@@ -565,7 +565,9 @@ console.log("\n===== T8. 回复尾轻提示 =====");
   );
 
   // 点击轻提示 → 直通记忆管理页;来路是聊天,返回钮文案必须随来路
-  await sidepanel.locator('button[aria-label*="已写入"]').click();
+  await sidepanel
+    .locator(`button[aria-label*="${zh.chat.memorySavedHint.split("{")[0]}"]`)
+    .click();
   await sidepanel.locator(`h2:has-text("${zh.memory.entryTitle}")`).waitFor({ timeout: 5000 });
   check(
     (await sidepanel.locator(`button[aria-label="${zh.common.backToChat}"]`).count()) === 1,

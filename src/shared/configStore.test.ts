@@ -61,7 +61,7 @@ describe("normalizeSearch(旧版单槽 → 分槽,串 key bug 的迁移策略)",
 describe("loadConfig 读时迁移", () => {
   it("旧版单供应商字段(无 providers 键)→ 合成一个 p0 条目,host 取 baseUrl 域名", async () => {
     await storage().set({
-      baseUrl: "https://api.deepseek.com/v1",
+      baseUrl: "https://api.deepseek.com/v1", // i18n-ok:迁移测试 wire 种子,非 UI 断言
       apiKey: "sk-legacy",
       model: "deepseek-chat",
       maxContextTokens: 65536,
@@ -71,7 +71,7 @@ describe("loadConfig 读时迁移", () => {
       {
         id: "p0",
         name: "api.deepseek.com",
-        baseUrl: "https://api.deepseek.com/v1",
+        baseUrl: "https://api.deepseek.com/v1", // i18n-ok:wire 端点常量,非 UI 断言
         apiKey: "sk-legacy",
         models: [{ id: "deepseek-chat", contextTokens: 65536 }],
       },

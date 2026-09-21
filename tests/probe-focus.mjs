@@ -128,7 +128,7 @@ await page.screenshot({ path: `${OUT}/1-scrolled.png` });
 // ---- C. 回到最新悬浮钮 ----
 console.log("\nC. 回到最新悬浮钮");
 const pill = page.locator(`button[aria-label="${zh.chat.jumpLatest}"]`);
-ok(!(await pill.isVisible().catch(() => false)), "贴底时按钮不出现");
+ok((await pill.count()) === 0, "贴底时按钮不出现");
 await page.evaluate(() => {
   const els = [...document.querySelectorAll("div")].filter((d) => {
     const s = getComputedStyle(d);
@@ -151,7 +151,7 @@ ok(
   st2 && st2.height - st2.bottom < 40,
   `点击后平滑滚回底部(${JSON.stringify(st2)})`,
 );
-ok(!(await pill.isVisible().catch(() => false)), "贴底后按钮消失");
+ok((await pill.count()) === 0, "贴底后按钮消失");
 
 // ---- D. 运行中输入框可编辑 ----
 console.log("\nD. 运行中可预打下一问");

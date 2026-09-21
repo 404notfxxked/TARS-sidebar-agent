@@ -23,7 +23,7 @@ const providers: ProviderEntry[] = [
   {
     id: "p1",
     name: "DeepSeek",
-    baseUrl: "https://api.deepseek.com/v1",
+    baseUrl: "https://api.deepseek.com/v1", // i18n-ok:供应商 fixture wire 端点,非 UI 断言
     apiKey: "k",
     models: [
       { id: "m1", alias: "深度思索" },

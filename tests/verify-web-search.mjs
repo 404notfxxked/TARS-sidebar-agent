@@ -595,7 +595,8 @@ chain = ["web_fetch"];
   await ask(sidepanel, "读一下 https://example.com/ 的内容");
   const first = (await toolLogs("web_fetch"))[0];
   const data = first?.data ?? "";
-  check(data.includes("Example Domain") || data.includes("example.com"),
+  // 只认真实内容标志:请求的就是 example.com,URL 本身恒真不起检查作用
+  check(data.includes("Example Domain"),
     "F1 实网页面读取成功", data.slice(0, 260));
 }
 

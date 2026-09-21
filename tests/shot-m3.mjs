@@ -618,7 +618,9 @@ if (ACCENTS_ONLY) {
   for (const [accent, label] of ACCENTS) {
     await page.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();
     await sleep(400);
-    const swatch = page.locator(`button[aria-label="重点色：${label}"]`);
+    const swatch = page.locator(
+      `button[aria-label="${zh.settings.accentAria.replace("{name}", label)}"]`,
+    );
     await swatch.scrollIntoViewIfNeeded();
     await swatch.click();
     await sleep(300);

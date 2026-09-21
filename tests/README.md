@@ -68,15 +68,32 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   硬编码于 agent.ts 等,与字典同文不同源,如 `msg.includes("失败")`);
   ②子串选择器/源码硬编码前缀(与源码同文不同源);③测试种子与 mock
   内容(非 UI 断言,如 seedSessions 的会话标题)。
-- 强制手段:`check-test-strings.mjs` 扫描全部测试脚本(双/单引号 +
-  模板串静态段),命中三类漂移形态即 FAIL——A 逐字等于字典值;
-  B 字面量(≥3 字)是字典值的子串;C 字面量以含占位符字典值的首段
-  开头(插值填参形态)。2026-09-17 反转升级:旧规则只抓逐字相等,
-  插值填参与子串绑定全部漏放,实测实锤后收口。豁免:行内
-  `i18n-ok`,以及 check/ok/assert/fail/console.log 第一参(断言标签与
-  诊断横幅是人读输出,不是 UI 断言)。已知局限:跨行模板串、正则
-  字面量不在扫描范围。`run.mjs` 每次入口先跑它;写新测试先 import
-  lib-i18n;拿不准键名查 `src/shared/i18n/locales/zh-CN.ts`。
+- 强制手段:`check-test-strings.mjs` 扫描 `tests/*.mjs` 与
+  `src/**/*.test.ts(x)`(双/单引号 + 模板串静态段),命中三类漂移形态
+  即 FAIL——A 逐字等于字典值;B 字面量(≥3 字;选择器内层 ≥2)是
+  字典值的子串;C 字面量以含占位符字典值的首段开头(插值填参形态)。
+  2026-09-17 反转升级:旧规则只抓逐字相等,插值填参与子串绑定全部
+  漏放,实测实锤后收口。2026-09-21 补嵌套引号盲区:选择器形态行
+  (含 `[`、`^=`、`*=`、`:has-text`、`aria-label`、`alt=`)的外层字面量
+  再抽一层内层引号串套同一规则(内层子串下限 2,两字手抄如
+  `'img[alt^="图片"]'` 同样入闸)——仍只限选择器形态行,断言标签
+  不卷入。豁免:行内 `i18n-ok`,以及 check/ok/assert/fail/console.log
+  第一参(断言标签与诊断横幅是人读输出,不是 UI 断言)。已知局限:
+  跨行模板串、正则字面量里的 CJK 不在扫描范围;转义引号:单/双引号
+  外层的同型转义内层不抽,模板串外层会抽出(内层正则不识别反斜杠)。
+  `run.mjs` 每次入口先跑它;写新测试先 import lib-i18n;拿不准键名
+  查 `src/shared/i18n/locales/zh-CN.ts`。
+
+## 固定等待计数棘轮(硬规则 3,run.mjs 入口自动检查)
+
+- 等待一律事件驱动/轮询(waitFor / waitForRunLog / 轮询循环),**禁止新增**
+  `await sleep(<数字>)` 与 `await new Promise((r) => setTimeout(r, <数字>))`。
+  存量按文件计数入 `check-fixed-waits.mjs` 的基线表(2026-09-21 修掉
+  probe-actions / probe-locale 两处承重等待后实测),**超基线即 FAIL**,
+  基线只降不升;确属必须的新增(如等外部 TTL)同步抬基线并说明理由。
+- 豁免:`shot-m3`(纯视觉,人看不判 PASS/FAIL)、`real-search-probe`
+  (.gitignore 排除)、`lib-cdp-mock`(库内轮询实现)。已知局限:只防
+  数量增长,不防等量替换(有意取舍,成本远高于收益)。
 
 ## e2e 底座
 

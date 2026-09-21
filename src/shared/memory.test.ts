@@ -138,7 +138,7 @@ describe("卡片态:优先级 / 行渲染 / 两段式", () => {
 
   it("两段式:卡片与简条混合时加段头,单一形态不加(存量格式逐字节不变)", () => {
     const mixed = memoryInjectionLines([
-      { text: "偏好简洁", key: "style", pinned: false, updatedAt: 2 },
+      { text: "偏好简洁", key: "style", pinned: false, updatedAt: 2 }, // i18n-ok:记忆条目测试种子,与占位符示例同文非 UI 断言
       { text: "女儿爱吃甜食", pinned: false, updatedAt: 1 },
     ]);
     expect(mixed).toEqual([

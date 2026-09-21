@@ -230,12 +230,10 @@ await restartSW(cdpSend, extId);
 await sidepanel.reload();
 await sleep(1500); // 等 SW 启动迁移完成
 await openSessionsView(sidepanel);
-await sidepanel
-  .getByText("旧会话迁移测试")
-  .first()
-  .waitFor({ timeout: 10000 })
-  .then(() => check("旧会话出现在历史列表", true))
-  .catch(() => check("旧会话出现在历史列表", false));
+// 等待 + 对捕获值断言(硬规则 2:参数序 check(name, cond),条件必须真)
+const migratedTitle = sidepanel.getByText("旧会话迁移测试").first();
+await migratedTitle.waitFor({ timeout: 10000 }).catch(() => {});
+check("旧会话出现在历史列表", (await migratedTitle.count()) > 0);
 {
   const snap = await idbSnapshot(sidepanel);
   check("迁移后 IDB 有 1 会话 2 消息", snap.rows.length === 1 && snap.msgTotal === 2,
@@ -284,7 +282,9 @@ console.log("\nS2 删除单个会话");
   check("删除前 images store 有 2 行", (await imageSnapshot(sidepanel)).length === 2);
 
   const row = sidepanel.locator("li", { hasText: "旧会话迁移测试" });
-  await row.locator('button[aria-label^="删除会话"]').click();
+  await row
+    .locator(`button[aria-label^="${zh.sessions.deleteOf.split("{")[0]}"]`)
+    .click();
   await row.locator(`button:has-text("${zh.common.confirmDelete}")`).click();
   await sleep(600);
   const gone = (await row.count()) === 0;

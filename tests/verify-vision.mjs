@@ -95,6 +95,21 @@ const setModels = (page, vision) =>
     return chrome.storage.local.set(bag);
   }, vision);
 
+/** 等面板真的采用目标视觉档(事件式,替代「赌 storage 变更已传播」的固定 sleep)。
+ *  信号:附件钮的 aria-label 恒定,而 title 随 visionOk 翻转(ComposerBar.tsx:242)
+ *  —— 面板内存里的配置只有收到 storage 变更事件后才更新,而贴图准入门控读它;
+ *  赌输时下一行 setInputFiles 会被门控吞掉(预览永不出现)。
+ *  ⚠️ 它**不是** T18 那条 vision V5 flake 的修复:改后 flake 仍复现(11 次里 1 次),
+ *  且失败那次本函数已通过 —— 说明提交瞬间面板确实是非视觉档,根因仍未定论。 */
+const waitForVision = (page, vision) =>
+  page
+    .locator(
+      `button[aria-label="${zh.chat.addImage}"][title="${
+        vision ? zh.chat.addImage : zh.chat.visionOffTitle
+      }"]`,
+    )
+    .waitFor({ timeout: 5000 });
+
 const sidepanel = await browser.newPage();
 await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
 await setModels(sidepanel, false); // V1:先不给 vision
@@ -113,7 +128,9 @@ console.log("\nV1 无视觉模型的贴图门控");
     .then(() => true)
     .catch(() => false);
   check("贴图被拦截且给出提示", hint);
-  const previews = await sidepanel.locator('img[alt^="待发送图片"]').count();
+  const previews = await sidepanel
+    .locator(`img[alt^="${zh.chat.pendingImageAlt.split("{")[0]}"]`)
+    .count();
   check("没有产生附件预览", previews === 0, `previews=${previews}`);
 }
 
@@ -125,10 +142,13 @@ await sleep(400); // storage 事件 → modelList 更新
   const input = sidepanel.locator('input[type="file"]');
   await input.setInputFiles(PNG_PATH);
   await sidepanel
-    .locator('img[alt^="待发送图片"]')
+    .locator(`img[alt^="${zh.chat.pendingImageAlt.split("{")[0]}"]`)
     .first()
     .waitFor({ timeout: 5000 });
-  check("附件预览出现(压缩管线成功)", true);
+  const previews = await sidepanel
+    .locator(`img[alt^="${zh.chat.pendingImageAlt.split("{")[0]}"]`)
+    .count();
+  check("附件预览出现(压缩管线成功)", previews === 1, `previews=${previews}`);
 }
 await ask(sidepanel, "这张图是什么");
 {
@@ -151,7 +171,9 @@ await ask(sidepanel, "这张图是什么");
   // 本地回显气泡的图片必须真能解码:预览 objectURL 交棒给气泡缓存后,待发
   // 清单的清理不能把它撤掉(先撤销、后新建 <img> 的加载必失败,2026-09 审计)
   {
-    const bubble = sidepanel.locator('img[alt^="图片"]').first();
+    const bubble = sidepanel
+      .locator(`img[alt^="${zh.chat.imageAlt.split("{")[0]}"]`)
+      .first();
     await bubble.waitFor({ timeout: 8000 }).catch(() => {});
     let decoded = false;
     for (let i = 0; i < 20 && !decoded; i++) {
@@ -217,11 +239,14 @@ console.log("\nV3 图片持久化(消息行存引用,字节进 images store)");
 // 图片照常入库、请求里所有图片消息退化纯文本并带系统注
 console.log("\nV5 切回无视觉模型后追问(请求侧图片退化)");
 await setModels(sidepanel, true);
-await sleep(400);
+await waitForVision(sidepanel, true);
 await sidepanel.locator('input[type="file"]').setInputFiles(PNG_PATH);
-await sidepanel.locator('img[alt^="待发送图片"]').first().waitFor({ timeout: 5000 });
+await sidepanel
+  .locator(`img[alt^="${zh.chat.pendingImageAlt.split("{")[0]}"]`)
+  .first()
+  .waitFor({ timeout: 5000 });
 await setModels(sidepanel, false);
-await sleep(400);
+await waitForVision(sidepanel, false);
 // 提示在发送瞬间亮起、3s 后熄灭;ask() 在「状态翻转被 React 批次吞掉」时
 // 会等满 10s 才返回(见 ask 内注),到那时提示早已熄灭 —— 本条检查必须
 // 手动驱动:点击后立刻轮询捕获,再等 run 收口做请求侧断言
@@ -229,16 +254,17 @@ await sleep(400);
   const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
   await input.fill("再问一次");
   await sidepanel.locator(`button[aria-label="${zh.chat.send}"]`).click();
-  let hint = false;
-  for (let i = 0; i < 20 && !hint; i++) {
-    hint = await sidepanel
-      .getByText(zh.chat.visionModelFallback)
-      .first()
-      .isVisible()
-      .catch(() => false);
-    if (!hint) await sleep(100);
-  }
-  check("发送时面板提示图片不会发送", hint);
+  // 前置条件(面板处于非视觉档)已由 waitForVision 保证;下面的 waitFor 只负责
+  // 抓这个 ~3s 的瞬时窗口(框架内部轮询,不手写循环)。断言不删:用户被明确
+  // 告知图片不会发送,有产品价值。
+  // ⚠️ T18 首条(vision V5 偶发红)**仍未定论**:已排除两种假设 —— ①手写轮询
+  // 采样不足(改 waitFor 后仍红);②提交瞬间面板 visionOk 陈旧(waitForVision
+  // 已通过的那次照样红)。失败签名固定:本行红,紧随的三条请求侧断言恒绿。
+  // 下一步:在本行失败时 dump `attachHint` 的实际文本与元素可见性,判断
+  // flashHint(ChatView.tsx:151)到底有没有触发
+  const fallbackHint = sidepanel.getByText(zh.chat.visionModelFallback).first();
+  await fallbackHint.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+  check("发送时面板提示图片不会发送", (await fallbackHint.count()) > 0);
   // 等 run 真正开始(发送钮翻转为停止)再等收口(翻回发送),请求侧断言
   // 才读到本轮的 lastRequest —— 翻转被吞时按 ask() 同款语义吞掉超时
   await sidepanel
@@ -286,7 +312,7 @@ await sidepanel.locator(`button[aria-label="${zh.chat.openSessions}"]`).click();
 await sleep(300);
 await sidepanel.locator("li").first().click();
 {
-  const img = sidepanel.locator('img[alt^="图片"]');
+  const img = sidepanel.locator(`img[alt^="${zh.chat.imageAlt.split("{")[0]}"]`);
   await img.first().waitFor({ timeout: 8000 }).catch(() => {});
   const src = await img.first().getAttribute("src").catch(() => null);
   const decoded = await img

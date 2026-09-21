@@ -295,11 +295,36 @@ console.log("\n===== S1c. HISTORY 载荷 + 压缩分隔条 =====");
   check(payload.compaction && typeof payload.compaction.uptoSeq === "number",
     "S1c-2 HISTORY 载荷带 compaction 元数据", JSON.stringify(payload.compaction));
 
-  // UI:会话列表 → 点开 s-main → 分隔条出现在压缩点
+  // UI:会话列表 → 点开 s-main → 分隔条出现在压缩点(前一段是最后一条
+  // 被压缩的消息,后一段是压缩点之后的首条 —— 位置错误照常 FAIL)
   await sidepanel.locator(`button[aria-label="${zh.chat.openSessions}"]`).click();
   await sidepanel.locator('li button', { hasText: "压缩主会话" }).first().click();
   await sidepanel.locator(".ctx-divider").waitFor({ timeout: 5000 });
-  check(true, "S1c-3 压缩分隔条渲染(.ctx-divider)");
+  const upto = payload.compaction.uptoSeq;
+  const firstAfter = payload.messages.find((m) => m.seq > upto);
+  const lastBefore = [...payload.messages].reverse().find((m) => m.seq <= upto);
+  const markerOf = (m) => (m.content.match(/MARK-\S+/) ?? [""])[0];
+  const split = await sidepanel.evaluate(() => {
+    const divider = document.querySelector(".ctx-divider");
+    if (!divider?.parentElement) return null;
+    const kids = [...divider.parentElement.children];
+    const di = kids.indexOf(divider);
+    return {
+      prev: kids[di - 1]?.textContent ?? "",
+      next: kids[di + 1]?.textContent ?? "",
+    };
+  });
+  check(
+    split?.prev.includes(markerOf(lastBefore)) === true &&
+      split?.prev.includes(markerOf(firstAfter)) === false,
+    "S1c-3 分隔条位于压缩点:前一段是最后一条被压缩的消息",
+    JSON.stringify({ upto, prev: split?.prev.slice(0, 120) }),
+  );
+  check(
+    split?.next.includes(markerOf(firstAfter)) === true,
+    "S1c-3b 分隔条后是压缩点之后的首条消息",
+    JSON.stringify({ firstAfter: markerOf(firstAfter), next: split?.next.slice(0, 120) }),
+  );
   await sidepanel.locator(`button[aria-label="${zh.chat.newChat}"]`).click();
 }
 

@@ -37,6 +37,31 @@ const SUITES = {
   quote: "probe-quote.mjs", // 每日一句:缓存 miss 不跳变/出处悬停显形/设置开关与持久化
 };
 
+// ---- 未登记套件自检(必须早于一切早退:无参看清单恰恰是最该报错的场景)。
+// 只查 verify-*/probe-* 两个前缀:它们是断言套件,漏登记 = 静默永不运行。
+// shot-m3(纯视觉,人看不判 PASS/FAIL)与 real-search-probe(真网探针,
+// .gitignore 精确排除)有意不入 SUITES,lib-*/check-* 是库与守卫,均不在此列。
+// 反向检查:SUITES 登记的脚本必须在磁盘上存在,防改名后注册表指空。----
+const registeredSuites = new Set(Object.values(SUITES));
+const unregistered = readdirSync(__dirname)
+  .filter((f) => /^(verify|probe)-.+\.mjs$/.test(f) && !registeredSuites.has(f))
+  .sort();
+const missingSuites = Object.values(SUITES)
+  .filter((f) => !existsSync(join(__dirname, f)))
+  .sort();
+if (unregistered.length > 0 || missingSuites.length > 0) {
+  if (unregistered.length > 0) {
+    console.error("❌ 未登记套件(verify-*/probe-* 必须入 SUITES,否则静默永不运行):");
+    for (const f of unregistered) console.error(`   ${f}`);
+  }
+  if (missingSuites.length > 0) {
+    console.error("❌ SUITES 登记的脚本在磁盘上不存在(改名/删除后没同步注册表):");
+    for (const f of missingSuites) console.error(`   ${f}`);
+  }
+  console.error("   修复后重跑;域与套件对照表见 tests/README.md「e2e 断言套件」。");
+  process.exit(2);
+}
+
 // ---- 参数解析 ----
 const argv = process.argv.slice(2);
 const wantsAll = argv.includes("--all");
@@ -67,6 +92,15 @@ const guard = spawnSync("node", [join(__dirname, "check-test-strings.mjs")], {
 });
 if (guard.status !== 0) {
   console.error("\n先修复上面的硬编码文案,再跑套件。");
+  process.exit(2);
+}
+
+// ---- 固定等待计数棘轮(硬规则 3;规范与豁免见 check-fixed-waits.mjs 头注)----
+const fixedWaits = spawnSync("node", [join(__dirname, "check-fixed-waits.mjs")], {
+  stdio: "inherit",
+});
+if (fixedWaits.status !== 0) {
+  console.error("\n先压掉上面新增的固定等待(改事件驱动/轮询),再跑套件。");
   process.exit(2);
 }
 

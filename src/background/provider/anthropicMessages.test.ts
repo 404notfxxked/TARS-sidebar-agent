@@ -98,7 +98,7 @@ describe("请求形态:端点/认证/必填字段", () => {
   });
 
   it("baseUrl 缺省官方地址;自定义原样透传", async () => {
-    expect((await runWith()).opts.baseUrl).toBe("https://api.anthropic.com/v1");
+    expect((await runWith()).opts.baseUrl).toBe("https://api.anthropic.com/v1"); // i18n-ok:wire 端点常量,与字典占位符同文非 UI 断言
     expect(
       (await runWith({ baseUrl: "https://gate.example.com/v1" })).opts.baseUrl,
     ).toBe("https://gate.example.com/v1");
@@ -924,7 +924,7 @@ describe("端点类别决定历史回传形状", () => {
         >)[1].content as Array<{ type: string }>
       ).map((b) => b.type);
     for (const native of [
-      "https://api.anthropic.com/v1",
+      "https://api.anthropic.com/v1", // i18n-ok:wire 端点常量,非 UI 断言
       "https://gateway.anthropic.com/v1",
     ]) {
       expect(await typesOf(native)).toContain("server_tool_use");

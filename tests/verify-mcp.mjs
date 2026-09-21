@@ -490,7 +490,7 @@ console.log("\n===== T5. 设置页:开关/添加/工具清单/测试连接 =====
 
   await sidepanel.locator(`button:has-text("${zh.settings.testConnection}")`).click();
   const connState = await sidepanel
-    .locator('span:has-text("已连接")')
+    .locator(`span:has-text("${zh.settings.testOk.split("{")[0]}")`)
     .first()
     .textContent();
   check(

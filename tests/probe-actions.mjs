@@ -73,9 +73,12 @@ ok(
 const bubble = page.locator(".msg-bubble", { hasText: ANSWERS[0] }).first();
 const copyBtn = bubble.locator(`button[aria-label="${zh.common.copy}"]`);
 await copyBtn.click();
-await sleep(300);
+// 按钮翻转是事件,不猜时长:等「已复制」钮出现(超时降级为拿不到),
+// 断言仍由 ok() 持有 —— 翻转没发生照样 FAIL,这里不做恒真打卡
+const copiedBtn = bubble.locator(`button[aria-label="${zh.common.copied}"]`);
+await copiedBtn.waitFor({ timeout: 3000 }).catch(() => {});
 ok(
-  (await bubble.locator(`button[aria-label="${zh.common.copied}"]`).count()) > 0,
+  (await copiedBtn.count()) > 0,
   "复制后按钮翻成已复制反馈(useCopyFlash 成功路径)",
 );
 // 剪贴板真实写入:标签翻转即代表 copy() 已 resolve,这里再做内容级加分断言。

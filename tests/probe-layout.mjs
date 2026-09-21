@@ -48,7 +48,8 @@ await seedSessions(
   })),
 );
 
-/** 数值探针:文档层/顶栏/内页滚动状态 */
+/** 数值探针:文档层/顶栏/内页滚动状态。headerTop 用 null 作缺失哨兵 ——
+ *  顶栏整个消失时必须让断言失败(吸顶硬规则的唯一自动化防线) */
 const probe = () =>
   page.evaluate(() => {
     const doc = document.scrollingElement;
@@ -56,8 +57,9 @@ const probe = () =>
     const inner = [...document.querySelectorAll(".overflow-y-auto")].at(-1);
     return {
       docScrollable: doc.scrollHeight - doc.clientHeight,
-      headerTop: header?.getBoundingClientRect().top ?? 9999,
+      headerTop: header ? header.getBoundingClientRect().top : null,
       innerScrollable: inner ? inner.scrollHeight - inner.clientHeight : -1,
+      innerScrollTop: inner ? inner.scrollTop : -1,
     };
   });
 const scrollInner = async (dy) => {
@@ -81,7 +83,8 @@ for (const theme of ["light", "dark"]) {
   await scrollInner(500);
   m = await probe();
   check(m.innerScrollable > 0, `[${theme}] 历史页:内页可滚(种子够高)`, `innerScrollable=${m.innerScrollable}`);
-  check(m.headerTop >= 0, `[${theme}] 历史页滚动后顶栏吸顶`, `headerTop=${m.headerTop}`);
+  check(m.innerScrollTop > 0, `[${theme}] 历史页:滚动后内页位置已变`, `innerScrollTop=${m.innerScrollTop}`);
+  check(m.headerTop !== null && m.headerTop >= 0, `[${theme}] 历史页滚动后顶栏吸顶`, `headerTop=${m.headerTop}`);
   await page.screenshot({ path: `${OUT}/layout-sessions-scrolled-${theme}.png` });
   console.log(`  📸 layout-sessions-scrolled-${theme}.png`);
   await page.keyboard.press("Escape");
@@ -96,7 +99,8 @@ for (const theme of ["light", "dark"]) {
   await scrollInner(700);
   m = await probe();
   check(m.innerScrollable > 0, `[${theme}] 设置页:内页可滚`, `innerScrollable=${m.innerScrollable}`);
-  check(m.headerTop >= 0, `[${theme}] 设置页滚动后顶栏吸顶`, `headerTop=${m.headerTop}`);
+  check(m.innerScrollTop > 0, `[${theme}] 设置页:滚动后内页位置已变`, `innerScrollTop=${m.innerScrollTop}`);
+  check(m.headerTop !== null && m.headerTop >= 0, `[${theme}] 设置页滚动后顶栏吸顶`, `headerTop=${m.headerTop}`);
   await page.screenshot({ path: `${OUT}/layout-settings-scrolled-${theme}.png` });
   console.log(`  📸 layout-settings-scrolled-${theme}.png`);
   await page.keyboard.press("Escape");

@@ -391,12 +391,15 @@ try {
   scene = "安全分节";
   console.log("\n── 安全分节 ──");
   await sidepanel.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();
-  await sidepanel
+  const securityRow = sidepanel
     .locator('label, span, div')
     .filter({ hasText: zh.security.confirmActions })
-    .first()
-    .waitFor({ timeout: 10000 });
-  assert("设置页出现「安全」分节与确认开关", true);
+    .first();
+  await securityRow.waitFor({ timeout: 10000 });
+  assert(
+    "设置页出现「安全」分节与确认开关",
+    (await securityRow.count()) > 0,
+  );
 } catch (err) {
   // 场景名 + 完整堆栈:失败要能定位到哪个场景哪一行,而不是折成一个匿名红点
   checker(false, `场景「${scene ?? "初始化"}」执行异常`, err.stack ?? String(err));

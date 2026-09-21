@@ -45,8 +45,10 @@ const ok = (cond, label) => {
 
 // ── 中文基线:打开设置 ──
 await page.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();
-await sleep(300);
-ok(await page.getByText(zh.settings.sectionAppearance, { exact: true }).isVisible(), "设置页标题为中文(基线)");
+// 等标题出现而非猜时长(硬规则 3):waitFor 只保证挂载,断言由 ok() 现查
+const zhTitle = page.getByText(zh.settings.sectionAppearance, { exact: true });
+await zhTitle.waitFor({ timeout: 3000 }).catch(() => {});
+ok(await zhTitle.isVisible(), "设置页标题为中文(基线)");
 await page.screenshot({ path: `${OUT}/1-settings-zh.png` });
 
 // ── 切到 English:设置页整树立即换文案 ──
