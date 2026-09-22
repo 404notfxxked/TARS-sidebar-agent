@@ -111,7 +111,6 @@ export const enUS = {
     trace: {
       thinking: "Thinking",
       reasoning: "Reasoning",
-      interim: "Interim output",
       running: "Running",
       failed: "Failed",
       args: "Arguments",

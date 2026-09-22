@@ -437,9 +437,12 @@ export function ReplayProcessCard({ items }: { items: ProcessItem[] }) {
   );
 }
 
-/** 中间文案行(轮内思考/工具之间的叙述文本):摘要为单行首行预览,展开回看全文 */
+/** 中间文案行(轮内思考/工具之间的叙述文本):标签位直接放正文首行(带省略号),
+ *  展开回看全文。**不再有「过程文案」类别词** —— 同一段文字在流式期就是无标签的
+ *  assistant 气泡,折进卡里不该改名;类别词在一轮多个文本段时只是重复噪音。
+ *  行类型靠图标(≡)+ 内容本身表达,与实况同构 */
 function TextRow({ item }: { item: TextSeg }) {
-  const t = useT();
+  const t = useT(); // 展开体的截断注记仍走字典(标签位已改为正文首行)
   const [open, setOpen] = useState(false);
   return (
     <div className="trace-row" data-kind="text" data-open={open}>
@@ -452,9 +455,8 @@ function TextRow({ item }: { item: TextSeg }) {
         <span className="trace-icon" aria-hidden="true">
           <LinesIcon />
         </span>
-        <span className="trace-label">{t("chat.trace.interim")}</span>
+        <span className="trace-label">{firstLine(item.text)}</span>
         <span className="trace-tail">
-          <span className="trace-status trace-preview">{firstLine(item.text)}</span>
           <ChevronIcon />
         </span>
       </button>
@@ -625,10 +627,24 @@ function windowSlice(s: string): string {
   return s.slice(i);
 }
 
-/** 单行预览:取首个非空行并去首尾空白 */
+/** 单行预览(文本行的标签位):取首个非空行,并剥掉行首的 markdown 标记
+ *  —— 标签位是「正文」的位置,行首顶着 `**` / `##` / `>` / `-` / 围栏只是噪音
+ *  (智谱的服务端搜索叙述首行就是 `**Z.ai Built-in Tool: …**`)。
+ *  剥完为空(纯围栏行)回退原文:标签位不留空,行也仍可点开看全文 */
 function firstLine(s: string): string {
   const line = s.split("\n").find((l) => l.trim().length > 0) ?? "";
-  return line.trim();
+  const raw = line.trim();
+  const stripped = raw
+    .replace(/^```[A-Za-z0-9+#.-]*\s*/, "") // 围栏
+    .replace(/^#{1,6}\s+/, "") // 标题
+    .replace(/^>\s+/, "") // 引用
+    .replace(/^[-*+]\s+/, "") // 列表点
+    .replace(/^(\*\*|__)(.+?)\1/, "$2") // 起头的成对粗体(**重点** → 重点)
+    .replace(/^([*_])([^*_\s][^*_]*?)\1/, "$2") // 起头的成对斜体
+    .replace(/^[*_`]+/, "") // 单边强调起始
+    .replace(/[*_`]+$/, "") // 单边强调收尾
+    .trim();
+  return stripped || raw;
 }
 
 /** 超长文本截断,尾部标注总字数(t 由调用方传入,理由同 fmtDur)。

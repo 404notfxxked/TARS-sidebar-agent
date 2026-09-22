@@ -127,6 +127,10 @@
   .trace-row[data-kind="tool"] .trace-label {
     color: var(--md-sys-color-on-surface);
   }
+  /* 文本行的标签位放的是正文首行(不是类别词):常规字重,别被读成标题 */
+  .trace-row[data-kind="text"] .trace-label {
+    font-weight: 400;
+  }
 
   /* 思考中的标题:高光横扫 */
   .trace-shimmer {
@@ -329,14 +333,6 @@
   .trace-copy-row {
     display: flex;
     justify-content: flex-end;
-  }
-
-  /* 中间文案行的尾部单行预览 */
-  .trace-preview {
-    max-width: 46%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* ---- settled 收拢:过程卡收成一行摘要 chip,点击展开完整行 ---- */

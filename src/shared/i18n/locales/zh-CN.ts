@@ -104,7 +104,6 @@ export const zhCN = {
     trace: {
       thinking: "思考中",
       reasoning: "思考过程",
-      interim: "过程文案",
       running: "运行中",
       failed: "失败",
       args: "参数",
