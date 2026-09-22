@@ -20,10 +20,16 @@ const h = vi.hoisted(() => ({
     { id: "a", name: "skill-a", description: "A 技能", enabled: true, updatedAt: 1, chars: 10 },
     { id: "b", name: "skill-b", description: "B 技能", enabled: true, updatedAt: 2, chars: 10 },
   ] as SkillInfo[],
+  // 列表请求失败开关(REQ-P0-3 用例;仅对 SKILL_LIST 生效,写动作不受影响)
+  failList: false,
 }));
 
 vi.mock("../clients/skillClient", () => ({
-  skillReq: vi.fn(async () => ({ skills: h.skills })),
+  skillReq: vi.fn((msg: { type?: string }) =>
+    h.failList && msg?.type === "skill_list"
+      ? Promise.reject(new Error("storage down")) // i18n-ok 测试种子
+      : Promise.resolve({ skills: h.skills }),
+  ),
   skillRawReq: vi.fn(
     (id: string) =>
       new Promise<{ id: string; raw?: string }>((resolve) => {
@@ -51,6 +57,7 @@ const resolveRaw = async (id: string, raw: string) => {
 
 afterEach(() => {
   h.rawWaiters.length = 0;
+  h.failList = false;
   cleanup();
 });
 
@@ -90,5 +97,25 @@ describe("SkillView 编辑器新鲜度守卫(审计 §1.4 回归)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await resolveRaw("a", "RAW-A-CONTENT");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("SkillView 列表读取失败(REQ-P0-3 回归)", () => {
+  it("列表请求 reject → 错误态 + 重试,而非「还没有安装技能」空态;重试成功后列表恢复", async () => {
+    const user = userEvent.setup();
+    h.failList = true;
+    render(<SkillView onBack={() => {}} />);
+
+    expect(await screen.findByText(zhCN.common.loadFailed)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: zhCN.common.retry }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(zhCN.skills.empty)).not.toBeInTheDocument();
+
+    // 重试成功 → 错误态退场,列表出现
+    h.failList = false;
+    await user.click(screen.getByRole("button", { name: zhCN.common.retry }));
+    expect(await screen.findByText("/skill-a")).toBeInTheDocument();
+    expect(screen.queryByText(zhCN.common.loadFailed)).not.toBeInTheDocument();
   });
 });

@@ -4,7 +4,7 @@ import type { TFn } from "../../shared/i18n";
 // 结构沿用历史会话页的范式:吸顶头部 + 顶部添加条 + 行悬停操作 + 两段确认删除。
 // 数据经 MEM_* 消息走后台(memoryClient),本视图不碰 IDB。
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MSG, type MemoryItem } from "../../shared/messages";
 import {
   type MemoryTag,
@@ -19,6 +19,7 @@ import { createLogger } from "../../shared/logger";
 import { memReq } from "../clients/memoryClient";
 import { useConfirmDelete, useRowStagger, useT } from "../ui/hooks";
 import { SubPageEmpty } from "../ui/SubPageEmpty";
+import { SubPageError } from "../ui/SubPageError";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { StarIcon, TrashIcon } from "../ui/icons";
@@ -35,6 +36,12 @@ export default function MemoryView({
 }) {
   const t = useT();
   const [memories, setMemories] = useState<MemoryItem[] | null>(null);
+  // 列表读取失败(传输级 reject / MEM_LIST 回包带 error):显式错误态 + 重试,
+  // 绝不复用「还没有记忆」空态文案 —— 存储异常呈现成数据消失是恐慌性误报。
+  // 判别联合而非直接存文案:transport 的标题渲染时经 t() 现取,语言切换不冻结
+  const [listLoadError, setListLoadError] = useState<
+    { kind: "transport" } | { kind: "backend"; message: string } | null
+  >(null);
   // 当前模型的上下文窗口:注入预算按它动态缩放(与后台注入同源)
   const [contextTokens, setContextTokens] = useState<number | undefined>();
   const [newMemory, setNewMemory] = useState("");
@@ -52,21 +59,29 @@ export default function MemoryView({
   // 后台兜底回包携带的操作错误(MEMORIES.error),就地展示不挂起
   const [listError, setListError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // 列表读取(重试复用):序号守卫对「重试后旧请求迟到回包」同样生效
+  const loadList = useCallback(() => {
     const seq = ++listSeqRef.current;
+    setListLoadError(null);
     memReq({ type: MSG.MEM_LIST })
       .then((r) => {
         if (seq !== listSeqRef.current) return;
         setMemories(r.memories);
-        setListError(r.error ?? null);
+        setListLoadError(r.error ? { kind: "backend", message: r.error } : null);
       })
       .catch(() => {
-        if (seq === listSeqRef.current) setMemories([]); // 加载失败按空列表呈现,重开页面重试
+        if (seq !== listSeqRef.current) return;
+        setMemories([]);
+        setListLoadError({ kind: "transport" });
       });
+  }, []);
+
+  useEffect(() => {
+    loadList();
     loadConfig()
       .then((c) => setContextTokens(selectedContextTokens(c)))
       .catch(() => {});
-  }, []);
+  }, [loadList]);
 
   const add = async () => {
     const text = newMemory.trim();
@@ -297,6 +312,15 @@ export default function MemoryView({
       <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
         {memories === null ? (
           <SkeletonRows widths={[80, 62, 71, 55]} />
+        ) : listLoadError ? (
+          <SubPageError
+            title={
+              listLoadError.kind === "transport"
+                ? t("common.loadFailed")
+                : listLoadError.message
+            }
+            onRetry={loadList}
+          />
         ) : memories.length === 0 ? (
           <SubPageEmpty
             icon={

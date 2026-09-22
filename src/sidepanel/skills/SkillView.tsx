@@ -4,12 +4,13 @@
 // 行内布局:开关独占行尾(最高频操作),「编辑/删除」在行内独立动作行常驻显示
 // —— 悬停才显形的操作在桌面端可发现性差,与开关挤同区也会误触。
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "../../shared/logger";
 import { skillReq, skillRawReq } from "../clients/skillClient";
 import { MSG, type SkillInfo } from "../../shared/messages";
 import { useConfirmDelete, useT } from "../ui/hooks";
 import { SubPageEmpty } from "../ui/SubPageEmpty";
+import { SubPageError } from "../ui/SubPageError";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { PencilIcon, TrashIcon } from "../ui/icons";
@@ -29,6 +30,12 @@ export default function SkillView({
 }) {
   const t = useT();
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
+  // 列表读取失败(传输级 reject / SKILL_LIST 回包带 error):显式错误态 + 重试,
+  // 绝不复用「还没有技能」空态文案(REQ-P0-3)。判别联合让 transport 的标题
+  // 渲染时经 t() 现取,语言切换不冻结
+  const [listLoadError, setListLoadError] = useState<
+    { kind: "transport" } | { kind: "backend"; message: string } | null
+  >(null);
   // 浮层(添加/编辑共用):draft 为 SKILL.md 原文,editorError 就地展示
   const [editor, setEditor] = useState<SkillEditor | null>(null);
   const [draft, setDraft] = useState("");
@@ -42,11 +49,23 @@ export default function SkillView({
   // 过期即丢弃;关闭/切添加同样递增,作废全部在途请求。渲染期不写 ref
   const editSeqRef = useRef(0);
 
-  useEffect(() => {
+  // 列表读取(重试复用)
+  const loadList = useCallback(() => {
+    setListLoadError(null);
     skillReq({ type: MSG.SKILL_LIST })
-      .then((r) => setSkills(r.skills))
-      .catch(() => setSkills([])); // 加载失败按空列表呈现,重开页面重试
+      .then((r) => {
+        setSkills(r.skills);
+        setListLoadError(r.error ? { kind: "backend", message: r.error } : null);
+      })
+      .catch(() => {
+        setSkills([]);
+        setListLoadError({ kind: "transport" });
+      });
   }, []);
+
+  useEffect(() => {
+    loadList();
+  }, [loadList]);
 
   const startAdd = () => {
     editSeqRef.current++;
@@ -145,6 +164,15 @@ export default function SkillView({
       <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-1">
         {skills === null ? (
           <SkeletonRows widths={[76, 58, 68]} />
+        ) : listLoadError ? (
+          <SubPageError
+            title={
+              listLoadError.kind === "transport"
+                ? t("common.loadFailed")
+                : listLoadError.message
+            }
+            onRetry={loadList}
+          />
         ) : skills.length === 0 ? (
           <SubPageEmpty
             icon={
