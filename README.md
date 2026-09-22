@@ -7,7 +7,7 @@
 > 住在浏览器侧栏的 agent：读你正在看的页面，替你联网查，替你点按填写。
 > 名字来自《星际穿越》里那个机器人：诚实值 90%，幽默值 75%，冷笑话讲得一般，活儿干得漂亮。
 
-**Chrome MV3 扩展 · BYOK · 数据不出本机**
+**Chrome MV3 扩展 · BYOK（需要你自己的模型 Key）· 数据不出本机 · 安装零站点权限**
 
 [![version](https://img.shields.io/github/v/tag/404notfxxked/TARS-sidebar-agent?style=flat-square&label=version)](https://github.com/404notfxxked/TARS-sidebar-agent/releases)
 [![chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/develop/mv3/mv3-migration)
@@ -18,6 +18,8 @@
 </div>
 
 一个 Chrome MV3 扩展，内置手写的 ReAct agent 循环（推理 → 工具调用 → 观察 → 再推理）。BYOK 接入任意 OpenAI 兼容端点——DeepSeek、Kimi、OpenRouter、本地 Ollama 都行；没有账号体系，没有后端服务器，不收订阅费：你自己的 Key，你自己的数据，你自己的模型账单。
+
+两句实话帮你判断适不适合装：它没有 Key 就完全不工作——零配置的「侧栏问答」是平台内置侧栏在做的事；它比那多的是**页面操作**（替你点按填写，逐次过确认卡）与**可审计**（开源、零后端、数据不出本机）。
 
 常见的侧栏 AI 助手大多要求订阅、把对话送到厂商后端；本地模型侧栏则往往只是一个聊天窗口。TARS 的差异点在于把「代理」做成了动词——它能真的读懂长页面、操作页面、带着工具箱上网。
 
