@@ -463,12 +463,70 @@ function collectImageRows(
  *  并标注体量(硬规则 8 同款纪律)。截断只影响投影,库里仍全量 */
 const PROCESS_RESULT_CAP_CHARS = 12_000;
 
+/** assistant 行 → 过程项(思考 / 中间文案)。**段边界只在 wireBlocks 里**:
+ *  适配器把同一轮的多个 thinking / text 块分别拼成 reasoning_content / content
+ *  (见 provider/anthropicMessages.ts 的聚合),而实况是按段的 —— 落段规则是
+ *  「同类相邻块续写同一段,kind 一变就开新段」(useRunSegments 的文本段续写 /
+ *  思考段续写),所以这里也按同样的口径还原:同类相邻块并成一行。
+ *  有 wireBlocks 就按 wire 原序成行 —— 回放过程卡与实况看到的才是同一批段
+ *  (2026-09 实测:智谱 anthropic-messages 的服务端搜索轮一轮里有 4 个思考块与
+ *  9 个文本块交替,`thinking|text|text|text` 重复三轮,两条「Z.ai Built-in
+ *  Tool」过程文案在回放里曾被并成一条)。
+ *  wireBlocks 缺省(别的适配器 / 收尾回答行 —— loop 只给工具轮附块)回落拼好的
+ *  字段,顺序与旧实现一致(思考在前、文案在后)。
+ *  server_tool_use / web_search_tool_result / redacted_thinking 在实况没有对应段
+ *  (适配器不为它们发事件),回放同样不成行、也**不断开**同类段的续写。
+ *  keepText=false 给收尾回答行:正文是卡外的气泡,不是过程文案 */
+function assistantItems(
+  m: Extract<InternalMsg, { role: "assistant" }>,
+  keepText = true,
+): ProcessItem[] {
+  const items: ProcessItem[] = [];
+  /** 当前同类段的累积(同一时刻只有一个非空)—— 空格判空在收口时做 */
+  let thinking = "";
+  let text = "";
+  let wireThinking = false;
+  let wireText = false;
+  /** 段收口:kind 变了先把上一段落成行,顺序即 wire 原序 */
+  const flushThinking = () => {
+    if (thinking) items.push({ kind: "reasoning", text: thinking });
+    thinking = "";
+  };
+  const flushText = () => {
+    if (keepText && text.trim()) items.push({ kind: "text", text });
+    text = "";
+  };
+  for (const b of m.wireBlocks ?? []) {
+    if (b.type === "thinking") {
+      wireThinking = true;
+      flushText();
+      thinking += b.thinking;
+    } else if (b.type === "text") {
+      wireText = true;
+      flushThinking();
+      text += b.text;
+    }
+  }
+  flushThinking();
+  flushText();
+  // 回落判据是「该 kind 一个 wire 块都没有」:有块却没成行(全空思考/空白文案)
+  // 时说明这一轮的这类内容本就不展示,不再拿拼好的字段补一条
+  if (!wireThinking && m.reasoning_content) {
+    items.push({ kind: "reasoning", text: m.reasoning_content });
+  }
+  if (keepText && !wireText && m.content?.trim()) {
+    items.push({ kind: "text", text: m.content });
+  }
+  return items;
+}
+
 /** 完整 InternalMsg[] → 前端展示用的精简投影(user/assistant 文本 + 图片元信息)。
  *  用户消息解掉 <context>/<user-request> 包裹 —— 气泡回显的应是用户输入的
  *  原文,与实时发送时的本地回显一致;wire 内容只属于发给模型的请求。
  *  run 内的过程数据(思考/中间文案/工具调用+结果)按 seq 顺序聚成
- *  processItems,挂在收尾记录(回答/error)上;没有收尾记录的 run(取消/
- *  SW 被杀)由 processOnly 载体行独立成卡 —— 回放过程卡才能与实况过程卡
+ *  processItems,挂在收尾记录(回答/error)上;单条 assistant 行内的块序由
+ *  assistantItems 还原(有 wireBlocks 时按 wire 原序分段)。没有收尾记录的
+ *  run(取消/SW 被杀)由 processOnly 载体行独立成卡 —— 回放过程卡才能与实况过程卡
  *  看到同一批步骤(曾因投影跳过空正文 assistant 行,工具轮思考全部丢失)。
  *  seq = 数组下标:seq 是 0 基稠密(loadMessageRows 按 seq 升序返回且无空洞),
  *  压缩分隔条据此定位压缩点 */
@@ -547,20 +605,18 @@ export function toChatRecords(msgs: InternalMsg[]): ChatRecord[] {
     }
     if (m.toolCalls?.length) {
       // 工具轮:思考 → 中间文案 → 工具调用,与实况段的到达顺序一致
-      if (m.reasoning_content) {
-        pending.push({ kind: "reasoning", text: m.reasoning_content });
-      }
-      if (m.content?.trim()) pending.push({ kind: "text", text: m.content });
+      pending.push(...assistantItems(m));
       for (const tc of m.toolCalls) {
         pending.push({ kind: "tool", id: tc.id, name: tc.name, args: tc.args });
       }
       return;
     }
     if (m.content) {
-      // 最终回答:思考进卡,答案气泡留在卡外(与实况 settled 布局一致)
+      // 最终回答:思考进卡,答案气泡留在卡外(与实况 settled 布局一致)——
+      // 正文是气泡不是过程文案,故 keepText=false
       const items = pending;
       pending = [];
-      if (m.reasoning_content) items.push({ kind: "reasoning", text: m.reasoning_content });
+      items.push(...assistantItems(m, false));
       out.push({
         role: "assistant",
         content: m.content,

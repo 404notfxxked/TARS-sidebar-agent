@@ -227,6 +227,73 @@ describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
     expect(aRows[1]?.reasoning_content).toBe("最终思考");
   });
 
+  it("投影:服务端工具轮的多 text/thinking 块按 wire 原序分段,不并成一条", async () => {
+    // 智谱(GLM)在 anthropic-messages 上的服务端搜索形态(2026-09 诊断导出实测):
+    // 一轮里是 thinking|text|text|text 重复三轮(诊断日志的块形状),即 4 个思考块
+    // 与 9 个文本块交替 —— 每轮「服务端工具块载体 + 模型自己的两段叙述文案」。
+    // 适配器把同类块分别拼成 content / reasoning_content(段边界丢失),段序只留在
+    // wireBlocks 里。实况按段渲染是分开的,回放必须还原同一批段;且同类相邻块在
+    // 实况续写同一段(text delta 会续写当前文本段),所以相邻文本块并成一行
+    await saveHistory(
+      "s16",
+      [
+        { role: "user", content: "<user-request>\n查一下\n</user-request>" },
+        {
+          role: "assistant",
+          content: "输入1输出1输入2输出2", // i18n-ok:自播种 wire 块文本,非 UI 断言
+          reasoning_content: "想1想2想3", // i18n-ok:同上
+          wireBlocks: [
+            { type: "thinking", thinking: "想1" }, // i18n-ok:同上
+            {
+              type: "server_tool_use",
+              id: "s1",
+              name: "web_search_prime",
+              input: { search_query: "q1" },
+            },
+            { type: "text", text: "输入1" }, // i18n-ok:同上
+            { type: "text", text: "输出1" }, // i18n-ok:同上
+            { type: "thinking", thinking: "想2" }, // i18n-ok:同上
+            {
+              type: "server_tool_use",
+              id: "s2",
+              name: "web_search_prime",
+              input: { search_query: "q2" },
+            },
+            { type: "text", text: "输入2" }, // i18n-ok:同上
+            { type: "text", text: "输出2" }, // i18n-ok:同上
+            { type: "thinking", thinking: "想3" }, // i18n-ok:同上
+          ],
+          toolCalls: [{ id: "t1", name: "page_read", args: {} }],
+        },
+        { role: "tool", toolCallId: "t1", content: "obs" },
+        { role: "assistant", content: "答" },
+      ],
+      0,
+      0,
+    );
+    const items = toChatRecords(await loadHistory("s16"))[1].processItems ?? [];
+    expect(items).toEqual([
+      { kind: "reasoning", text: "想1" }, // i18n-ok:同上
+      { kind: "text", text: "输入1输出1" }, // i18n-ok:同上
+      { kind: "reasoning", text: "想2" }, // i18n-ok:同上
+      { kind: "text", text: "输入2输出2" }, // i18n-ok:同上
+      { kind: "reasoning", text: "想3" }, // i18n-ok:同上
+      {
+        kind: "tool",
+        id: "t1",
+        name: "page_read",
+        args: {},
+        result: "obs",
+        error: false,
+      },
+    ]);
+    // 服务端工具块在实况没有对应段(适配器不为它们发事件):回放同样不成行,
+    // 也不断开相邻同类段
+    expect(items.some((it) => it.kind === "tool" && it.name === "web_search_prime")).toBe(
+      false,
+    );
+  });
+
   it("投影:纯 toolCalls 的工具轮也进收尾回答的过程卡", async () => {
     await saveHistory(
       "s11",

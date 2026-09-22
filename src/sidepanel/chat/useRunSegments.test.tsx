@@ -48,6 +48,20 @@ describe("useRunSegments 段状态机", () => {
     expect(result.current.runSegs[1]).toMatchObject({ text: "第二段" });
   });
 
+  it("同轮内思考段插进文本流:尾部缓冲仍归属前一段,不丢字", () => {
+    const { result } = renderHook(() => useRunSegments(vi.fn()));
+    act(() => {
+      result.current.onMessageDelta("叙述1"); // 首 delta 立即上屏
+      result.current.onMessageDelta("-尾巴"); // 进缓冲(还没到 ~10Hz 节拍)
+      result.current.onReasoningDelta("想2"); // 服务端工具轮:同轮第二个思考块
+      result.current.onMessageDelta("叙述2");
+    });
+    flush();
+    expect(
+      result.current.runSegs.map((s) => (s.kind === "tool" ? s.name : s.text)),
+    ).toEqual(["叙述1-尾巴", "想2", "叙述2"]);
+  });
+
   it("思考段独立落段,消息 delta 到达时收口(active=false)", () => {
     const { result } = renderHook(() => useRunSegments(vi.fn()));
     act(() => result.current.onReasoningDelta("我在想"));

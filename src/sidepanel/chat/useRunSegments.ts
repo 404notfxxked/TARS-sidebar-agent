@@ -121,8 +121,12 @@ export function useRunSegments(
     const segs = runSegsRef.current;
     const last = segs[segs.length - 1];
     if (!(last?.kind === "reasoning" && last.active)) {
+      // 追加新段前先冲刷正文缓冲:缓冲只归属「末段」(flushBuf 的 fitsLast),
+      // 思考段一插进来,挂在文本段上的尾部 delta 就再也合不回去 —— 同轮内
+      // text→thinking 交错(服务端工具轮就是)会整段丢字;与 pushTool 同一纪律
+      flushBuf("text");
       applySegs([
-        ...segs,
+        ...runSegsRef.current,
         { kind: "reasoning", text: "", active: true, t: Date.now() },
       ]);
     }
