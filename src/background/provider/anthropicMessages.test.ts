@@ -595,10 +595,53 @@ describe("SSE 事件流聚合", () => {
   });
 });
 
-// ---- 服务端搜索(实验开关 serverWebSearch) ----
-// 注入受开关控制;服务端块的聚合与回传是响应侧兼容性,始终启用。
+// ---- 未知内容块(响应方言守卫) ----
+// 官方在持续新增服务端结果块类型(web_fetch_tool_result / code_execution_tool_result
+// / mcp_tool_result…),桥接端点也可能塞自家工具块:没有解析路径的块不能静默丢。
 
-describe("服务端搜索开关(实验)", () => {
+describe("未知内容块(方言守卫)", () => {
+  it("未知块 + 无正文无工具:抛点名的可行动错误,不落成空回答", async () => {
+    await expect(
+      runWith({}, undefined, [
+        ev({ type: "message_start", message: { usage: { input_tokens: 5 } } }),
+        ev({
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "web_fetch_tool_result", tool_use_id: "t1", content: [] },
+        }),
+        ev({ type: "content_block_stop", index: 0 }),
+        ev({ type: "message_delta", delta: { stop_reason: "end_turn" } }),
+        ev({ type: "message_stop" }),
+      ]),
+    ).rejects.toThrow(/web_fetch_tool_result/);
+  });
+
+  it("未知块与正常文本共存:正文照常返回,未知块里夹带的 delta 不当正文", async () => {
+    const { out } = await runWith({}, undefined, [
+      ev({ type: "message_start", message: { usage: { input_tokens: 5 } } }),
+      ev({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "code_execution_tool_result", tool_use_id: "t1", content: [] },
+      }),
+      // 未知块里的 text_delta:没有解析路径只能丢 —— 但不许被当成正文
+      ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "不该出现" } }),
+      ev({ type: "content_block_stop", index: 0 }),
+      ev({ type: "content_block_start", index: 1, content_block: { type: "text" } }),
+      ev({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "正常回答" } }),
+      ev({ type: "content_block_stop", index: 1 }),
+      ev({ type: "message_delta", delta: { stop_reason: "end_turn" } }),
+      ev({ type: "message_stop" }),
+    ]);
+    expect(out.content).toBe("正常回答");
+  });
+});
+
+// ---- 服务端搜索(serverWebSearch 适配器开关) ----
+// 注入由适配器选项控制(配置侧已无独立开关:联网总开关开 = 该协议走服务端搜索,
+// 见 agent/runSetup);服务端块的聚合与回传是响应侧兼容性,始终启用。
+
+describe("服务端搜索注入", () => {
   /** 以指定 req 覆盖 + cfg 跑一轮文本流,返回发给 apiFetch 的 body */
   async function bodyOf(
     reqOverrides: Partial<ChatRequest>,

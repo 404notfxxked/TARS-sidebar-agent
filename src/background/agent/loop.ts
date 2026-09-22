@@ -35,6 +35,19 @@ const SCREENSHOT_NOTE = `${SYSTEM_NOTE_PREFIX} the page screenshot for the previ
 // 目的:让模型向用户交代进展与剩余步骤,而不是被无声砍断在工具调用中间。
 const WRAP_UP_NUDGE = `<system-note>本轮可用的推理步数已用完,工具调用已停用。请直接向用户说明:目前完成了什么、还剩什么没做。不要调用工具。用户发送「继续」后,你可以从当前进度接着做。</system-note>`;
 
+/** 空回答守卫:端点一个正文字符都没给时不许放行。
+ *  空正文落成空气泡在实况里是「什么都没发生」、回放里也看不出,属静默失败;
+ *  抛错则走 run 的错误路径(AGENT_ERROR + 失败轮 error 行,可重试)。
+ *  常见成因:端点在 Messages/流式上的响应方言不兼容(帧型不认识 → 全军落 default)、
+ *  被 max_tokens 截断在思考阶段、只返回了未解析的内容块(后者在适配器里已带块名报错)。
+ *  文案是 SW 侧错误文本(不经字典,与其余后台错误同口径)。 */
+function assertAnswerText(content: string, when: string): void {
+  if (content.trim()) return;
+  throw new Error(
+    `模型没有返回任何正文(${when}):可能是该端点的流式响应格式不兼容、调用被 max_tokens 截断在思考阶段,或只返回了未知的内容块。可先重试;仍为空请检查该端点的协议兼容性或换一个模型。`,
+  );
+}
+
 /** 主循环的运行期依赖:只读配置与两个工厂产物(它们闭包了 provider/白名单)。 */
 export interface TurnDeps {
   cfg: RunCfg;
@@ -191,6 +204,7 @@ export async function runTurns(
     }
 
     // 没有工具调用 → 这就是最终回答,写入历史后再退出
+    assertAnswerText(result.content, "本轮既无工具调用也无可见回答");
     loop.messages.push({
       role: "assistant",
       content: result.content,
@@ -219,6 +233,7 @@ export async function runTurns(
       false,
     );
     loop.lastUsage = wrap.usage;
+    assertAnswerText(wrap.content, "步数耗尽后的收尾轮也没给出总结");
     loop.messages.push({
       role: "assistant",
       content: wrap.content,

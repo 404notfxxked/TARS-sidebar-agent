@@ -219,6 +219,9 @@ export class AnthropicMessagesAdapter implements ChatProvider {
 
     let content = "";
     const blocks = new Map<number, OpenBlock>();
+    /** 本响应里出现过的、本端没有解析路径的内容块类型(去重):只记类型名,
+     *  不记正文(硬规则 12)。见下方的告警与「整轮什么都没产出」的抛错 */
+    const unknownBlocks: string[] = [];
     let stopReason: string | undefined;
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
@@ -273,6 +276,11 @@ export class AnthropicMessagesAdapter implements ChatProvider {
               toolUseId: b.tool_use_id ?? "",
               content: b.content,
             });
+          else if (!unknownBlocks.includes(b.type))
+            // 没有解析路径的块类型(官方在持续新增服务端结果块,桥接端点也会塞
+            // 自家工具块):该 index 不注册 → 它的 delta 无处可去只能丢。**不静默**:
+            // 记类型待收流后告警;整轮因此什么都没产出时直接抛错(见收流处)
+            unknownBlocks.push(b.type);
           break;
         }
         case "content_block_delta": {
@@ -409,6 +417,22 @@ export class AnthropicMessagesAdapter implements ChatProvider {
             .map((r) => (r as { url?: unknown }).url)
             .filter((u): u is string => typeof u === "string"),
         });
+      }
+    }
+
+    // 未知内容块:丢是唯一的处理(没有解析路径),但绝不静默 —— 先记一条只含
+    // 块类型的告警供诊断导出查证(硬规则 12:不记正文);若整轮既没正文也没
+    // 客户端工具调用,则这一轮对用户就是「什么都没发生」,直接抛带块名的可行动
+    // 错误,而不是让它落成一次空回答(静默是这条链路最大的坑)
+    if (unknownBlocks.length > 0) {
+      log.warn("provider", "unsupported content blocks dropped", {
+        blocks: unknownBlocks,
+        endpoint: policy.native ? "native" : "bridge",
+      });
+      if (content.trim() === "" && toolCalls.length === 0) {
+        throw new Error(
+          `端点返回了本端暂不支持的内容块(${unknownBlocks.join(" / ")}),本轮没有正文或工具调用 —— 该端点在 Messages 协议上的响应方言不兼容,建议改用 chat-completions 格式或换端点。`,
+        );
       }
     }
 
