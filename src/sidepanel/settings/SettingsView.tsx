@@ -121,7 +121,13 @@ export default function SettingsView({
             {/* 联网 */}
             <WebSection
               initialWebSearch={config.webSearch}
-              initialServerWebSearch={config.anthropicServerWebSearch}
+              // anthropic-messages 供应商的搜索由服务商在服务端执行(不需要
+              // 网页授权、不读结果页):联网分节据此对这类供应商隐去标签页通道
+              // 专属的说明与授权提示
+              serverSearch={
+                config.providers.find((p) => p.id === config.modelProvider)?.kind ===
+                "anthropic-messages"
+              }
               run={run}
             />
 

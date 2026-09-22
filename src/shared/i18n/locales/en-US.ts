@@ -283,7 +283,7 @@ export const enUS = {
     formatChatCompletions: "Chat Completions (OpenAI-compatible)",
     formatAnthropicMessages: "Anthropic Messages (Claude)",
     providerUrlHintAnthropic:
-      "An Anthropic-compatible endpoint (required), usually ending with /v1. Some endpoints do not implement /models — if \"Fetch models\" fails, add models manually.",
+      "An Anthropic-compatible endpoint (required), usually ending with /v1. Some endpoints do not implement /models — if \"Fetch models\" fails, add models manually. With web search on, this format searches on the provider side (the endpoint must support server tools); switch to Chat Completions if it errors.",
     providerUrlPlaceholderAnthropic: "https://api.anthropic.com/v1",
     baseUrlRequired: "Enter a Base URL first",
     namePlaceholder: "e.g. DeepSeek",
@@ -347,9 +347,6 @@ export const enUS = {
       "Each search opens a real search engine page in a background tab and closes it right after reading; no API key required. Engines are selected automatically among DuckDuckGo / Bing / Google / Baidu: engines that keep failing or hit bot checks cool down for a few minutes while the next one takes over. Search queries are sent to the corresponding search engine. The Tavily / Bocha / Brave API channels remain in the code and can be enabled via manual configuration, but no UI is provided.",
     webNeedAccess:
       "Web search also requires the \"Page & network access\" grant (Settings → Security); without it the search results page cannot be read.",
-    serverWebSearch: "Server-side search (experimental)",
-    serverWebSearchHint:
-      "For providers using the Anthropic Messages API format, web search is executed on the provider's servers (e.g. DeepSeek native search) and returned inline with the answer. Only affects that protocol; all other search behavior is unchanged. Search details appear in Settings → Diagnostics logs (server tool use / server tool result).",
     // MCP
     mcpEnable: "Enable MCP tools",
     mcpHint:

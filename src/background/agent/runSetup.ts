@@ -190,11 +190,12 @@ export async function resolveRunConfig(
             ? defaultThinkingEffort(catalog, config.model)
             : undefined))
         : undefined,
-    // 实验开关:对 anthropic-messages 供应商注入服务端 web_search 声明
-    // (设置 → 联网 → 服务端搜索)。**挂在联网总开关下** —— 用户关掉「联网」
-    // 就是「不许任何搜索」,服务端搜索也不能例外(它同样是联网能力,只是执行
-    // 方在服务商侧);chat-completions 适配器不消费此字段
-    serverWebSearch: config.anthropicServerWebSearch && config.webSearch === true,
+    // 服务端搜索:对 anthropic-messages 供应商注入服务端 web_search 声明。
+    // **只挂在联网总开关下** —— 用户关掉「联网」就是「不许任何搜索」,服务端
+    // 搜索也不能例外(它同样是联网能力,只是执行方在服务商侧);该协议下不再
+    // 走标签页通道,故不存在「本地/服务端」两个开关。chat-completions 适配器
+    // 不消费此字段
+    serverWebSearch: config.webSearch === true,
   });
   // 压缩用模型:摘要调用(含撞窗紧急压缩)专用,选了便宜模型就由它跑摘要
   // 省钱。没配/引用失效(供应商或模型被删)/无 key 时回落当前模型 ——

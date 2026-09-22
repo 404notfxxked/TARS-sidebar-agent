@@ -132,12 +132,11 @@ export interface AppConfig {
   /** 联网开关:控制 web_search / web_fetch 工具是否对模型可用;缺省 = 关。
    *  开启即用,无需任何配置——搜索默认走免 Key 的真实搜索引擎标签页通道
    *  (webSearch.readSearchRoute 的 auto 兜底);配了 search.services[].apiKey
-   *  才改走该服务商的 API */
+   *  才改走该服务商的 API。**对 kind = anthropic-messages 的供应商**,联网开
+   *  时搜索改由服务商在服务端执行(请求注入 web_search server tool,见
+   *  provider/anthropicMessages.ts),不再走标签页通道 —— 该协议下服务端搜索
+   *  需要端点支持,不支持会由端点报错(不再有独立开关,联网总开关即闸) */
   webSearch: boolean;
-  /** 实验开关(服务端搜索验证):对 kind = anthropic-messages 的供应商,
-   *  请求注入 web_search server tool,联网搜索改由服务商在服务端执行并内联
-   *  返回结果块;只影响该协议,chat-completions 与本地工具行为不变。缺省 = 关 */
-  anthropicServerWebSearch: boolean;
   /** 长期记忆总开关:开 = 注册 memory_* 工具 + 每轮注入 <user-memory>;
    *  缺省 = 开。关 = 不注册工具不注入,彻底无痕 */
   memory: boolean;
@@ -210,7 +209,6 @@ export async function loadConfig(): Promise<AppConfig> {
     "accent",
     "locale",
     "webSearch",
-    "anthropicServerWebSearch",
     "memory",
     "skills",
     "confirmActions",
@@ -254,7 +252,6 @@ export async function loadConfig(): Promise<AppConfig> {
           ),
     // 联网搜索 BYOK 化后缺省关闭:开关显式打开 + 配好 key 才对模型可用
     webSearch: l.webSearch === true,
-    anthropicServerWebSearch: l.anthropicServerWebSearch === true,
     // 长期记忆缺省开启(记忆为空时除工具 schema 外无成本;关 = 彻底无痕)
     memory: l.memory !== false,
     // 技能缺省开启(纯本地文本,空库零成本;关 = / 调用不生效)
@@ -384,7 +381,6 @@ export async function savePrefs(
       | "accent"
       | "locale"
       | "webSearch"
-      | "anthropicServerWebSearch"
       | "memory"
       | "skills"
       | "confirmActions"

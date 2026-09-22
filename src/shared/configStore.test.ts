@@ -183,17 +183,6 @@ describe("loadConfig 读时迁移", () => {
     expect(cfg.providers[0].kind).toBeUndefined();
   });
 
-  it("anthropicServerWebSearch 实验开关:布尔保留,缺省与非布尔一律 false", async () => {
-    await storage().set({ anthropicServerWebSearch: true });
-    expect((await loadConfig()).anthropicServerWebSearch).toBe(true);
-
-    await storage().set({ anthropicServerWebSearch: "yes" });
-    expect((await loadConfig()).anthropicServerWebSearch).toBe(false);
-
-    await storage().clear();
-    expect((await loadConfig()).anthropicServerWebSearch).toBe(false);
-  });
-
   it("缺省值:联网关、记忆开、保留 7 天、standard 档、zh-CN、green", async () => {
     // navigator 缺席(无法探测)时 locale 落缺省 zh-CN,存量行为不变
     vi.stubGlobal("navigator", {});
