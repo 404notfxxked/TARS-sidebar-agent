@@ -9,6 +9,7 @@ import SessionsView from "./sessions/SessionsView";
 import MemoryView from "./memory/MemoryView";
 import SkillView from "./skills/SkillView";
 import { useLocale, useT } from "./ui/hooks";
+import { ErrorBoundary } from "./ui/ErrorBoundary";
 
 type Overlay = null | "settings" | "sessions" | "memory" | "skills";
 
@@ -50,7 +51,10 @@ export default function App() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <ChatView
+      {/* 渲染兜底:对话视图与悬浮层各包一层(硬规则粒度裁决 = 两处,不做每内页多处)。
+          悬浮层边界按 overlay 取 key:某页抛错后直接切另一页时重置边界,兜底态不跨页残留 */}
+      <ErrorBoundary>
+        <ChatView
         onOpenSettings={() => setOverlay("settings")}
         onOpenSessions={() => setOverlay("sessions")}
         onOpenMemory={() => {
@@ -66,11 +70,13 @@ export default function App() {
         onActiveSessionChange={setActiveSessionId}
         chatInputRef={chatInputRef}
       />
+      </ErrorBoundary>
       {overlay !== null && (
         // 必须自身是 flex 列:内页(设置/历史)根节点靠 flex-1 撑满,
         // 若这里是普通块,内页高度随内容生长 → 文档级滚动,顶栏吸顶失效、
         // 内容溢出悬浮层底色露出 body 的 surface(看起来像背景断层)
         <div className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-surface-container">
+          <ErrorBoundary key={overlay}>
           {overlay === "settings" ? (
             <SettingsView
               onBack={() => setOverlay(null)}
@@ -115,6 +121,7 @@ export default function App() {
               }
             />
           )}
+          </ErrorBoundary>
         </div>
       )}
     </div>

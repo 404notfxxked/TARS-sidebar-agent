@@ -20,6 +20,11 @@ export const enUS = {
     copy: "Copy",
     loading: "Loading…",
     loadFailed: "Failed to load",
+    retry: "Retry",
+    renderErrorTitle: "The interface hit a rendering error",
+    renderErrorHint:
+      "This is a display-layer error. Your conversations and data are safe — reload the panel to continue.",
+    reloadPanel: "Reload panel",
     unknown: "Unknown",
     backToChat: "Back to chat",
     moreInfo: "More info",

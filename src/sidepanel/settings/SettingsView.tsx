@@ -12,6 +12,7 @@ import {
 } from "../../shared/configStore";
 import { useT } from "../ui/hooks";
 import SubPageHeader from "../ui/SubPageHeader";
+import { SubPageEmpty } from "../ui/SubPageEmpty";
 import { CheckIcon } from "../ui/icons";
 import ModelSection, { type ModelDomain } from "./ModelSection";
 import AppearanceSection from "./AppearanceSection";
@@ -51,6 +52,24 @@ export default function SettingsView({
     flashTimer.current = window.setTimeout(() => setSavedFlash(false), 1200);
   }, []);
 
+  // 配置读取失败也要有出口:此前 then 无 catch,存储异常时 config 恒 null,
+  // 整页只剩顶栏(看起来像永久空白)。失败态 + 手动重试;不做自动重试循环
+  // (真故障时会无限刷)。
+  const [loadError, setLoadError] = useState(false);
+  const reloadConfig = useCallback(() => {
+    setLoadError(false);
+    loadConfig()
+      .then((c) => {
+        setConfig(c);
+        setDomain({
+          providers: c.providers,
+          modelProvider: c.modelProvider,
+          model: c.model,
+        });
+      })
+      .catch(() => setLoadError(true));
+  }, []);
+
   /** 统一落盘出口:成功闪「已保存」,失败亮红提示。经 props 下发全部分节 */
   const run = useCallback(
     async (p: Promise<void>) => {
@@ -66,18 +85,11 @@ export default function SettingsView({
   );
 
   useEffect(() => {
-    loadConfig().then((c) => {
-      setConfig(c);
-      setDomain({
-        providers: c.providers,
-        modelProvider: c.modelProvider,
-        model: c.model,
-      });
-    });
+    reloadConfig();
     return () => {
       if (flashTimer.current) clearTimeout(flashTimer.current);
     };
-  }, []);
+  }, [reloadConfig]);
 
   return (
     <div className="view-in flex min-h-0 flex-1 flex-col">
@@ -95,6 +107,22 @@ export default function SettingsView({
       </SubPageHeader>
 
       <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-4 pb-6">
+        {loadError ? (
+          <SubPageEmpty
+            icon={
+              <>
+                <path d="M12 3.2 21.2 19.4H2.8L12 3.2Z" />
+                <path d="M12 9.4v4" />
+                <path d="M12 16.4h.01" />
+              </>
+            }
+            title={t("common.loadFailed")}
+          >
+            <button type="button" className="settings-btn" onClick={reloadConfig}>
+              {t("common.retry")}
+            </button>
+          </SubPageEmpty>
+        ) : null}
         {config && domain && (
           <>
             {/* 分节顺序 = onboarding 叙事(README 快速开始的顺序):
