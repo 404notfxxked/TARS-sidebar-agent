@@ -287,6 +287,12 @@ export const zhCN = {
     fetchFailed: "获取失败：{error}",
     fetchNeedKey: "请先填写 API Key",
     accessDenied: "未获得站点授权，无法访问该端点",
+    fetchErrAuth: "认证失败：请检查 API Key 是否正确，且与所选 API 格式匹配。",
+    fetchErrMissing: "端点可能未实现模型列表接口，请在下方手动添加模型。",
+    fetchErrShape: "端点返回了无法识别的列表格式，请核对 Base URL 是否正确。",
+    fetchSuggestFix:
+      "模型列表是通过 {url} 获取的：聊天请求也应使用该地址，建议修正 Base URL。",
+    fetchApplyFix: "修正为该地址",
     modelEmptyHint:
       "暂无模型。点击「获取列表」自动拉取模型列表，或在下方手动添加模型。",
     modelRowHint: "点击行展开配置，「默认」即当前对话所用模型。",

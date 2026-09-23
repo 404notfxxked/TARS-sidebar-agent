@@ -8,7 +8,8 @@ import type { ChatProvider } from "./types";
 
 export { ChatCompletionsAdapter, DEFAULT_CHAT_COMPLETIONS_URL } from "./chatCompletions";
 export { AnthropicMessagesAdapter, DEFAULT_ANTHROPIC_MESSAGES_URL } from "./anthropicMessages";
-export { fetchModels } from "./models";
+export { fetchModels, ModelsFetchError } from "./models";
+export type { FetchModelsResult, ModelsErrorCode } from "./models";
 export type {
   ChatProvider,
   ChatResult,

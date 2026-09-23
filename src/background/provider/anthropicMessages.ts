@@ -212,6 +212,10 @@ export class AnthropicMessagesAdapter implements ChatProvider {
       headers: {
         "x-api-key": this.cfg.apiKey,
         "anthropic-version": ANTHROPIC_VERSION,
+        // 双认证头:官方与 new-api 系网关认 x-api-key,AUTH_TOKEN 系网关与
+        // Baseten 等只认 Bearer;官方 apiKeyHelper 两个头都发,同发是兼容
+        // 超集(api.anthropic.com 实测双头不冲突)
+        Authorization: `Bearer ${this.cfg.apiKey}`,
       },
       body: { ...body, messages: toWireMessages(req.messages, policy) },
       signal: req.signal,

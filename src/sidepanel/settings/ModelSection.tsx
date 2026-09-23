@@ -348,7 +348,8 @@ function ProviderCard({
   const [openModelId, setOpenModelId] = useState<string | null>(null);
   const [confirmModelId, armConfirmModel, resetConfirmModel] =
     useConfirmReset<string>();
-  const { fetchState, fetchError, fetchList } = useProviderFetch(entry, onPatch);
+  const { fetchState, fetchError, fetchList, fixSuggestion, applyFix } =
+    useProviderFetch(entry, onPatch);
 
   const displayName = entry.name || hostOf(entry.baseUrl) || t("settings.providerUnnamed");
 
@@ -505,6 +506,18 @@ function ProviderCard({
         </div>
         {fetchState === "error" && (
           <p className="field-hint text-error">{t("settings.fetchFailed", { error: fetchError })}</p>
+        )}
+        {fixSuggestion && (
+          <>
+            <p className="field-hint">
+              {t("settings.fetchSuggestFix", { url: fixSuggestion })}
+            </p>
+            <div className="mt-1 mb-1">
+              <button type="button" className="settings-btn tonal" onClick={applyFix}>
+                {t("settings.fetchApplyFix")}
+              </button>
+            </div>
+          </>
         )}
         {entry.models.length > 0 ? (
           <div className="model-list">

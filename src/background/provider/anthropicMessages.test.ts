@@ -89,12 +89,15 @@ async function runWith(
 // ---- 请求形态 ----
 
 describe("请求形态:端点/认证/必填字段", () => {
-  it("POST {base}/messages,auth=custom:x-api-key + anthropic-version 自带认证头", async () => {
+  it("POST {base}/messages,auth=custom:双认证头(x-api-key + anthropic-version + Bearer)", async () => {
     const { opts } = await runWith();
     expect(opts.path).toBe("/messages");
     expect(opts.auth).toBe("custom");
     expect(opts.headers?.["x-api-key"]).toBe("sk-ant-test");
     expect(opts.headers?.["anthropic-version"]).toBe("2023-06-01");
+    // 双头是生态兼容超集:官方认 x-api-key,AUTH_TOKEN 系网关(Baseten 等)只认
+    // Bearer;官方 apiKeyHelper 与 new-api 均双认,同发不互斥
+    expect(opts.headers?.Authorization).toBe("Bearer sk-ant-test");
   });
 
   it("baseUrl 缺省官方地址;自定义原样透传", async () => {

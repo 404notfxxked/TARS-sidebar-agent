@@ -2,6 +2,9 @@
 // 与 entry 最新值镜像。⚠️ abortRef 的卸载清理与 entryRef 必须随本状态机同生
 // 共死 —— fetch 在途时用户可继续增删模型行,resolve 后要合并进「最新」的
 // entry.models,而不是闭包里的过期快照(失更新)。
+// 错误文案按 fetchModels 的分类(ModelsFetchError.code)映射字典键出可行动
+// 提示,原始错误串作诊断后缀;探测命中回退地址(/v1)时给出「一键修正
+// Base URL」建议 —— 聊天请求与列表共用同一约定,不修聊天照样 404。
 
 import { useEffect, useRef, useState } from "react";
 import type { ProviderEntry } from "../../shared/configStore";
@@ -10,11 +13,22 @@ import {
   loadCatalog,
   prefillEntry,
 } from "../../shared/modelCatalog";
-import { fetchModels } from "../../background/provider";
+import {
+  fetchModels,
+  ModelsFetchError,
+} from "../../background/provider";
+import type { ModelsErrorCode } from "../../background/provider";
 import { ensureOriginAuthorized } from "../permissions";
 import { useT } from "../ui/hooks";
 
 export type FetchState = "idle" | "loading" | "error";
+
+/** 错误分类 → 字典键;值必须写字面量(check-i18n 只认字面量键) */
+const FETCH_ERROR_HINTS: Record<ModelsErrorCode, string> = {
+  auth: "settings.fetchErrAuth",
+  missing: "settings.fetchErrMissing",
+  shape: "settings.fetchErrShape",
+};
 
 export function useProviderFetch(
   entry: ProviderEntry,
@@ -23,6 +37,8 @@ export function useProviderFetch(
   const t = useT();
   const [fetchState, setFetchState] = useState<FetchState>("idle");
   const [fetchError, setFetchError] = useState("");
+  /** 探测命中回退地址时的修正建议({base}/v1);空串 = 无建议 */
+  const [fixTo, setFixTo] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
   // entry 的 ref 镜像:fetchList 在途期间用户可继续增删模型行,resolve 后
@@ -59,8 +75,9 @@ export function useProviderFetch(
     abortRef.current = ctl;
     setFetchState("loading");
     setFetchError("");
+    setFixTo("");
     try {
-      const list = await fetchModels(
+      const { ids: list, suggestedBase } = await fetchModels(
         endpoint,
         entryRef.current.apiKey.trim(),
         ctl.signal,
@@ -78,13 +95,31 @@ export function useProviderFetch(
       }
       const next = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
       onPatch({ models: next }, true);
+      setFixTo(suggestedBase ?? "");
       setFetchState("idle");
     } catch (e) {
       if (ctl.signal.aborted) return;
       setFetchState("error");
-      setFetchError(e instanceof Error ? e.message.slice(0, 120) : String(e));
+      const raw = e instanceof Error ? e.message.slice(0, 120) : String(e);
+      // 分类错误:可行动提示在前,原始错误串作诊断后缀(全角括号,见硬规则 6)
+      const hint =
+        e instanceof ModelsFetchError ? t(FETCH_ERROR_HINTS[e.code]) : "";
+      setFetchError(hint ? `${hint}（${raw}）` : raw);
     }
   };
 
-  return { fetchState, fetchError, fetchList };
+  /** 接受修正建议:把 Base URL 改写为实际生效地址并落盘 */
+  const applyFix = () => {
+    if (!fixTo) return;
+    onPatch({ baseUrl: fixTo }, true);
+    setFixTo("");
+  };
+
+  return {
+    fetchState,
+    fetchError,
+    fetchList,
+    fixSuggestion: fixTo,
+    applyFix,
+  };
 }

@@ -300,6 +300,15 @@ export const enUS = {
     fetchFailed: "Failed to fetch: {error}",
     fetchNeedKey: "Enter an API key first",
     accessDenied: "Site access was not granted; this endpoint is unreachable",
+    fetchErrAuth:
+      "Authentication failed. Check the API key and that it matches the selected API format.",
+    fetchErrMissing:
+      "The endpoint may not implement the model list API — add models manually below.",
+    fetchErrShape:
+      "The endpoint returned an unrecognized list format. Double-check the Base URL.",
+    fetchSuggestFix:
+      "The model list was fetched via {url}: chat requests need the same address, so consider fixing the Base URL.",
+    fetchApplyFix: "Use this address",
     modelEmptyHint:
       'No models yet. Click "Fetch list" to retrieve the model list automatically, or add models manually below.',
     modelRowHint:

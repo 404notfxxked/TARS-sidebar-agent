@@ -35,6 +35,8 @@ const coverageThresholds = {
   "src/background/provider/anthropicMessages.ts": { statements: 95, branches: 80, lines: 95 },
   "src/background/provider/chatCompletions.ts": { statements: 85, branches: 78, lines: 85 },
   "src/background/provider/client.ts": { statements: 100, branches: 100, functions: 100, lines: 100 },
+  // 2026-09 候选回退探测重写时随新测试钉上(未盖两条为 TS 防御分支)
+  "src/background/provider/models.ts": { statements: 98, branches: 94, functions: 100, lines: 100 },
   "src/background/provider/sse.ts": { statements: 100, branches: 85, functions: 85, lines: 100 },
 } as const;
 const configRoot = resolve(dirname(fileURLToPath(import.meta.url)));

@@ -8,7 +8,8 @@ const RETRYABLE_STATUS = new Set([429, 502, 503, 529]);
 const MAX_RETRY = 3;
 const BASE_DELAY_MS = 500;
 
-class ApiError extends Error {
+/** 明确的 HTTP 错误(状态码 + 响应体片段);models.ts 按状态码做错误分类 */
+export class ApiError extends Error {
   constructor(
     public status: number,
     public body: string,
@@ -45,8 +46,9 @@ export interface ApiFetchOptions {
   /** 网络层错误/临时状态码是否退避重试(默认开);拉模型列表这类交互请求传 false 快速失败 */
   retry?: boolean;
   /** 认证方式:bearer = Authorization: Bearer(缺省,chat-completions 系);
-   *  custom = 不发 Authorization,认证头由 headers 自带(anthropic-messages 的
-   *  x-api-key + anthropic-version) */
+   *  custom = 本函数自身不发 Authorization,认证头整体由调用方经 headers 自带
+   *  (anthropic-messages:x-api-key + anthropic-version,外加 Authorization
+   *  Bearer 双头,见 anthropicMessages.ts / models.ts) */
   auth?: "bearer" | "custom";
   /** 额外请求头,与默认头合并(同名字段以此为准);auth:"custom" 时必经此传认证头 */
   headers?: Record<string, string>;
