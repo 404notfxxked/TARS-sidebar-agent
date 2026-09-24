@@ -1,7 +1,8 @@
 // 空态问候:标题按本机时段定档(5 档),副标为「每日一句」。
 // quote 属内容而非产品话术 —— 本地池与 API 结果都不进 i18n 字典
 // (字典只收 UI 文案;网络内容与工具结果同类,见 i18n/index.ts 头注)。
-// 语言源:zh 走一言(hitokoto)v1,en 走 ZenQuotes,均免 key;
+// 语言源:zh 走一言(hitokoto)v1(免 key);en 只用内置短句池、不联网
+// (英文第三方源实测走不通,理由见 QUOTE_SOURCE 头注);
 // 当日结果缓存进 chrome.storage.local:挂载时同步窥探,有当日条目就用,
 // 否则用本地池播种条 —— 一次挂载只显示一条(首帧即终帧),补抓在后台
 // 进行、只落盘供下次挂载,API 延迟不会造成挂载中的文案跳变。
@@ -12,6 +13,12 @@ import type { LocalePref } from "../../shared/configStore";
 export interface Quote {
   text: string;
   from?: string;
+  /** 内容来源标记:只有「从 API 取回」的句子带它,本地池一律不标 ——
+   *  面板据此决定是否显示「来自 一言」署名;给本地池标来源就是错标 */
+  src?: "hitokoto";
+  /** 一言句子 UUID:署名链接用它直达该句页面(官方建议的溯源方式);
+   *  缺失时回落到站点首页 */
+  uuid?: string;
 }
 
 /** 本机时段 → 问候键(hour 为 new Date().getHours()) */
@@ -29,7 +36,9 @@ export function dayKeyOf(d = new Date()): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** 本地兜底池;导出只为单测可直查条目质量 */
+/** 本地兜底池;导出只为单测可直查条目质量。
+ *  ⚠️ 条目必须自撰:一言的语句库(sentences-bundle)是 AGPL 授权,抄进本仓库
+ *  (MIT)属许可证冲突 —— 要扩池就自己写,或走其「超链接引用」的豁免路径 */
 export const LOCAL_QUOTES: Record<LocalePref, readonly Quote[]> = {
   "zh-CN": [
     { text: "千里之行，始于足下。", from: "老子《道德经》" },
@@ -120,43 +129,71 @@ export function localQuote(locale: LocalePref, dayKey: string): Quote {
 const QUOTE_CACHE_KEY = "quoteOfDay";
 const QUOTE_MAX_LEN = 120; // 超长判为不合适(小标题要短),回落本地池
 
-/** 一言:文学/诗词/哲学外,混入动画/漫画/游戏类(台词向,更轻);
- *  max_length 服务端截短 */
+/** 缓存策略版本:缓存里装的是「按当时请求参数取回的句子」,参数一变旧条目就
+ *  不再代表现行口径 —— 2026-09-24 类别从 a/b/c/d/i/k 收窄到 i(诗词)后,
+ *  旧条目仍可能来自已停用的分类(实测:用户缓存里的 d 类「龙应台·目送」)。
+ *  读时版本不符即当未命中:升级后首次挂载回落本地池,后台补抓新策略的句子,
+ *  下一次挂载生效 —— 内容口径从第一次挂载起就是新的,不用等缓存自然过期。
+ *  改 HITOKOTO_URL 的筛选口径时必须同步改这个串。 */
+const QUOTE_CACHE_POLICY = "hitokoto-i-only/1";
+
+/** 一言只取「诗词」一类(c=i)。
+ *  一言是社区投稿库、分类标签很松(2026-09-24 实测):
+ *  a/b/c(动画/漫画/游戏)会出游戏台词「可爱……你……会再次……见到……我的……」;
+ *  d(文学)混进网络小说与影视台词(「天自撰我命 唤魂为逆」——魔道祖师);
+ *  k(哲学)混进民间俗语与网络段子号。只有 i(诗词)稳定是古典诗文,
+ *  与本模块本地兜底池(古文格言)气质一致 —— 空态是产品的第一眼,宁窄勿杂。
+ *  放宽类别前先重跑一次抽样,别凭分类名想当然。
+ *  max_length 是服务端「只返回不超过该长度的句子」(过滤,非截断) */
+export const HITOKOTO_URL = "https://v1.hitokoto.cn/?c=i&max_length=36";
+
+/** 内容源署名:一言官方恳求带链接(见 README 致谢),故署名行是链接。
+ *  英文侧不接第三方源:ZenQuotes 免费版不返回 CORS 头(官方文档明写
+ *  「API key is required to enable Access-Control-Allow-Origin headers」),
+ *  而「安装零站点授权」正是本产品的出厂默认态 —— 未授权时该请求必被拦,
+ *  等于一个永远拉不到、却要背署名义务的通道。故英文只用本地池。 */
+export const QUOTE_SOURCE = {
+  name: "一言",
+  href: "https://hitokoto.cn/",
+  /** 只有这个来源的句子需要署名 */
+  id: "hitokoto",
+} as const;
+
+/** 署名链接:有 uuid 直达该句页面(官方建议的溯源方式),没有则回落站点首页。
+ *  本地池句(无 src)不该被署名,调用方先判 src。 */
+export function quoteSourceHref(q: Quote): string {
+  return q.uuid ? `${QUOTE_SOURCE.href}?uuid=${q.uuid}` : QUOTE_SOURCE.href;
+}
+
 async function fetchHitokoto(): Promise<Quote | undefined> {
-  const res = await fetch(
-    "https://v1.hitokoto.cn/?c=a&c=b&c=c&c=d&c=i&c=k&max_length=36",
-    { signal: AbortSignal.timeout(4000) },
-  );
+  const res = await fetch(HITOKOTO_URL, {
+    signal: AbortSignal.timeout(4000),
+  });
   if (!res.ok) return undefined;
   const j = (await res.json()) as {
     hitokoto?: string;
     from?: string | null;
     from_who?: string | null;
+    uuid?: string | null;
   };
   if (!j.hitokoto || j.hitokoto.length > QUOTE_MAX_LEN) return undefined;
   const parts = [...new Set([j.from_who, j.from].filter(Boolean))] as string[];
   return {
     text: j.hitokoto,
     from: parts.length ? parts.join(" · ") : undefined,
+    src: "hitokoto",
+    uuid: j.uuid || undefined,
   };
 }
 
-async function fetchZenQuotes(): Promise<Quote | undefined> {
-  const res = await fetch("https://zenquotes.io/api/random", {
-    signal: AbortSignal.timeout(4000),
-  });
-  if (!res.ok) return undefined;
-  const j = (await res.json()) as Array<{ q?: string; a?: string }>;
-  const q = j[0]?.q;
-  if (!q || q.length > QUOTE_MAX_LEN) return undefined;
-  return { text: q, from: j[0]?.a || undefined };
-}
-
+/** 仅中文走网络:英文直接返回 undefined(本地池即其全部内容源)。
+ *  离线/超时静默回落本地池。 */
 async function fetchQuote(locale: LocalePref): Promise<Quote | undefined> {
+  if (locale !== "zh-CN") return undefined;
   try {
-    return locale === "zh-CN" ? await fetchHitokoto() : await fetchZenQuotes();
+    return await fetchHitokoto();
   } catch {
-    return undefined; // 离线/超时,静默回落
+    return undefined;
   }
 }
 
@@ -179,16 +216,32 @@ function primeCache(): void {
     .get(QUOTE_CACHE_KEY)
     .then((hit: Record<string, unknown>) => {
       const c = hit[QUOTE_CACHE_KEY] as
-        | { day?: string; locale?: string; text?: string; from?: string }
+        | {
+            day?: string;
+            locale?: string;
+            text?: string;
+            from?: string;
+            uuid?: string;
+            policy?: string;
+          }
         | undefined;
-      cachePeek =
-        c?.day && c.locale && c.text
-          ? {
-              day: c.day,
-              locale: c.locale as LocalePref,
-              q: { text: c.text, from: c.from || undefined },
-            }
-          : null;
+      // 版本不符(含本字段引入前写入的老条目)一律当未命中,见 QUOTE_CACHE_POLICY
+      const usable =
+        c?.policy === QUOTE_CACHE_POLICY && c.day && c.locale && c.text;
+      cachePeek = usable
+        ? {
+            day: c.day as string,
+            locale: c.locale as LocalePref,
+            q: {
+              text: c.text as string,
+              from: c.from || undefined,
+              uuid: c.uuid || undefined,
+              // 能进缓存的只可能是 API 结果(本地池从不落盘,见 warmDailyQuote),
+              // 故缓存命中一律按网络来源认 —— 署名据此显示
+              src: QUOTE_SOURCE.id,
+            },
+          }
+        : null;
     })
     .catch(() => {
       cachePeek = null;
@@ -223,13 +276,27 @@ export function warmDailyQuote(
     try {
       const hit = await chrome.storage.local.get(QUOTE_CACHE_KEY);
       const c = hit[QUOTE_CACHE_KEY] as
-        | { day?: string; locale?: string; text?: string }
+        | { day?: string; locale?: string; text?: string; policy?: string }
         | undefined;
-      if (c?.day === dayKey && c.locale === locale && c.text) return; // 已是当日
+      // 已是当日 且 是现行策略取回的:无需再抓。
+      // 缺 policy 判断会让旧策略的条目一直挡住补抓(升级当天口径不生效)
+      if (
+        c?.policy === QUOTE_CACHE_POLICY &&
+        c.day === dayKey &&
+        c.locale === locale &&
+        c.text
+      ) {
+        return;
+      }
       const q = await fetchQuote(locale);
       if (q) {
         await chrome.storage.local.set({
-          [QUOTE_CACHE_KEY]: { day: dayKey, locale, ...q },
+          [QUOTE_CACHE_KEY]: {
+            day: dayKey,
+            locale,
+            ...q,
+            policy: QUOTE_CACHE_POLICY,
+          },
         });
         cachePeek = { day: dayKey, locale, q }; // 供后续挂载窥探
       }

@@ -36,6 +36,7 @@ const hitokotoBody = () =>
     hitokoto: "API_DELAYED_QUOTE",
     from: "延迟测试",
     from_who: null,
+    uuid: "75a45fd4-4f2f-45eb-80cb-6f0a7bcdfaf2",
   });
 
 // 一言延迟 2.5s 回:模拟 API 延迟(用户报告过的跳变场景)
@@ -104,6 +105,16 @@ await page.locator(".quote-block").hover();
 await sleep(400);
 ok((await sourceOpacity()) === "1", "悬停后出处显形(opacity 1)");
 
+// 「来自 <源名>」署名只对网络来源显示:此刻展示的是本地池播种条,不许标来源
+// —— 面板靠 quote.src 判断而非「有没有 from」(本地池同样有 from),错标即假署名
+const viaPrefix = zh.chat.quoteVia.split("{")[0];
+ok(
+  await page.evaluate(
+    () => document.querySelector(".quote-source a") === null,
+  ),
+  "本地池句不标来源(不给自家内容错标)",
+);
+
 // ── 补抓完成(>2.5s 已过),触发重挂载:发一句 → 新对话 ──
 await page.locator(`textarea[aria-label="${zh.chat.askInput}"]`).fill("hi");
 await page.locator(`button[aria-label="${zh.chat.send}"]`).click();
@@ -118,6 +129,48 @@ ok(
   "补抓落盘后重挂载切到 API 句",
 );
 ok((await sourceOpacity()) === "0", "重挂载出处同样默认隐藏");
+
+// 此刻展示的是 API 句:署名行应带「来自 一言」+ 回链(一言官方的请求,见 README 致谢)
+const credit = await page.evaluate(() => {
+  const a = document.querySelector(".quote-source a");
+  return a ? { text: a.textContent, href: a.getAttribute("href") } : null;
+});
+ok(credit !== null, "API 句署名带链接");
+ok(credit?.text === "一言", "署名显示内容源名");
+ok(
+  credit?.href === "https://hitokoto.cn/?uuid=75a45fd4-4f2f-45eb-80cb-6f0a7bcdfaf2",
+  "署名回链到该句页面(uuid 溯源,该服务官方建议的方式)",
+);
+const sourceLine = await page.evaluate(
+  () => document.querySelector(".quote-source")?.textContent ?? "",
+);
+ok(sourceLine.includes(viaPrefix), `署名行含「${viaPrefix.trim()}」`);
+// 层级:署名链接要比出处轻一档(否则「作者」与「来源」糊成一团),
+// 且下划线常显 —— 本行只在悬停时可见,「常显」即「露出时就知道能点」
+const quoteStyle = await page.evaluate(() => {
+  const p = document.querySelector(".quote-source");
+  const a = p?.querySelector("a");
+  return {
+    line: p ? getComputedStyle(p).color : null,
+    link: a ? getComputedStyle(a).color : null,
+    deco: a ? getComputedStyle(a).textDecorationLine : null,
+  };
+});
+ok(
+  quoteStyle.link !== null && quoteStyle.link !== quoteStyle.line,
+  "署名链接比出处浅一档(90% 混合,最差配色仍 AA)",
+);
+ok(quoteStyle.deco === "underline", "署名链接常显下划线");
+// 视觉留档:悬停到署名显形再截(轮询等 opacity,不引入固定 sleep)
+await page.locator(".quote-block").hover();
+await page.waitForFunction(
+  () => {
+    const el = document.querySelector(".quote-source");
+    return el !== null && getComputedStyle(el).opacity === "1";
+  },
+  { timeout: 5000 },
+);
+await page.screenshot({ path: `${OUT}/3-quote-credit.png` });
 
 // ── ③ 设置开关:关 → 无 quote;重载持久;再开恢复 ──
 await page.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();

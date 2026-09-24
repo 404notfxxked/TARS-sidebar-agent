@@ -12,7 +12,9 @@ import {
   dayKeyOf,
   localQuote,
   peekDailyQuote,
+  QUOTE_SOURCE,
   quoteDisplay,
+  quoteSourceHref,
   timeGreetKey,
   warmDailyQuote,
   type Quote,
@@ -41,10 +43,12 @@ function shuffle<T>(items: readonly T[]): T[] {
   return out;
 }
 
-/** 每日一句:出处默认隐藏,悬停/键盘聚焦整块显形(.quote-source,
- *  空间常驻不跳布局) */
+/** 每日一句:出处与内容来源默认隐藏,悬停/键盘聚焦整块显形(.quote-source,
+ *  空间常驻不跳布局)。署名只标网络来源(一言):本地池是自家内容,标来源
+ *  就是错标 —— 面板靠 quote.src 判断,不靠「有没有 from」猜。 */
 function DailyQuote() {
   const locale = useLocale();
+  const t = useT();
   const day = dayKeyOf();
   const [quote, setQuote] = useState<Quote>(
     () => peekDailyQuote(locale, day) ?? localQuote(locale, day),
@@ -56,10 +60,31 @@ function DailyQuote() {
     void warmDailyQuote(locale, day);
   }, [locale, day]);
   const q = quoteDisplay(quote, locale);
+  // 「来自」是 UI 文案,走字典键;源名是专有名词,与链接同放 QUOTE_SOURCE。
+  // 键值形如「来自 {source}」,这里只取占位符前的子串,品牌名由常量补上
+  const viaPrefix = t("chat.quoteVia").split("{")[0];
+  const credited = quote.src === QUOTE_SOURCE.id;
   return (
     <div className="quote-block">
       <p className="quote-text">{q.text}</p>
-      {q.from && <p className="quote-source">{q.from}</p>}
+      {(q.from || credited) && (
+        <p className="quote-source">
+          {q.from}
+          {q.from && credited ? " · " : null}
+          {credited && (
+            <>
+              {viaPrefix}
+              <a
+                href={quoteSourceHref(quote)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {QUOTE_SOURCE.name}
+              </a>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

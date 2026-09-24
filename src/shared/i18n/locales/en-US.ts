@@ -42,6 +42,7 @@ export const enUS = {
     greetAfternoon: "Good afternoon",
     greetEvening: "Good evening",
     greetLateNight: "Up late?",
+    quoteVia: "via {source}",
     suggestRead: "Summarize this page",
     suggestDigest: "Extract the key points",
     suggestSearch: "Search the web for updates",
