@@ -86,6 +86,12 @@ export async function launchWithCdp({ extDir, userDataDir, proxy, flavor = "gran
     headless: false,
     args,
     viewport: { width: 1400, height: 900 },
+    // 钉死面板语言:首开语言探测(configStore detectLocale)按
+    // navigator.language 落默认,CI 的 en-US Chromium 会把面板初始化成
+    // 英文,所有按 zh 字典拼的断言选择器集体超时(nightly 16/19 红的根因,
+    // 2026-09-26 定位)。e2e 断言按 zh 字典是 tests/README 既定契约,环境
+    // 归一是底座的责任;en 界面覆盖走 probe-locale 的设置页显式切换,不受影响
+    locale: "zh-CN",
   });
 
   // 等 SW 启动并取扩展 ID:先查已起的,没有则事件驱动等待。固定 sleep 在
