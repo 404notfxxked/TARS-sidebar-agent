@@ -112,23 +112,28 @@ ok((await sourceOpacity()) === "1", "悬停后出处显形(opacity 1)");
 // (「补抓落盘后重挂载生效」,组件内 setQuote 只在挂载 effect,同挂载不换句)。
 // 按实际句分叉,两支都有实质断言;「本地句却带签名」才是不变式破坏,落上一支照红
 const viaPrefix = zh.chat.quoteVia.split("{")[0];
-const nowText = await quoteText();
-if (nowText === first) {
+// 文本与签名必须同帧快照:分两次 evaluate 时,CI 慢环境的重挂载(2.5s mock
+// 延迟 + 冷启动 SW)恰好落在两次读取之间 —— 文本读到换句前的本地句、签名读
+// 到换句后的 API 句,第一分支误红(2026-09-26 CI 两次复现,本地永不复现)。
+// 同一 evaluate 内同步执行,事件循环无法插入,快照原子
+const snap = await page.evaluate(() => ({
+  text:
+    [...document.querySelectorAll(".quote-text")].map((p) => p.textContent)[0] ??
+    null,
+  hasSignature: document.querySelector(".quote-source a") !== null,
+}));
+if (snap.text === first) {
   ok(
-    await page.evaluate(
-      () => document.querySelector(".quote-source a") === null,
-    ),
+    !snap.hasSignature,
     "本地池句不标来源(不给自家内容错标)",
   );
 } else {
   ok(
-    nowText?.includes("API_DELAYED_QUOTE") === true,
+    snap.text?.includes("API_DELAYED_QUOTE") === true,
     "断言窗口内发生重挂载:换上的是 API 句(设计内路径)",
   );
   ok(
-    await page.evaluate(
-      () => document.querySelector(".quote-source a") !== null,
-    ),
+    snap.hasSignature,
     "API 句署名随句显示(重挂载后)",
   );
 }
