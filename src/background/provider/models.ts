@@ -4,28 +4,48 @@
 // base URL 有两种生态约定(2026-09 二十余家端点调研,详见会话记录):
 // OpenAI 系要求含版本段(/v1、/v4…),Anthropic 系(Claude Code / 官方 SDK)的
 // ANTHROPIC_BASE_URL 是不含 /v1 的根地址,SDK 自行补 /v1/xxx。用户按后者习惯
-// 粘贴根地址时,{base}/models 404 而 {base}/v1/models 才是对的。这里**不做**
-// 按厂商/正则改写(误伤中转站、规则表必腐化、跨 host 改写会越过按域授权),
-// 而是**候选回退探测**:至多两个候选挨个真打,靠真实响应判定 ——
-//  - base 末段已是版本段:只打 {base}/models(拼 /v1/v1 必错,禁回退);
-//  - 否则先 {base}/models,仅 404/405(或 200 但形状不对)才推进 {base}/v1/models;
-//  - 401/403 说明路由存在、是认证问题,立即报错不换路径(换路径无意义);
-//  - 其余错误(网络层/超时/其他状态码)原样抛出,不推进候选。
-// 命中回退候选时返回 suggestedBase({base}/v1),设置页据此提示「一键修正」
-// —— 聊天请求({base}/messages vs {base}/v1/messages)同样受约定影响。
+// 粘贴根地址时,{base}/models 404 而 {base}/v1/models 才是对的。处理按
+// 「已知直打、未知探测」分层:
+//  ①已知桥接形态(BRIDGE_MODELS_PATHS,精确 host 白名单):该桥不实现
+//    /models、列表只挂同 origin 的 OpenAI 形状端点,首选候选直打文档端点,
+//    不明知 404 仍走 {base}/models 的错误路径。每条带核实日期与来源;精确
+//    host 全等匹配,自建中转的自定义域名不会误命中;
+//  ②通用候选链(零厂商知识):{base}/models → {base}/v1/models(仅 base
+//    末段非版本段,拼 /v1/v1 必错)→ 同 origin 根的 /models、/v1/models
+//    (仅 anthropic 格式:未知桥的列表可能挂 origin 根;OpenAI 生态无此约定)。
+//    靠真实响应判定:仅 404/405(或 200 但形状不对)推进;base 域候选 401/403
+//    说明路由存在是认证问题,立即报错不换路径;origin 根候选是**猜测**,其
+//    401/403 不中止整链(同 key 不同路由的权限差异不该冒充电报认证失败),
+//    记录后走完,最终错误仍以 base 域结论为主。
+// 命中 {base}/v1/models 时返回 suggestedBase({base}/v1),设置页据此提示
+// 「一键修正」——聊天请求同样受约定影响;白名单/origin 根候选命中则不给
+// (列表在别处,聊天仍走 {base}/v1/messages,base 不能动)。
 // Anthropic 官方列表默认 limit=20 且分页(has_more/after_id),这里 limit=1000
-// 起拉、按 has_more 翻页,总页数封顶(硬规则 8:拼接输入必须有硬预算)。
+// 起拉、按 has_more 翻页,总页数封顶(硬规则 8:拼接输入必须有硬预算);
+// 分页参数只发给 Anthropic 形状的候选(白名单/origin 根是 OpenAI 形状,不带)。
 // 认证:OpenAI 系 Bearer;Anthropic 系 x-api-key + anthropic-version 外加
 // Authorization: Bearer **双头** —— 官方认 x-api-key,AUTH_TOKEN 系网关与
 // Baseten 等只认 Bearer,官方 apiKeyHelper 与 new-api 均双认,同发是兼容超集。
-// 不实现该端点的桥(如 DeepSeek /anthropic 文档只列 /messages)两个候选都
-// 失败,错误按 code 分类(auth/missing/shape),调用方(设置页)映射为可行动
-// 文案,手动添加模型兜底。调用方在 fetch 前经 ensureOriginAuthorized 按域取得
-// host 授权(安装零授权模型:optional_host_permissions),候选探测均在同一
-// origin 内,不越出已授权范围;授权后扩展上下文 fetch 不受 CORS 限制
+// 不实现该端点的桥(如百炼文档明示仅 /v1/messages)全链失败,错误按 code
+// 分类(auth/missing/shape),调用方(设置页)映射为可行动文案,手动添加
+// 模型兜底。调用方在 fetch 前经 ensureOriginAuthorized 按域取得 host 授权
+// (安装零授权模型:optional_host_permissions),候选探测均在同一 origin 内,
+// 不越出已授权范围;授权后扩展上下文 fetch 不受 CORS 限制
 
 import type { ProviderKind } from "../../shared/configStore";
 import { apiFetch, ApiError } from "./client";
+
+/** 已知桥接形态:该 host 的 Anthropic 兼容桥不实现 /models,模型列表挂在
+ *  同 origin 的 OpenAI 形状端点(值 = 相对 origin 根的路径)。精确 host 全等
+ *  匹配(非子串/正则,中转自建域名不误命中);命中即首选直打,不再走错误
+ *  路径。每条注明核实日期与来源,host/端点变更时改这里 */
+const BRIDGE_MODELS_PATHS: Record<string, string> = {
+  // 官方文档:全站唯一列表端点 GET /models,/anthropic 桥仅 messages(2026-09-24 核实)
+  "api.deepseek.com": "/models",
+  // Kimi 平台线:桥 404 url.not_found,列表在 OpenAI 线 /v1/models(2026-09-23 官方论坛+实测)
+  "api.moonshot.cn": "/v1/models",
+  "api.moonshot.ai": "/v1/models",
+};
 
 /** 错误分类:auth=认证失败;missing=端点没有该路由;shape=200 但不是模型列表 */
 export type ModelsErrorCode = "auth" | "missing" | "shape";
@@ -69,20 +89,31 @@ interface Page {
   lastId: string;
 }
 
+/** 单个候选:baseUrl+path 才拼得出一处(白名单/origin 根候选的 baseUrl 是
+ *  origin 根,base 域候选是用户填的 base);speculative = origin 根的猜测性
+ *  探测,其 401/403 不中止整链;openaiShape = 列表在 OpenAI 线,不发 Anthropic
+ *  分页参数 */
+interface Candidate {
+  baseUrl: string;
+  path: string;
+  suggestedBase: string | null;
+  speculative?: boolean;
+  openaiShape?: boolean;
+}
+
 /** 单页 GET + 形状校验:200 但 data 非数组(智谱桥 200 包业务错误、网关回
  *  HTML)按 shape 抛 ModelsFetchError,让候选循环有推进依据 */
 async function fetchPage(
-  baseUrl: string,
+  candidate: Candidate,
   apiKey: string,
   kind: ProviderKind | undefined,
-  path: string,
   signal?: AbortSignal,
 ): Promise<Page> {
-  const anthropic = kind === "anthropic-messages";
+  const anthropic = kind === "anthropic-messages" && !candidate.openaiShape;
   const res = await apiFetch({
-    baseUrl,
+    baseUrl: candidate.baseUrl,
     apiKey,
-    path,
+    path: candidate.path,
     method: "GET",
     ...(anthropic
       ? {
@@ -127,12 +158,38 @@ export async function fetchModels(
 ): Promise<FetchModelsResult> {
   const base = baseUrl.trim().replace(/\/+$/, "");
   const anthropic = kind === "anthropic-messages";
-  const candidates = hasVersionTail(base)
-    ? [{ path: "/models", suggestedBase: null as string | null }]
-    : [
-        { path: "/models", suggestedBase: null as string | null },
-        { path: "/v1/models", suggestedBase: `${base}/v1` },
-      ];
+  // origin 解析失败(用户手填裸域名等)时白名单与 origin 根探测静默缺席,
+  // 退回纯 base 域候选
+  let origin = "";
+  try {
+    origin = new URL(base).origin;
+  } catch {
+    /* 非法 URL:跳过一切依赖 origin 的候选 */
+  }
+
+  // 候选阶梯:白名单直打 → base 域 → origin 根猜测;同 URL 去重
+  const candidates: Candidate[] = [];
+  const push = (c: Candidate) => {
+    if (!candidates.some((x) => x.baseUrl === c.baseUrl && x.path === c.path))
+      candidates.push(c);
+  };
+  if (anthropic && origin) {
+    const bridgePath = BRIDGE_MODELS_PATHS[new URL(base).host];
+    if (bridgePath)
+      push({
+        baseUrl: origin,
+        path: bridgePath,
+        suggestedBase: null,
+        openaiShape: true,
+      });
+  }
+  push({ baseUrl: base, path: "/models", suggestedBase: null });
+  if (!hasVersionTail(base))
+    push({ baseUrl: base, path: "/v1/models", suggestedBase: `${base}/v1` });
+  if (anthropic && origin && base !== origin) {
+    push({ baseUrl: origin, path: "/models", suggestedBase: null, speculative: true, openaiShape: true });
+    push({ baseUrl: origin, path: "/v1/models", suggestedBase: null, speculative: true, openaiShape: true });
+  }
 
   let lastError: ModelsFetchError | null = null;
   for (const candidate of candidates) {
@@ -141,12 +198,14 @@ export async function fetchModels(
       let afterId = "";
       for (let page = 0; page < MAX_PAGES; page++) {
         const pageRes = await fetchPage(
-          base,
+          {
+            ...candidate,
+            path: anthropic && !candidate.openaiShape
+              ? `${candidate.path}?limit=${PAGE_LIMIT}${afterId ? `&after_id=${afterId}` : ""}`
+              : candidate.path,
+          },
           apiKey,
           kind,
-          anthropic
-            ? `${candidate.path}?limit=${PAGE_LIMIT}${afterId ? `&after_id=${afterId}` : ""}`
-            : candidate.path,
           signal,
         );
         ids.push(...pageRes.ids);
@@ -164,8 +223,9 @@ export async function fetchModels(
       }
       if (err instanceof ApiError) {
         const code = classifyStatus(err.status);
-        if (code === "auth") throw new ModelsFetchError(code, err.message);
-        if (code === "missing") {
+        if (code === "auth" && !candidate.speculative)
+          throw new ModelsFetchError(code, err.message);
+        if (code === "auth" || code === "missing") {
           lastError = new ModelsFetchError(code, err.message);
           continue;
         }

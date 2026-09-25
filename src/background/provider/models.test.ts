@@ -149,6 +149,140 @@ describe("候选回退探测与错误分类", () => {
   });
 });
 
+describe("已知桥接形态:精确 host 白名单直打文档端点", () => {
+  it("DeepSeek 桥(根地址式):首选候选直打 origin 根 /models,一发命中不走错误路径", async () => {
+    const q = fetchQueue([jsonRes({ data: [{ id: "deepseek-v4-pro" }] })]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    const out = await fetchModels(
+      "https://api.deepseek.com/anthropic",
+      "k",
+      undefined,
+      "anthropic-messages",
+    );
+    expect(q.calls.length).toBe(1);
+    expect(q.calls[0].url).toBe("https://api.deepseek.com/models");
+    expect(out.ids).toEqual(["deepseek-v4-pro"]);
+    // 列表来自 origin 根,聊天仍走 {base}/v1/messages:suggestedBase 必须为空
+    expect(out.suggestedBase).toBeNull();
+  });
+
+  it("DeepSeek 桥(带 /v1 式):同样直打 origin 根,版本段不禁用白名单", async () => {
+    const q = fetchQueue([jsonRes({ data: [{ id: "m" }] })]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    const out = await fetchModels(
+      "https://api.deepseek.com/anthropic/v1",
+      "k",
+      undefined,
+      "anthropic-messages",
+    );
+    expect(q.calls.length).toBe(1);
+    expect(q.calls[0].url).toBe("https://api.deepseek.com/models");
+    expect(out.suggestedBase).toBeNull();
+  });
+
+  it("白名单候选失败仍回退通用链:suggestedBase 恢复给出(OpenAI 根列表不适用于聊天)", async () => {
+    const q = fetchQueue([
+      jsonRes({}, 404), // origin/models(白名单直打)
+      jsonRes({}, 404), // {base}/models
+      jsonRes({ data: [{ id: "m" }] }), // {base}/v1/models
+    ]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    const out = await fetchModels(
+      "https://api.deepseek.com/anthropic",
+      "k",
+      undefined,
+      "anthropic-messages",
+    );
+    expect(q.calls.map((c) => c.url)).toEqual([
+      "https://api.deepseek.com/models",
+      "https://api.deepseek.com/anthropic/models?limit=1000",
+      "https://api.deepseek.com/anthropic/v1/models?limit=1000",
+    ]);
+    expect(out.ids).toEqual(["m"]);
+    expect(out.suggestedBase).toBe("https://api.deepseek.com/anthropic/v1");
+  });
+
+  it("Kimi 平台线桥:直打 OpenAI 线 /v1/models", async () => {
+    const q = fetchQueue([jsonRes({ data: [{ id: "kimi-k3" }] })]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    const out = await fetchModels(
+      "https://api.moonshot.cn/anthropic",
+      "k",
+      undefined,
+      "anthropic-messages",
+    );
+    expect(q.calls.length).toBe(1);
+    expect(q.calls[0].url).toBe("https://api.moonshot.cn/v1/models");
+    expect(out.ids).toEqual(["kimi-k3"]);
+  });
+});
+
+describe("未知桥的通用兜底:同 origin 根探测(仅 anthropic 格式)", () => {
+  it("base 两候选都 404 后,推进 origin 根两候选;origin 命中不给 suggestedBase", async () => {
+    const q = fetchQueue([
+      jsonRes({}, 404), // {base}/models
+      jsonRes({}, 404), // {base}/v1/models
+      jsonRes({}, 404), // {origin}/models
+      jsonRes({ data: [{ id: "m" }] }), // {origin}/v1/models
+    ]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    const out = await fetchModels(
+      "https://bridge.example.net/anthropic",
+      "k",
+      undefined,
+      "anthropic-messages",
+    );
+    expect(q.calls.map((c) => c.url)).toEqual([
+      "https://bridge.example.net/anthropic/models?limit=1000",
+      "https://bridge.example.net/anthropic/v1/models?limit=1000",
+      "https://bridge.example.net/models",
+      "https://bridge.example.net/v1/models",
+    ]);
+    expect(out.ids).toEqual(["m"]);
+    expect(out.suggestedBase).toBeNull();
+  });
+
+  it("origin 根探测是猜测:401 不中止整链(不冒充电报认证失败),继续走完", async () => {
+    const q = fetchQueue([
+      jsonRes({}, 404),
+      jsonRes({}, 404),
+      jsonRes({}, 401), // {origin}/models 要鉴权(同 key 不同路由的权限差异)
+      jsonRes({ data: [{ id: "m" }] }),
+    ]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    const out = await fetchModels(
+      "https://bridge.example.net/anthropic",
+      "k",
+      undefined,
+      "anthropic-messages",
+    );
+    expect(q.calls.length).toBe(4);
+    expect(out.ids).toEqual(["m"]);
+  });
+
+  it("chat-completions 格式不做 origin 根探测(OpenAI 生态无此约定)", async () => {
+    const q = fetchQueue([jsonRes({}, 404)]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    await errOf(fetchModels("https://gate.example.com/relay", "k"));
+    expect(q.calls.length).toBe(2);
+    expect(q.calls[1].url).toBe("https://gate.example.com/relay/v1/models");
+  });
+
+  it("base 解析不出 origin(手填裸串):白名单与 origin 探测静默缺席,不崩", async () => {
+    const q = fetchQueue([jsonRes({}, 404)]);
+    vi.mocked(fetch).mockImplementation(q.fn as typeof fetch);
+    expect(
+      await codeOf(
+        fetchModels("not-a-url", "k", undefined, "anthropic-messages"),
+      ),
+    ).toBe("missing");
+    expect(q.calls.map((c) => c.url)).toEqual([
+      "not-a-url/models?limit=1000",
+      "not-a-url/v1/models?limit=1000",
+    ]);
+  });
+});
+
 describe("anthropic-messages 协议", () => {
   it("双认证头 + limit=1000;has_more 经 after_id 翻页拉全", async () => {
     const q = fetchQueue([
