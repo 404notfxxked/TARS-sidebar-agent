@@ -13,7 +13,16 @@
 [![chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/develop/mv3/mv3-migration)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-<!-- TODO: 补演示 GIF / 截图 -->
+<table>
+  <tr>
+    <td><img src="docs/screenshots/chat-light.png" width="250" alt="浅色主题：联网搜索过程卡与 Markdown 富文本回答"></td>
+    <td><img src="docs/screenshots/chat-dark.png" width="250" alt="深色主题：同一界面的深色形态"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/settings-light.png" width="250" alt="设置页：按域授权与安全开关"></td>
+    <td><img src="docs/screenshots/memory-light.png" width="250" alt="记忆页：可置顶、可编辑的长期记忆"></td>
+  </tr>
+</table>
 
 </div>
 
