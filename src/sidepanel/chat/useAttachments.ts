@@ -37,13 +37,16 @@ export function useAttachments(visionOk: boolean) {
    *  已交棒给气泡缓存的(发送出去的图)不在这里撤:气泡的 <img> 是重渲染时
    *  才创建的,此刻撤销会让它加载失败(浏览器对「先撤销、后新建元素」必失败),
    *  那批 URL 的生命周期随之归消息列表 —— 切会话/新对话时由 releaseAllImgUrls
-   *  统一回收 */
+   *  统一回收。
+   *  ⚠️ 不在此清 attachHint:发送路径是「flashHint(图片不会发送) → 附件入队清空」,
+   *  若这里顺手 setAttachHint(""),resolveContext 不等浏览器往返时两步会落进同一
+   *  React 批次 —— 提示被置上又立刻清掉、一帧都不上屏,用户与 e2e 都看不到。
+   *  提示自带 3s 计时器,生命周期由它自己管。 */
   const clearAttachments = () => {
     for (const p of pendingImagesRef.current) {
       if (!ownsImgUrl(p.id)) URL.revokeObjectURL(p.url);
     }
     commitPendingImages([]);
-    setAttachHint("");
   };
 
   const flashHint = (msg: string) => {

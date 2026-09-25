@@ -137,7 +137,6 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 | `focus` | `probe-focus.mjs` | 焦点与滚动体验:面板 autofocus/悬浮层关闭焦点回归/运行中输入框可编辑/「回到最新」出现-回底-消失/模型选择键盘导航(↑↓/Home/End/Enter/Tab/Esc)/历史搜索 autofocus |
 | `tool-labels` | `probe-en-tools.mjs` | 英文界面下工具行/摘要走面板字典(SW 侧中文 displayName 不泄漏);内置工具名 = 字典键映射,MCP 回退「服务器 · 工具名」 |
 | `actions` | `probe-actions.mjs` | 消息动作行:复制(剪贴板+已复制反馈)/末条重新生成(本轮收尾气泡与历史回放两条挂点,断言 IDB 库态:提问不重复、旧答案行已截掉) |
-| `quote` | `probe-quote.mjs` | 每日一句:缓存 miss(API 延迟 2.5s)挂载不跳变/出处悬停显形(computed opacity)/设置开关与重载持久化 |
 
 ## 视觉/诊断探针(人看截图/DOM,不判 PASS/FAIL)
 

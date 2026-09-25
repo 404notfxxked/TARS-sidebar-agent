@@ -1,7 +1,7 @@
 // 对话视图:渲染与输入区。agent 状态(port 事件、消息、会话游标、本轮
 // 执行流)在 chat/useAgentChannel;执行流状态机在 chat/useRunSegments,
 // 过程卡渲染在 chat/trace,气泡与 markdown 在 chat/bubbles,图片管线与
-// 缓存在 chat/images,空态(问候/chips/每日一句)在 chat/EmptyState,
+// 缓存在 chat/images,空态(问候/chips)在 chat/EmptyState,
 // 写操作确认卡在 chat/ConfirmCard。
 
 import { useEffect, useRef, useState, type RefObject } from "react";
@@ -14,7 +14,6 @@ import { useChatModels } from "./useChatModels";
 import { useAttachments } from "./useAttachments";
 import { useAutoScroll } from "./useAutoScroll";
 import { useSkillMenu } from "./useSkillMenu";
-import { useQuoteEnabled } from "./useQuoteEnabled";
 import ChatHeader from "./ChatHeader";
 import MessageList from "./MessageList";
 import ComposerBar from "./ComposerBar";
@@ -123,9 +122,6 @@ export default function ChatView({
     onActiveSessionChange?.(currentSession);
   }, [currentSession, onActiveSessionChange]);
 
-  // 空态每日一句展示开关(设置 → 外观;storage 事件实时跟随)
-  const quoteEnabled = useQuoteEnabled();
-
   // 一轮收口后若焦点已落在 body(停止钮卸载、悬浮层刚关等),把焦点还给
   // 输入框:下一问是收口后的高频动作,不该让用户再点一次输入框。
   // 放在渲染后执行,才能看到停止钮卸载后的最终焦点归属
@@ -205,7 +201,6 @@ export default function ChatView({
         openGroups={openGroups}
         toggleGroup={toggleGroup}
         regenerate={chat.regenerate}
-        quoteEnabled={quoteEnabled}
         memorySaved={memorySaved}
         onOpenMemory={onOpenMemory}
         onPickEmpty={(text) => {

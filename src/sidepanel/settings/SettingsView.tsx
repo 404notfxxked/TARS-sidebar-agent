@@ -196,7 +196,6 @@ export default function SettingsView({
             <AppearanceSection
               initialTheme={config.theme}
               initialAccent={config.accent}
-              initialQuote={config.quote}
               run={run}
             />
 

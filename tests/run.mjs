@@ -34,7 +34,6 @@ const SUITES = {
   focus: "probe-focus.mjs", // 焦点流(autofocus/悬浮层回归/运行中可输入)+ 回到底部 + 模型键盘导航
   "tool-labels": "probe-en-tools.mjs", // 英文界面下工具名走面板字典(SW 中文名不泄漏)
   actions: "probe-actions.mjs", // 消息动作行:复制(剪贴板) + 末条重新生成(截库重跑,两条挂点)
-  quote: "probe-quote.mjs", // 每日一句:缓存 miss 不跳变/出处悬停显形/设置开关与持久化
 };
 
 // ---- 未登记套件自检(必须早于一切早退:无参看清单恰恰是最该报错的场景)。

@@ -29,7 +29,6 @@ export default function MessageList({
   openGroups,
   toggleGroup,
   regenerate,
-  quoteEnabled,
   memorySaved,
   onOpenMemory,
   onPickEmpty,
@@ -47,7 +46,6 @@ export default function MessageList({
   openGroups: Set<number>;
   toggleGroup: (firstIdx: number) => void;
   regenerate: () => void;
-  quoteEnabled: boolean;
   memorySaved: number;
   onOpenMemory: () => void;
   /** 空态 chips 点击:回填输入并聚焦 */
@@ -114,7 +112,7 @@ export default function MessageList({
         {/* 内容列:面板拖宽后封顶 560px 居中,窄面板不变 */}
         <div className="mx-auto w-full max-w-[560px] space-y-3">
           {visible.length === 0 && status === "idle" ? (
-            <EmptyState onPick={onPickEmpty} showQuote={quoteEnabled} />
+            <EmptyState onPick={onPickEmpty} />
           ) : (
             visible.flatMap((m, i) => {
               const showDivider =

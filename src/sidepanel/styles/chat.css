@@ -481,49 +481,6 @@
   background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, var(--md-sys-color-surface-container-highest));
 }
 
-/* 每日一句:出处默认隐藏,悬停/聚焦整块时显形(空间常驻,布局不跳;
-   opacity 0 不影响读屏 DOM 可达)。quote 排空态块尾当注脚,与上排
-   chips 拉开一档间距;不限额外宽度,跟随容器 px-6 边距 —— 动辄二十多
-   字的句子在 240px 限宽下会硬折行,两侧却空着 */
-.quote-block {
-  margin-top: 16px;
-}
-.quote-text {
-  font-size: 12.5px;
-  line-height: 1.625;
-  color: var(--md-sys-color-on-surface-variant);
-  /* 真折行时两行均衡(Chrome 114+,旧版忽略不影响) */
-  text-wrap: balance;
-}
-.quote-source {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--md-sys-color-on-surface-variant);
-  opacity: 0;
-  transition: opacity 150ms var(--ease-emphasized);
-}
-.quote-block:hover .quote-source,
-.quote-block:focus-within .quote-source {
-  opacity: 1;
-}
-/* 署名行里的内容来源链接(「来自 一言」):比出处轻一档,与「—— 作者 · 书名」
-   拉开层级。90% 是实测的安全线:浅色最差配色(graphite)合成后 4.85:1,守住
-   WCAG AA 正文 4.5:1;更浅就跌破(直接换 outline 令牌只有 4.26:1)。
-   下划线常显 —— 本行仅在悬停/聚焦时可见,「常显」即「露出时就是链接」,
-   省掉再猜它能不能点。不新增类名(规则 14:接口类复用) */
-.quote-source a {
-  color: color-mix(
-    in srgb,
-    var(--md-sys-color-on-surface-variant) 90%,
-    transparent
-  );
-  text-decoration: underline;
-}
-.quote-source a:hover,
-.quote-source a:focus-visible {
-  color: var(--md-sys-color-on-surface-variant);
-}
-
 /* 错误气泡内联重试:胶囊形态同 trace-copy-btn,文字用 on-error-container
    (在 error-container 底上对比度充足),状态层按同一色 8%/12% */
 .error-retry-btn {

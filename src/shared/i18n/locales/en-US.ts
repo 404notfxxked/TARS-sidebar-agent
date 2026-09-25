@@ -42,7 +42,6 @@ export const enUS = {
     greetAfternoon: "Good afternoon",
     greetEvening: "Good evening",
     greetLateNight: "Up late?",
-    quoteVia: "via {source}",
     suggestRead: "Summarize this page",
     suggestDigest: "Extract the key points",
     suggestSearch: "Search the web for updates",
@@ -355,8 +354,6 @@ export const enUS = {
     accentCoral: "Coral",
     accentRose: "Rose",
     accentGraphite: "Graphite",
-    quoteToggle: "Daily quote",
-    quoteHint: "Show a daily quote on the chat empty state.",
     // Web search
     webSearch: "Web search",
     webSearchHint: "When enabled, the AI can search the web; off by default.",

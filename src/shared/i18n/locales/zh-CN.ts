@@ -38,9 +38,6 @@ export const zhCN = {
     greetAfternoon: "下午好",
     greetEvening: "晚上好",
     greetLateNight: "夜深了",
-    // 每日一句的署名行:只对网络来源显示(本地短句池是自家内容,不标来源);
-    // {source} 是内容源专有名词,由 EmptyState 从 QUOTE_SOURCE 补齐
-    quoteVia: "来自 {source}",
     suggestRead: "总结一下当前网页",
     suggestDigest: "提炼这篇长文的要点",
     suggestSearch: "联网查查最新进展",
@@ -340,8 +337,6 @@ export const zhCN = {
     accentCoral: "珊瑚",
     accentRose: "玫红",
     accentGraphite: "石墨",
-    quoteToggle: "每日一句",
-    quoteHint: "聊天空态展示每日一句。",
     // 联网
     webSearch: "联网搜索",
     webSearchHint: "开启后 AI 可用搜索引擎查资料，默认关闭。",

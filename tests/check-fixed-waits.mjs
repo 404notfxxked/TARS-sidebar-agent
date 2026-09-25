@@ -33,7 +33,6 @@ const BASELINE = {
   "probe-focus.mjs": 16,
   "probe-layout.mjs": 7,
   "probe-locale.mjs": 6,
-  "probe-quote.mjs": 13,
   "verify-cancel.mjs": 3,
   "verify-compaction.mjs": 1,
   "verify-confirm.mjs": 2,
