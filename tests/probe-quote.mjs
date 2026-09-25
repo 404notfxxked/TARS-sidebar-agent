@@ -105,15 +105,33 @@ await page.locator(".quote-block").hover();
 await sleep(400);
 ok((await sourceOpacity()) === "1", "悬停后出处显形(opacity 1)");
 
-// 「来自 <源名>」署名只对网络来源显示:此刻展示的是本地池播种条,不许标来源
+// 「来自 <源名>」署名只对网络来源显示:本地池播种条不许标来源
 // —— 面板靠 quote.src 判断而非「有没有 from」(本地池同样有 from),错标即假署名
+// 2026-09-26 CI 首红后分叉:慢环境曾在本断言前发生重挂载(晚到事件),新挂载
+// 读到已成熟的 cachePeek(greeting.ts:301)→ API 句带签名,属设计内路径
+// (「补抓落盘后重挂载生效」,组件内 setQuote 只在挂载 effect,同挂载不换句)。
+// 按实际句分叉,两支都有实质断言;「本地句却带签名」才是不变式破坏,落上一支照红
 const viaPrefix = zh.chat.quoteVia.split("{")[0];
-ok(
-  await page.evaluate(
-    () => document.querySelector(".quote-source a") === null,
-  ),
-  "本地池句不标来源(不给自家内容错标)",
-);
+const nowText = await quoteText();
+if (nowText === first) {
+  ok(
+    await page.evaluate(
+      () => document.querySelector(".quote-source a") === null,
+    ),
+    "本地池句不标来源(不给自家内容错标)",
+  );
+} else {
+  ok(
+    nowText?.includes("API_DELAYED_QUOTE") === true,
+    "断言窗口内发生重挂载:换上的是 API 句(设计内路径)",
+  );
+  ok(
+    await page.evaluate(
+      () => document.querySelector(".quote-source a") !== null,
+    ),
+    "API 句署名随句显示(重挂载后)",
+  );
+}
 
 // ── 补抓完成(>2.5s 已过),触发重挂载:发一句 → 新对话 ──
 await page.locator(`textarea[aria-label="${zh.chat.askInput}"]`).fill("hi");
