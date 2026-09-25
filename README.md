@@ -10,6 +10,7 @@
 **Chrome MV3 扩展 · BYOK（需要你自己的模型 Key）· 数据不出本机 · 安装零站点权限**
 
 [![version](https://img.shields.io/github/v/tag/404notfxxked/TARS-sidebar-agent?style=flat-square&label=version)](https://github.com/404notfxxked/TARS-sidebar-agent/releases)
+[![checks](https://github.com/404notfxxked/TARS-sidebar-agent/actions/workflows/checks.yml/badge.svg)](https://github.com/404notfxxked/TARS-sidebar-agent/actions/workflows/checks.yml)
 [![chrome](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/develop/mv3/mv3-migration)
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
@@ -54,9 +55,11 @@ TARS 没有后端，谈不上「上传」：
 - 对话、记忆、技能、设置与 API Key **只存在你的浏览器里**（IndexedDB + `chrome.storage.local`），卸载扩展即消失
 - 模型请求从你的浏览器**直连你配置的端点**，途中没有第三台服务器；日志在导出前自动脱敏 Key
 - 打开联网搜索后，搜索词会发给搜索引擎（或你配置的搜索服务）；启用 MCP 工具后，相关请求内容会发给对应服务器——两类能力都默认关闭、开启时界面明示
-- 源码即声明：一切请求路径都可以在代码里直接验证
+- 源码即声明：一切请求路径都可以在代码里直接验证；逐项细节（数据存哪、发给谁、权限用途、你的控制权）见 [PRIVACY.md](PRIVACY.md)
 
 ## 📦 安装
+
+要求 **Chrome ≥ 116**（`minimum_chrome_version` 在 manifest 里声明）；从源码构建另需 Node ≥ 20、pnpm ≥ 10。
 
 **方式一：下载安装包**
 
@@ -68,8 +71,6 @@ TARS 没有后端，谈不上「上传」：
 
 **方式二：从源码构建**
 
-要求 Node ≥ 20、pnpm ≥ 10。
-
 ```bash
 git clone https://github.com/404notfxxked/TARS-sidebar-agent.git
 cd TARS-sidebar-agent
@@ -79,7 +80,7 @@ pnpm build        # 产物输出到 dist/
 
 然后同方式一的第 2~5 步（第 3 步选择 `dist/` 目录）。
 
-「联网搜索」默认关闭：开启后默认走免 Key 的真实搜索引擎标签页通道（后台短暂开页、读完即关）。API 搜索服务（Tavily / Bocha / Brave）通道保留但无设置界面，需手动写入配置才能启用。关闭状态下 TARS 只读当前页面，不发出任何联网请求。
+「联网搜索」默认关闭：开启后默认走免 Key 的真实搜索引擎标签页通道（后台短暂开页、读完即关）。API 搜索服务（Tavily / Bocha / Brave）通道保留但无设置界面，需手动写入配置才能启用。关闭状态下 TARS 不为搜索 / 读网页发出任何联网请求，也不存在任何后台常驻外发请求。
 
 ## 💡 使用须知
 

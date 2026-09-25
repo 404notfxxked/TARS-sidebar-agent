@@ -77,7 +77,7 @@ jobs:
 
       # 截图产物上传成 artifact——runner 销毁后唯一能回看的东西,在该次
       # 运行详情页底部 Artifacts 区下载(默认留 90 天)。/tmp/tars-* 覆盖
-      # 各探针套件各自的 OUT 目录(actions/en/focus/locale/quote/m3),
+      # 各探针套件各自的 OUT 目录(按套件现取:grep -rn "/tmp/tars-" tests/),
       # glob 命中多个目录时 artifact 内按目录名分桶。名字沿用 tars-m3-shots
       # (历史叫法,内容已不止 m3)。if: always() = 前面步骤失败也执行:
       # 失败现场的截图恰恰最有价值。

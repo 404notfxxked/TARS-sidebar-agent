@@ -6,6 +6,7 @@
 
 ### Added
 
+- **隐私说明（PRIVACY.md）** — 根目录新增正式隐私说明,把原先散在 README 里的承诺收敛成一份可逐条核对的清单:数据存哪（IndexedDB 的会话/消息/图片/记忆/技能 + `chrome.storage.local` 的设置与 Key、诊断日志）、发给谁（自配模型端点 / 搜索引擎 / 目标站点 / MCP 服务器,逐项标注默认开关）、诊断日志的脱敏与截断纪律、权限逐项用途、以及你的控制权（清空、撤销授权、卸载）。README「隐私与数据」段落末尾链过去。
 - **服务端搜索（Anthropic Messages）** — 对「API 格式 = Anthropic Messages」的供应商，联网搜索改由模型服务商在服务端执行：开启「联网」后请求注入 `web_search` server tool 声明（如 DeepSeek 原生搜索、智谱 `web_search_prime`），结果随回答内联返回，不再新开搜索引擎标签页、也不需要网页授权。**没有独立开关——「联网」总开关即闸**，联网关闭时一切逻辑与现状完全一致；该协议下搜索需要端点实现服务端工具，端点报错时可把该供应商改用 Chat Completions 格式（供应商卡片提示已写明）。回传形状按端点类别分派（见下条「协议支持」）；同名本地 web_search 客户端工具从请求剔除以避免声明冲突。搜索明细（查询词 40 字符截断 + 结果条数与前 3 条链接）与未知内容块告警记入诊断日志，供验证端点的服务端工具支持情况。
 - **Anthropic Messages 协议支持** — 「模型服务」的供应商卡片新增「API 格式」选择：Chat Completions(OpenAI 兼容,既有配置缺省不变、零迁移)与 Anthropic Messages(Claude 官方及一切兼容端点)。Anthropic 侧以 `x-api-key` + `anthropic-version` 认证走 `/v1/messages` 端点,工具调用、图片输入、流式输出、上下文压缩与撞窗紧急压缩全链路可用;思考档位映射为固定 `budget_tokens`(low/medium/high)，「API 格式」选择器同时预留 OpenAI Responses 选项位(暂未实现,后续版本提供)。**历史回传按端点类别分派**：官方 `api.anthropic.com` 原样回传带签名思考块与服务端工具块；其余一切 Anthropic 兼容端点（DeepSeek `/anthropic`、Kimi `/coding`、各类中转）按桥接口径回传——服务端工具块降为文本载体（保留查询词与「url — title」来源行），思考用 `reasoning_content` 合成 **unsigned** 思考块，补齐桥接端点「请求带 tools 时历轮 reasoning 必须回传」的连续性要求。
 - **首开语言探测 + 首页语言快捷切换** — 首次安装(未存储过语言偏好)时按浏览器语言自动选定界面语言(zh 系变体→简体中文,其余→English);显式选过的语言永远尊重,不被探测覆盖。首页顶栏新增地球图标语言钮(语言切换的通行图标):两项单选菜单(当前语言打勾,选项用语言本名)即时切换并落盘,英文用户落在中文界面时不必读懂设置页就能自救;设置 → 外观的语言下拉保留,两处同一落盘出口。
