@@ -1,6 +1,6 @@
-// 写操作确认卡:后台在执行页面写动作/记忆持久写/受控外链读取前停下等答复;
-// 展示目标页与操作内容,给用户足够信息做「允许 / 拒绝」决定;视觉沿用
-// combo-pop 浮层语言。键位表必须写字面量(check-i18n 只收集键形字面量)
+// 写操作确认卡:后台在执行页面写动作/记忆持久写/受控外链读取/MCP 外部工具
+// 调用前停下等答复;展示目标与操作内容,给用户足够信息做「允许 / 拒绝」决定;
+// 视觉沿用 combo-pop 浮层语言。键位表必须写字面量(check-i18n 只收集键形字面量)
 
 import type { MSG, AgentEvent } from "../../shared/messages";
 import { useT } from "../ui/hooks";
@@ -12,8 +12,9 @@ type ConfirmRequest = Extract<
   { type: typeof MSG.AGENT_CONFIRM_REQUEST }
 >;
 
-/** 按工具族取卡片标题键:页面动作/记忆/外链各自有更贴题的说法 */
+/** 按工具族取卡片标题键:页面动作/记忆/外链/MCP 各自有更贴题的说法 */
 function confirmTitleKey(name: string): string {
+  if (name.startsWith("mcp_")) return "chat.confirmMcpTitle";
   switch (name) {
     case "memory_save":
       return "chat.confirmMemorySaveTitle";
@@ -86,6 +87,22 @@ export function ConfirmCard({
   const fetchTruncated =
     !fetchTarget || fetchTarget.search.length > 1 || fetchPathRaw.length > 80;
   const fetchQueryChars = fetchTarget ? fetchTarget.search.length - 1 : 0;
+  // MCP 族:调用的是外部服务器而非本机页面,页签信息无意义不上卡;目标行
+  // 显示服务器名(displayName「服务器 · 工具」前段,mcpManager 构造),缺
+  // displayName 就整行不渲染 —— wire 名拆不出可靠服务器名,宁缺勿错
+  const isMcp = req.name.startsWith("mcp_");
+  const mcpServer = isMcp ? req.displayName?.split(" · ")[0] : undefined;
+  // MCP 入参即外发负载,与记忆族同一条「操作对象上卡」纪律;超 80 截断,
+  // 让「截断」本身成为信号(与 web_fetch 查询串同款)
+  const mcpArgsRaw =
+    isMcp &&
+    typeof req.args === "object" &&
+    req.args !== null &&
+    Object.keys(req.args).length > 0
+      ? JSON.stringify(req.args)
+      : "";
+  const mcpArgsText = mcpArgsRaw.slice(0, 80);
+  const mcpArgsTruncated = mcpArgsRaw.length > 80;
   const titleKey = confirmTitleKey(req.name);
   return (
     <div
@@ -97,9 +114,20 @@ export function ConfirmCard({
         <ConfirmIcon />
         {toolLabel(t, req.name, req.displayName)} · {t(titleKey)}
       </p>
-      {targetLabel && (
+      {!isMcp && targetLabel && (
         <p className="mt-1 truncate text-[12px] text-on-surface-variant">
           {t("chat.confirmTarget", { title: targetLabel })}
+        </p>
+      )}
+      {isMcp && mcpServer && (
+        <p className="mt-1 truncate text-[12px] text-on-surface-variant">
+          {t("chat.confirmMcpTarget", { name: mcpServer })}
+        </p>
+      )}
+      {mcpArgsText && (
+        <p className="mt-1 break-all text-[12px] text-on-surface-variant">
+          {t("chat.confirmMcpArgs", { args: mcpArgsText })}
+          {mcpArgsTruncated ? "…" : ""}
         </p>
       )}
       {fillText && (

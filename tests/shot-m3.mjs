@@ -808,6 +808,12 @@ if (ACCENTS_ONLY) {
   const mcpInput = page.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
   await mcpInput.fill("看一下 issue 42");
   await page.locator(`button[aria-label="${zh.chat.send}"]`).click();
+  // mcp_* 工具全量过确认门(宁慢勿错):等卡出现 → 留档 → 自动放行。
+  // 不应答的话 run 停在门里 2 分钟,脚本等「发送按钮回来」必然超时
+  const allowBtn = page.locator(`button[aria-label="${zh.chat.confirmAllow}"]`);
+  await allowBtn.waitFor({ state: "visible", timeout: 15000 });
+  await shot(page, "mcp-confirm-light");
+  await allowBtn.click();
   await page
     .locator(`button[aria-label="${zh.chat.send}"]`)
     .waitFor({ state: "visible", timeout: 30000 });

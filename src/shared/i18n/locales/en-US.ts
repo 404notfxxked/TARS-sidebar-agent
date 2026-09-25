@@ -114,6 +114,9 @@ export const enUS = {
     confirmWebFetchUrl: "Link: {url}",
     confirmWebFetchQuery:
       "{n} chars of query string; parameters are not shown verbatim",
+    confirmMcpTitle: "wants to call an external tool",
+    confirmMcpTarget: "Target server: {name}",
+    confirmMcpArgs: "Will send: {args}",
     trace: {
       thinking: "Thinking",
       reasoning: "Reasoning",

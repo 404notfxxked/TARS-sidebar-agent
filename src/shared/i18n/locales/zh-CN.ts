@@ -108,6 +108,9 @@ export const zhCN = {
     confirmMemoryDeleteText: "将删除匹配「{match}」的记忆",
     confirmWebFetchUrl: "链接：{url}",
     confirmWebFetchQuery: "查询串 {n} 字符，参数内容不逐字展示",
+    confirmMcpTitle: "请求调用外部工具",
+    confirmMcpTarget: "目标服务器：{name}",
+    confirmMcpArgs: "将发送：{args}",
     trace: {
       thinking: "思考中",
       reasoning: "思考过程",

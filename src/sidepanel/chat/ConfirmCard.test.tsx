@@ -156,3 +156,62 @@ describe("ConfirmCard web_fetch 族", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("ConfirmCard MCP 族", () => {
+  it("标题走专属键,目标行显示服务器名(取 displayName 前段),不显示页签", () => {
+    renderCard({
+      name: "mcp_GitHub_get_issue",
+      displayName: "GitHub · get_issue",
+      args: { issue_number: 42 },
+      // 对外部服务器的调用与当前页签无关:页签信息不该出现在卡上
+      tabTitle: "某个无关网页",
+      tabUrl: "https://www.example.com/page",
+    });
+    expect(
+      screen.getByRole("alertdialog", { name: zhCN.chat.confirmMcpTitle }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(zhCN.chat.confirmMcpTarget.replace("{name}", "GitHub")),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(zhCN.chat.confirmTarget.split("{")[0], { exact: false }),
+    ).not.toBeInTheDocument();
+    // 入参即外发负载,JSON 形态上卡
+    expect(
+      screen.getByText(zhCN.chat.confirmMcpArgs.replace("{args}", '{"issue_number":42}')),
+    ).toBeInTheDocument();
+  });
+
+  it("缺 displayName 时目标服务器行整个不渲染(不猜 wire 名),负载行照常", () => {
+    renderCard({ name: "mcp_srv_tool", displayName: undefined, args: { a: 1 } });
+    expect(
+      screen.queryByText(zhCN.chat.confirmMcpTarget.split("{")[0], { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(zhCN.chat.confirmMcpArgs.replace("{args}", '{"a":1}')),
+    ).toBeInTheDocument();
+  });
+
+  it("负载 JSON 超 80 字截断加省略号", () => {
+    const raw = JSON.stringify({ content: "字".repeat(100) });
+    renderCard({
+      name: "mcp_Notes_create",
+      displayName: "Notes · create",
+      args: { content: "字".repeat(100) },
+    });
+    expect(
+      screen.getByText(zhCN.chat.confirmMcpArgs.replace("{args}", `${raw.slice(0, 80)}…`)),
+    ).toBeInTheDocument();
+  });
+
+  it("空入参不渲染负载行", () => {
+    renderCard({
+      name: "mcp_GitHub_list_issues",
+      displayName: "GitHub · list_issues",
+      args: {},
+    });
+    expect(
+      screen.queryByText(zhCN.chat.confirmMcpArgs.split("{")[0], { exact: false }),
+    ).not.toBeInTheDocument();
+  });
+});
