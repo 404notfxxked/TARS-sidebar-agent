@@ -57,11 +57,11 @@ function isNativeAnthropicEndpoint(baseUrl: string | undefined): boolean {
   }
 }
 
-// ---- 服务端搜索(实验开关 serverWebSearch,仅 anthropic-messages) ----
+// ---- 服务端搜索(仅 anthropic-messages;无独立开关,「联网」总开关即闸) ----
 // Anthropic server tool:声明即由服务商在服务端执行,结果以 server_tool_use /
 // web_search_tool_result 块内联进本轮响应,客户端零往返、无本地 tool 消息。
 // 本地同名 web_search 客户端工具必须从请求剔除 —— 同名声明会 400,且「服务端
-// 版替代本地版」正是本开关的语义;剔除后若模型仍吐 web_search 的普通 tool_use
+// 版替代本地版」正是该口径的语义;剔除后若模型仍吐 web_search 的普通 tool_use
 // (假服务端,只是格式兼容),会走本地注册表而失败,恰好成为可查证的信号。
 const SERVER_WEB_SEARCH_TOOL = {
   type: "web_search_20250305",
