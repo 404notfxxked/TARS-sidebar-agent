@@ -35,7 +35,20 @@ const log = createLogger({ ctx: "bg" });
 const MODERN_VERSION = "2026-07-28";
 /** initialize 握手时声明的版本(旧版服务器普遍支持的一代) */
 const LEGACY_VERSION = "2025-06-18";
-const CLIENT_INFO = { name: "TARS", version: "1.1.0" };
+/** 客户端身份声明。`version` **取自扩展 manifest**(`chrome.runtime.getManifest()`),
+ *  不在这里再写一份字面量 —— 曾经硬编码 `1.1.0`,而 `check-version` 只比
+ *  package.json ↔ manifest.json,发版时这处副本会静默过期(对外声明错版本)。
+ *  取不到 manifest(非扩展运行环境)时回落 `0.0.0`:clientInfo 只是身份声明,
+ *  服务器不做版本校验,不值得让握手因此失败。 */
+function clientInfo(): { name: string; version: string } {
+  let version = "0.0.0";
+  try {
+    version = chrome.runtime.getManifest().version;
+  } catch {
+    // 见上:回落值即够用
+  }
+  return { name: "TARS", version };
+}
 /** 单请求超时:tools/list 快,tools/call 可能慢(外部系统操作),取宽值 */
 const REQUEST_TIMEOUT_MS = 60_000;
 
@@ -128,7 +141,7 @@ export class McpClient {
       {
         protocolVersion: LEGACY_VERSION,
         capabilities: {},
-        clientInfo: CLIENT_INFO,
+        clientInfo: clientInfo(),
       },
       { signal, noProbe: true },
     );
@@ -189,7 +202,7 @@ export class McpClient {
           ...params,
           _meta: {
             "io.modelcontextprotocol/protocolVersion": this.protocolVersion,
-            "io.modelcontextprotocol/clientInfo": CLIENT_INFO,
+            "io.modelcontextprotocol/clientInfo": clientInfo(),
             // V1 能力集为空:不支持 sampling/elicitation/roots
             "io.modelcontextprotocol/clientCapabilities": {},
           },

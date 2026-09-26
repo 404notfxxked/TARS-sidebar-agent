@@ -16,6 +16,7 @@
 //   T4. 一台服务器宕机:其余工具照常注入,告警日志出现
 //   T5. 设置页 UI:开关/添加/展开自动拉工具清单/测试连接
 
+import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { answerSSE, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
@@ -24,6 +25,12 @@ import { zh } from "./lib-i18n.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
 const USER_DATA_DIR = `/tmp/verify-mcp-${Date.now()}`;
+
+// 客户端身份声明的期望版本:读 manifest 真源(不是抄一个字面量 —— 抄一份
+// 就等于把「发版时忘了 bump」这个 bug 复制进测试,断言随之恒真)
+const MANIFEST_VERSION = JSON.parse(
+  readFileSync(resolve(__dirname, "..", "public", "manifest.json"), "utf8"),
+).version;
 
 const MODERN_URL = "https://mcp.modern-test.example.com/mcp";
 const LEGACY_URL = "https://mcp.legacy-test.example.com/mcp";
@@ -377,6 +384,21 @@ await setMcp(mcpOn);
     (m) => m.url.startsWith(LEGACY_URL) && m.body.method === "initialize",
   );
   check(!!legacyInit, "T2-9 旧版服务器触发 initialize 握手");
+  // 身份声明版本取自 manifest:硬编码 1.1.0 曾静默漂移过一个版本才被发现
+  check(
+    legacyInit?.body.params?.clientInfo?.name === "TARS" && // i18n-ok 协议常量
+      legacyInit?.body.params?.clientInfo?.version === MANIFEST_VERSION,
+    "T2-12 旧版握手 clientInfo 声明 manifest 版本",
+    JSON.stringify(legacyInit?.body.params?.clientInfo),
+  );
+  check(
+    modernCall?.body.params?._meta?.["io.modelcontextprotocol/clientInfo"]
+      ?.version === MANIFEST_VERSION,
+    "T2-13 现代请求 _meta clientInfo 声明 manifest 版本",
+    JSON.stringify(
+      modernCall?.body.params?._meta?.["io.modelcontextprotocol/clientInfo"],
+    ),
+  );
   const legacyRetry = mcpLog.find(
     (m) =>
       m.url.startsWith(LEGACY_URL) &&
