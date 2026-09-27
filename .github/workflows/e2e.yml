@@ -31,7 +31,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     # 整个 job 的保险丝:哪怕浏览器僵死挂住,最多烧 45 分钟就强制终止,
-    # 不会无限吃私有仓库的按分钟计费额度
+    # 不会无限吃按分钟计费的 Actions 额度
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
