@@ -3,7 +3,8 @@
 // 双候选 404 → missing、200 坏形状/非 JSON → shape 且多候选时继续探测);
 // ③anthropic 协议:双认证头(x-api-key + anthropic-version + Bearer)、
 // limit=1000 + after_id/has_more 翻页拉全、翻页硬上限、has_more 无 last_id
-// 即停;④网络层错误原样抛出不推进候选。此前本模块零覆盖(known-issues 记账)。
+// 即停;④网络层错误原样抛出不推进候选。此前本模块零覆盖,
+// 2026-09-23 随候选回退探测重写补齐(a4bfcc0)并钉覆盖率棘轮。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchModels, type ModelsFetchError } from "./models";
