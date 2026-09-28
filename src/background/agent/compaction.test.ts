@@ -182,7 +182,9 @@ describe("isContextOverflow", () => {
   });
 
   it("普通错误不误判", () => {
-    for (const msg of ["HTTP 429", "请求超时", "connection refused", "api key 无效"]) {
+    // 「请求超时」是 SW 错误文案样本(测试种子,非 UI 断言),与 MCP 设置页
+    // 字典键 serverTimeout 的值撞子串
+    for (const msg of ["HTTP 429", "请求超时", "connection refused", "api key 无效"]) { // i18n-ok
       expect(isContextOverflow(new Error(msg))).toBe(false);
     }
   });

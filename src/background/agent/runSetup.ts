@@ -27,6 +27,8 @@ import {
   saveCompaction,
 } from "../sessions/sessionHistory";
 import { getMcpToolSchemas } from "../mcp/mcpManager";
+import { renderMcpStatusBlock } from "../../shared/mcp";
+import type { McpConnectionError } from "../../shared/mcp";
 import { toProviderToolSchemas } from "../tools/tools";
 import type { ToolSchema } from "../../shared/toolTypes";
 import type { ChatProvider } from "../provider";
@@ -73,6 +75,9 @@ export interface RunCfg {
   tools: ToolSchema[];
   /** 本次刷新的 MCP 工具清单(system 补充规则与 run config 日志按它判) */
   mcpSchemas: ToolSchema[];
+  /** 本次连接失败的服务器(失败隔离的产出):注入 <mcp-status> 让模型知道
+   *  哪些 mcp_ 工具缺席并能转告原因,而不是静默缺工具 */
+  mcpErrors: McpConnectionError[];
   /** 工具结果字符预算(按窗口 1/4 缩放,上下限见装配处) */
   toolResultBudgetChars: number;
   /** 视觉能力:决定图片是否随请求发送 */
@@ -233,9 +238,11 @@ export async function resolveRunConfig(
   // MCP 工具:run 开始时刷新各启用服务器的工具清单(5 分钟缓存)并并入。
   // 总开关关闭 = 零网络零注入;单台服务器失败只跳过它自己,不拖垮 run
   let mcpSchemas: ToolSchema[] = [];
+  let mcpErrors: McpConnectionError[] = [];
   if (config.mcp.enabled) {
     const mcp = await getMcpToolSchemas(config.mcp);
     mcpSchemas = mcp.schemas;
+    mcpErrors = mcp.errors;
     if (mcp.errors.length > 0) {
       log.warn("agent", "部分 MCP 服务器连接失败,本轮跳过其工具", {
         errors: mcp.errors,
@@ -268,6 +275,7 @@ export async function resolveRunConfig(
     summarizerLabel,
     tools,
     mcpSchemas,
+    mcpErrors,
     toolResultBudgetChars,
     visionOk,
     contextTokens: modelEntry?.contextTokens,
@@ -327,7 +335,13 @@ export async function assemblePrompt(
   const skillBlock = skillsEnabled
     ? await resolveInvokedSkill(payload.text)
     : null;
-  const userContent = await buildUserContent(payload.text, skillBlock ?? undefined);
+  const userContent = await buildUserContent(
+    payload.text,
+    skillBlock ?? undefined,
+    // 连接失败的服务器明示给模型(user message 通道 —— SYSTEM_PROMPT 保持
+    // 静态;包裹外落盘,回放投影自动丢弃)
+    cfg.mcpErrors.length > 0 ? renderMcpStatusBlock(cfg.mcpErrors) : undefined,
+  );
   const systemContent =
     (webEnabled
       ? SYSTEM_PROMPT

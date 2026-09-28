@@ -13,6 +13,7 @@ export const zhCN = {
     delete: "删除",
     confirmDelete: "确认删除",
     confirmClear: "再点一次确认清空",
+    cancel: "取消",
     copied: "已复制 ✓",
     copy: "复制",
     loading: "读取中…",
@@ -29,7 +30,7 @@ export const zhCN = {
   },
   chat: {
     placeholder: "问点什么，或让 TARS 去查",
-    visionOffTitle: "当前模型未开启「多模态」",
+    visionOffTitle: "当前模型未开启「视觉」",
     imageLimit: "一条消息最多添加 {max} 张图",
     imageRoom: "一次最多添加 {room} 张图",
     clipboard: "剪贴板内容",
@@ -75,7 +76,7 @@ export const zhCN = {
     removeImage: "移除图片",
     send: "发送",
     stop: "停止",
-    visionOffToast: "当前模型未开启「多模态」，需在设置里勾选开启",
+    visionOffToast: "当前模型未开启「视觉」，需在设置里勾选开启",
     imageDecodeFailed: "无法解码图片：{name}",
     visionModelFallback:
       "当前模型不支持视觉，图片不会随本次提问发送；图片已保存，切回视觉模型后可继续引用",
@@ -302,7 +303,7 @@ export const zhCN = {
     modelIdPlaceholder: "手动添加模型 ID，如 deepseek-chat",
     alias: "别名",
     aliasPlaceholder: "在模型选择器里的名称",
-    vision: "多模态",
+    vision: "视觉",
     contextTokens: "上下文窗口",
     ctxPlaceholder: "如 128000",
     maxTokens: "最大输出",
@@ -348,7 +349,7 @@ export const zhCN = {
     mcpEnable: "启用 MCP 工具",
     mcpHint: "启用后，AI 可调用 MCP 服务器提供的工具。",
     mcpDetail:
-      "当前仅支持 HTTP(S) 协议的 Streamable HTTP 端点，本地进程的 stdio 服务器不受支持。调用时相关请求数据会发送至对应服务器的运营方，请仅接入可信服务。",
+      "当前仅支持 HTTP(S) 远程端点（新旧两代协议均支持），本地进程的 stdio 服务器不受支持。调用时相关请求数据会发送至对应服务器的运营方，请仅接入可信服务。",
     addServer: "添加服务器",
     serverEmpty:
       "暂无已配置的服务器。点击「添加服务器」，输入端点地址；如需认证，请补充请求头配置。",
@@ -359,7 +360,7 @@ export const zhCN = {
     serverUrl: "MCP 端点 URL",
     serverUrlPlaceholder: "https://api.example.com/mcp",
     serverUrlHint:
-      "Streamable HTTP 端点：填入 GitHub、Notion 等在线服务，或 Figma 桌面端等本地应用的 MCP 地址。",
+      "HTTP(S) 远程端点：填入 GitHub、Notion 等在线服务，或 Figma 桌面端等本地应用的 MCP 地址。",
     headers: "请求头",
     headersPlaceholder: "Authorization: Bearer ghp_…\nx-api-key: …",
     headersHint:
@@ -368,15 +369,33 @@ export const zhCN = {
     testing: "连接中…",
     testFailed: "连接失败",
     testOk: "已连接 · {n} 个工具 · {era}",
+    eraModern: "现代（无状态）",
+    eraLegacy: "旧版（initialize 握手）",
+    eraUnknown: "未探测",
     tools: "工具",
     toolsLoading: "正在获取工具清单…",
     toolsLoadFailed: "工具清单获取失败：{error}",
     toolCount: "{n} 个工具",
+    toolCountPartial: "{n}/{m} 个工具",
     toolsMeta: "（{n} 个 · 定义约 {tokens} token）",
+    toolsFilterPlaceholder: "筛选工具…",
+    toolsNoMatch: "没有匹配的工具",
+    serverTimeout: "单请求超时（毫秒）",
+    serverTimeoutHint:
+      "留空用默认 60 秒；工具较慢的服务器可调大（5–600 秒）。",
+    importJson: "粘贴导入",
+    importPlaceholder: "粘贴 JSON 配置",
+    importHint:
+      "支持单台对象、数组、含 servers 或 mcpServers 键的配置；仅导入带 http(s) 地址的条目。",
+    importConfirm: "导入",
+    importOk: "已导入 {n} 台服务器。",
+    importSkipped: "另跳过 {n} 条无地址条目。",
+    importFail: "导入失败：{error}",
+    importNone: "配置里没有可导入的 http(s) 服务器。",
     deleteServer: "删除此服务器",
     confirmDeleteServer: "再点一次确认删除此服务器",
     // 记忆
-    memoryHint: "AI 会自动保存偏好与事实，并在后续对话中自动携带。",
+    memoryHint: "AI 会记住你明确说出的偏好与稳定事实，并在后续对话中自动携带。",
     memoryDetail:
       "关闭该功能仅停止新增保存与已有记忆的注入，已存储的记忆不会删除，重新开启即恢复使用。",
     // 上下文压缩

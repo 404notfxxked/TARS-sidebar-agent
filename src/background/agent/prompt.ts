@@ -10,12 +10,13 @@ import { createLogger } from "../../shared/logger";
 
 const log = createLogger({ ctx: "bg" });
 
-/** 构造 user 消息内容:tab 清单与技能指令块(如有)包在 <context> 与
- *  <user-request> 之间 —— 都在包裹外,历史回放的 userRequestText 投影
- *  只取 <user-request> 内文,自动丢弃这两块(库保持全量,显示只留原话) */
+/** 构造 user 消息内容:tab 清单、技能指令块、MCP 连接状态块(如有)包在
+ *  <context> 与 <user-request> 之间 —— 都在包裹外,历史回放的 userRequestText
+ *  投影只取 <user-request> 内文,自动丢弃这三块(库保持全量,显示只留原话) */
 export async function buildUserContent(
   text: string,
   skillBlock?: string,
+  mcpStatusBlock?: string,
 ): Promise<string> {
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -33,6 +34,7 @@ export async function buildUserContent(
     tabLines.join("\n"),
     "</context>",
     ...(skillBlock ? [skillBlock] : []),
+    ...(mcpStatusBlock ? [mcpStatusBlock] : []),
     "<user-request>",
     text,
     "</user-request>",
