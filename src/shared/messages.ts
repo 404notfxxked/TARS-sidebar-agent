@@ -56,6 +56,11 @@ export const MSG = {
 
 export type MsgType = (typeof MSG)[keyof typeof MSG]
 
+/** 测试连接探测到的 MCP 协议时代(机器值,跨 port 传递);
+ *  UI 展示文案经字典键 settings.eraModern/eraLegacy/eraUnknown 映射,
+ *  后台日志的中文标签见 background/mcp/mcpClient.ts 的 eraLabel */
+export type McpEra = "modern" | "legacy" | "unknown";
+
 // ---------- Payload 类型 ----------
 
 /** 图片附件元信息:历史引用与气泡渲染用,不含字节 */
@@ -266,7 +271,7 @@ export type AgentEvent =
       type: typeof MSG.MCP_TEST_RESULT;
       ok: boolean;
       toolCount?: number;
-      era?: string;
+      era?: McpEra;
       error?: string;
     }
   | { type: typeof MSG.MCP_TOOLS_RESULT; tools: McpToolInfo[]; error?: string }

@@ -15,6 +15,9 @@
 //   自己读错误换路走,不中断 agent
 // - MRTR(InputRequiredResult,服务器要采样/追问):V1 明确不支持,直接
 //   报错让模型换路;不静默吞 —— 模型需要知道这条路走不通
+// - **tools/list 按 cursor 分页拉全 + 单服务器工具数硬上限**:spec 允许
+//   分页,只取第一页会静默丢工具;上限是硬预算护栏(硬规则 8 —— schema
+//   是喂给模型的拼接输入),超限截断并留日志注记体量
 
 import type { ToolSchema } from "../../shared/toolTypes";
 import type { Tool } from "../tools/tools";
@@ -22,6 +25,7 @@ import type { McpConfig, McpServerEntry } from "../../shared/mcp";
 import { MCP_TOOL_PREFIX, mcpWireName, sanitizeWirePart } from "../../shared/mcp";
 import { createLogger } from "../../shared/logger";
 import { errText } from "../../shared/errors";
+import type { McpEra } from "../../shared/messages";
 import { hostOf } from "../../shared/url";
 import { getToolExecutionContext } from "../tools/toolContext";
 import { McpClient, encodeHeaderValue } from "./mcpClient";
@@ -116,6 +120,9 @@ export async function getMcpToolSchemas(mcp: McpConfig): Promise<{
     entry.serverKey = key;
 
     for (const info of entry.tools) {
+      // 服务器内工具级启停:禁用的不进注册表与 schema。缓存保持全量 ——
+      // 开关来回拨不触发对服务器的重连
+      if (server.disabledTools?.includes(info.name)) continue;
       const rec = buildRecord(server, label, key, info);
       if (registry.has(rec.name)) {
         log.warn("mcp", "工具 wire 名冲突,丢弃后者", { name: rec.name });
@@ -138,6 +145,60 @@ export async function getMcpToolSchemas(mcp: McpConfig): Promise<{
 
 // ---- 服务器级:连接 + tools/list ----
 
+/** tools/list 的原始工具形状(分页聚合前的服务器返回) */
+interface RawTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+/** 单服务器工具数硬上限:分页拉全的前提下的预算护栏 —— 全部 schema 进每轮
+ *  请求(硬规则 8:喂给模型的拼接输入必须有上界),超限截断留日志注记体量 */
+const MAX_TOOLS_PER_SERVER = 200;
+/** 分页页数上限:防空 cursor / 空页挂 cursor 挂死连接 */
+const MAX_TOOL_PAGES = 100;
+
+/** tools/list 按 cursor 分页拉全:只取第一页会静默丢工具(GitHub 等大
+ *  服务器普遍分页)。超上限截断/页数耗尽均留日志注记体量,不打断连接 */
+async function listAllTools(
+  client: McpClient,
+  label: string,
+): Promise<RawTool[]> {
+  const tools: RawTool[] = [];
+  let cursor: string | undefined;
+  let totalSeen = 0;
+  for (let page = 0; page < MAX_TOOL_PAGES; page++) {
+    const result = (await client.request(
+      "tools/list",
+      cursor ? { cursor } : {},
+    )) as { tools?: unknown; nextCursor?: unknown };
+    const items = Array.isArray(result.tools)
+      ? (result.tools as RawTool[]).filter(
+          (t) => !!t && typeof t.name === "string",
+        )
+      : [];
+    totalSeen += items.length;
+    if (tools.length < MAX_TOOLS_PER_SERVER) {
+      tools.push(...items.slice(0, MAX_TOOLS_PER_SERVER - tools.length));
+    }
+    const next = result.nextCursor;
+    cursor = typeof next === "string" && next ? next : undefined;
+    if (!cursor || tools.length >= MAX_TOOLS_PER_SERVER) break;
+  }
+  const overflow = totalSeen - tools.length;
+  if (overflow > 0) {
+    log.warn("mcp", `${label} 工具清单超上限,已截断`, {
+      kept: tools.length,
+      totalSeen,
+    });
+  } else if (cursor) {
+    log.warn("mcp", `${label} 工具清单未拉全(达到分页上限)`, {
+      kept: tools.length,
+    });
+  }
+  return tools;
+}
+
 async function refreshServer(server: McpServerEntry): Promise<CacheEntry> {
   // 指纹含 name:改名会改服务器 key(wire 名前缀),缓存必须跟着重建
   const fingerprint = `${server.name}|${server.url}|${JSON.stringify(server.headers)}`;
@@ -149,21 +210,16 @@ async function refreshServer(server: McpServerEntry): Promise<CacheEntry> {
   ) {
     return hit;
   }
+  const label = server.name || hostOf(server.url);
   const client = new McpClient(
-    { url: server.url.trim(), headers: server.headers },
-    server.name || hostOf(server.url),
+    { url: server.url.trim(), headers: server.headers, timeoutMs: server.timeoutMs },
+    label,
   );
-  const result = (await client.request("tools/list", {})) as {
-    tools?: {
-      name: string;
-      description?: string;
-      inputSchema?: Record<string, unknown>;
-    }[];
-  };
+  const rawTools = await listAllTools(client, label);
   const entry: CacheEntry = {
     fingerprint,
     client,
-    tools: (result.tools ?? []).map((t) => ({
+    tools: rawTools.map((t) => ({
       name: t.name,
       description: t.description ?? "",
       schema: normalizeInputSchema(t.inputSchema),
@@ -374,10 +430,11 @@ function primitiveToString(v: unknown): string {
 
 export async function testServer(
   server: McpServerEntry,
-): Promise<{ ok: boolean; toolCount?: number; era?: string; error?: string }> {
+): Promise<{ ok: boolean; toolCount?: number; era?: McpEra; error?: string }> {
   try {
     const entry = await refreshServer(server);
-    return { ok: true, toolCount: entry.tools.length, era: entry.client.eraLabel };
+    // era 传机器值,展示文案由 UI 按字典键映射(硬规则 1);eraLabel 只进日志
+    return { ok: true, toolCount: entry.tools.length, era: entry.client.era };
   } catch (err) {
     return { ok: false, error: errText(err) };
   }

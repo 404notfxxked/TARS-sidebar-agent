@@ -16,6 +16,7 @@ export const enUS = {
     delete: "Delete",
     confirmDelete: "Confirm delete",
     confirmClear: "Click again to confirm clearing",
+    cancel: "Cancel",
     copied: "Copied ✓",
     copy: "Copy",
     loading: "Loading…",
@@ -366,7 +367,7 @@ export const enUS = {
     mcpHint:
       "When enabled, the AI can call tools provided by MCP servers.",
     mcpDetail:
-      "Only Streamable HTTP endpoints over HTTP(S) are currently supported; stdio servers that require a local process are not supported. During a tool call, the relevant request data is sent to the operator of that server — connect trusted services only.",
+      "Only remote HTTP(S) endpoints are currently supported (both modern and legacy protocol generations); stdio servers that require a local process are not supported. During a tool call, the relevant request data is sent to the operator of that server — connect trusted services only.",
     addServer: "Add server",
     serverEmpty:
       'No servers configured yet. Click "Add server" and enter the endpoint URL; if authentication is required, also add the necessary header configuration.',
@@ -378,7 +379,7 @@ export const enUS = {
     serverUrl: "MCP endpoint URL",
     serverUrlPlaceholder: "https://api.example.com/mcp",
     serverUrlHint:
-      "A Streamable HTTP endpoint: use the MCP address from an online service such as GitHub or Notion, or a local app such as the Figma desktop app.",
+      "A remote HTTP(S) endpoint: use the MCP address from an online service such as GitHub or Notion, or a local app such as the Figma desktop app.",
     headers: "Headers",
     headersPlaceholder: "Authorization: Bearer ghp_…\nx-api-key: …",
     headersHint:
@@ -387,16 +388,34 @@ export const enUS = {
     testing: "Connecting…",
     testFailed: "Connection failed",
     testOk: "Connected · {n} tools · {era}",
+    eraModern: "modern (stateless)",
+    eraLegacy: "legacy (initialize handshake)",
+    eraUnknown: "not probed",
     tools: "Tools",
     toolsLoading: "Fetching the tool list…",
     toolsLoadFailed: "Failed to fetch the tool list: {error}",
     toolCount: "{n} tools",
+    toolCountPartial: "{n}/{m} tools",
     toolsMeta: "({n} tools · approx. {tokens} tokens of definitions)",
+    toolsFilterPlaceholder: "Filter tools…",
+    toolsNoMatch: "No matching tools",
+    serverTimeout: "Request timeout (ms)",
+    serverTimeoutHint:
+      "Leave empty for the default 60 s; raise it for slow tools (5–600 s).",
+    importJson: "Paste import",
+    importPlaceholder: "Paste JSON config",
+    importHint:
+      "Accepts a single object, an array, or configs with servers / mcpServers keys; only entries with an http(s) URL are imported.",
+    importConfirm: "Import",
+    importOk: "Imported {n} servers.",
+    importSkipped: "Skipped {n} entries without a URL.",
+    importFail: "Import failed: {error}",
+    importNone: "No servers with an http(s) URL found in the config.",
     deleteServer: "Delete this server",
     confirmDeleteServer: "Click again to confirm deleting this server",
     // Memory
     memoryHint:
-      "Stable preferences and facts are saved as memories automatically and included in subsequent turns.",
+      "The AI remembers preferences and stable facts you explicitly state, and includes them in subsequent turns.",
     memoryDetail:
       "Turning the feature off only stops saving new memories and injecting existing ones; stored memories are not deleted and return once the feature is re-enabled.",
     // Context compaction

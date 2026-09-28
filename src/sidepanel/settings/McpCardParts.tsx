@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { McpServerEntry } from "../../shared/mcp";
-import type { McpToolInfo } from "../../shared/messages";
+import type { McpToolInfo, McpEra } from "../../shared/messages";
 import { estimateTokens } from "../../shared/memory";
 import { errText } from "../../shared/errors";
 import { mcpTest } from "../clients/mcpClient";
@@ -46,7 +46,7 @@ export function McpTestRow({
       return;
     }
     const r = await mcpTest(entry).catch(
-      (e): { ok: boolean; toolCount?: number; era?: string; error?: string } => ({
+      (e): { ok: boolean; toolCount?: number; era?: McpEra; error?: string } => ({
         ok: false,
         error: errText(e),
       }),
@@ -55,7 +55,16 @@ export function McpTestRow({
     setTestOk(r.ok);
     setTestMsg(
       r.ok
-        ? t("settings.testOk", { n: r.toolCount ?? 0, era: r.era ?? "" })
+        ? t("settings.testOk", {
+            n: r.toolCount ?? 0,
+            // era 是机器值,展示文案按键映射(硬规则 1);未知/缺省不显示空段
+            era:
+              r.era === "modern"
+                ? t("settings.eraModern")
+                : r.era === "legacy"
+                  ? t("settings.eraLegacy")
+                  : t("settings.eraUnknown"),
+          })
         : r.error ?? t("settings.testFailed"),
     );
   };
@@ -81,26 +90,46 @@ export function McpTestRow({
   );
 }
 
-/** 工具清单面板(纯渲染):三态由卡片持有 —— 收起态徽标的「N 个工具」
- *  也读 tools,状态不能离开卡片;拉取 effect(与「测试连接」同一条后台
- *  缓存,提交后的 url/请求头变了就重拉)随之留在卡片。启用前审阅描述 ——
+/** 工具清单面板:三态(loading/清单/错误)由卡片持有;筛选是视图本地态留在
+ *  本组件。每行带启停开关 —— 禁用集落盘在 entry.disabledTools(服务器侧
+ *  原名,经卡片 onPatch 整包提交),开关拨动即时落盘。启用前审阅描述 ——
  *  MCP 工具描述是外部文本,这是注入防线的一环 */
 export function McpToolsPanel({
   tools,
   toolsLoading,
   toolsError,
+  disabledTools,
+  onToggleTool,
 }: {
   tools: McpToolInfo[] | null;
   toolsLoading: boolean;
   toolsError: string;
+  /** 禁用的工具名(服务器侧原名);行置灰与 token 估算按它判定 */
+  disabledTools: string[];
+  /** 拨动某工具的启停(卡片落盘) */
+  onToggleTool: (toolName: string) => void;
 }) {
   const t = useT();
+  const [query, setQuery] = useState("");
+  const disabledSet = new Set(disabledTools);
+  const isEnabled = (tool: McpToolInfo) => !disabledSet.has(tool.name);
 
   const toolsTokens =
     tools?.reduce(
-      (n, tool) => n + estimateTokens(`${tool.name}${tool.description}`),
+      (n, tool) =>
+        isEnabled(tool) ? n + estimateTokens(`${tool.name}${tool.description}`) : n,
       0,
     ) ?? 0;
+  const enabledCount = tools?.filter(isEnabled).length ?? 0;
+
+  const q = query.trim().toLowerCase();
+  const visible =
+    tools?.filter(
+      (tool) =>
+        !q ||
+        tool.name.toLowerCase().includes(q) ||
+        tool.description.toLowerCase().includes(q),
+    ) ?? [];
 
   return (
     <>
@@ -111,28 +140,65 @@ export function McpToolsPanel({
         <div className="settings-block">
           <div className="flex items-center justify-between">
             <span className="settings-row-label">
-              {t("settings.tools")}{tools ? t("settings.toolsMeta", { n: tools.length, tokens: toolsTokens }) : ""}
+              {t("settings.tools")}
+              {tools
+                ? t("settings.toolsMeta", { n: enabledCount, tokens: toolsTokens })
+                : ""}
             </span>
           </div>
           {toolsError ? (
             <p className="field-hint text-error">{t("settings.toolsLoadFailed", { error: toolsError })}</p>
           ) : (
-            <div className="model-list">
-              {tools?.map((tool) => (
-                <div key={tool.name} className="py-1">
-                  <p className="m-0 font-mono text-[12px] text-on-surface" title={tool.name}>
-                    {tool.name}
-                  </p>
-                  <p
-                    className="m-0 text-[12px] leading-snug text-on-surface-variant"
-                    title={tool.description}
-                  >
-                    {tool.description.slice(0, 120)}
-                    {tool.description.length > 120 ? "…" : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <>
+              {tools && tools.length > 0 && (
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t("settings.toolsFilterPlaceholder")}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="field-input mt-2 mb-1"
+                />
+              )}
+              <div className="model-list">
+                {visible.map((tool) => {
+                  const enabled = isEnabled(tool);
+                  return (
+                    <div
+                      key={tool.name}
+                      className="flex items-center justify-between gap-2 py-1"
+                    >
+                      <div className={`min-w-0${enabled ? "" : " opacity-50"}`}>
+                        <p className="m-0 font-mono text-[12px] text-on-surface" title={tool.name}>
+                          {tool.name}
+                        </p>
+                        <p
+                          className="m-0 text-[12px] leading-snug text-on-surface-variant"
+                          title={tool.description}
+                        >
+                          {tool.description.slice(0, 120)}
+                          {tool.description.length > 120 ? "…" : ""}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={enabled}
+                        aria-label={tool.name}
+                        onClick={() => onToggleTool(tool.name)}
+                        className="switch shrink-0"
+                      >
+                        <span className="switch-knob" />
+                      </button>
+                    </div>
+                  );
+                })}
+                {visible.length === 0 && q && (
+                  <p className="field-hint">{t("settings.toolsNoMatch")}</p>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

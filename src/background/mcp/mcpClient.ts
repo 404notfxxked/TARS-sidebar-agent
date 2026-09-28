@@ -49,8 +49,9 @@ function clientInfo(): { name: string; version: string } {
   }
   return { name: "TARS", version };
 }
-/** 单请求超时:tools/list 快,tools/call 可能慢(外部系统操作),取宽值 */
-const REQUEST_TIMEOUT_MS = 60_000;
+/** 缺省单请求超时(tools/list 快,tools/call 可能慢,取宽值);
+ *  端点可用 timeoutMs 覆盖(慢工具服务器调大,归一范围见 shared/mcp.ts) */
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 /** 服务器返回的 JSON-RPC 协议级错误(区别于工具执行错误 isError) */
 export class McpRpcError extends Error {
@@ -68,6 +69,8 @@ const LEGACY_HINT_STATUS = new Set([400, 404, 405]);
 export interface McpEndpoint {
   url: string;
   headers: Record<string, string>;
+  /** 单请求超时毫秒;缺省 DEFAULT_REQUEST_TIMEOUT_MS */
+  timeoutMs?: number;
 }
 
 export class McpClient {
@@ -88,7 +91,9 @@ export class McpClient {
     private label: string,
   ) {}
 
-  /** 当前连接形态(UI 展示用) */
+  /** 协议时代的中文标签 —— 只用于后台日志(硬规则 16 口径);设置页等 UI
+   *  展示不读它:port 载荷传机器值 era(shared/messages.ts 的 McpEra),
+   *  面板按字典键 settings.eraModern/eraLegacy/eraUnknown 映射 */
   get eraLabel(): string {
     return this.era === "modern"
       ? "现代(无状态)"
@@ -274,11 +279,15 @@ export class McpClient {
 
   /** 超时 + 外部取消的二合一:任一触发即 abort */
   private async timedFetch(url: string, init: RequestInit & { signal?: AbortSignal }) {
+    const limit = this.endpoint.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     const ctl = new AbortController();
     const outer = init.signal;
     const onOuter = () => ctl.abort(outer?.reason);
     outer?.addEventListener("abort", onOuter, { once: true });
-    const timer = setTimeout(() => ctl.abort(new Error(`MCP 请求超时(${REQUEST_TIMEOUT_MS / 1000}s)`)), REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(
+      () => ctl.abort(new Error(`MCP 请求超时(${Math.round(limit / 1000)}s)`)),
+      limit,
+    );
     try {
       return await fetch(url, { ...init, signal: ctl.signal });
     } catch (e) {

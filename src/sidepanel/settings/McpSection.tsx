@@ -1,10 +1,13 @@
 // 设置页「MCP 工具」分节:总开关 + 服务器卡片列表(展开 = 端点/请求头/
-// 测试连接/工具清单)。工具清单在展开时拉取,与「测试连接」同一条后台缓存,
-// 成功即预热下次 run;描述是外部文本,展开可审阅是注入防线的一环。
+// 超时/测试连接/工具清单)。工具清单在展开时拉取,与「测试连接」同一条后台
+// 缓存,成功即预热下次 run;描述是外部文本,展开可审阅是注入防线的一环。
+// 工具行级启停落盘在 entry.disabledTools;「粘贴导入」吃社区流传的 JSON
+// 配置形态(shared/mcp.ts 的 parseMcpImport 单点解析)。
 
 import { useEffect, useState } from "react";
 import { savePrefs } from "../../shared/configStore";
 import { errText } from "../../shared/errors";
+import { clampMcpTimeoutMs, parseMcpImport } from "../../shared/mcp";
 import type { McpConfig, McpServerEntry } from "../../shared/mcp";
 import type { McpToolInfo } from "../../shared/messages";
 import { mcpListTools } from "../clients/mcpClient";
@@ -78,6 +81,44 @@ export default function McpSection({
     },
   );
 
+  // ── 粘贴导入:吃社区流传的 JSON 配置,解析单点在 shared/mcp.ts ──
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [importSkipped, setImportSkipped] = useState(0);
+  const closeImport = () => {
+    setImportOpen(false);
+    setImportText("");
+    setImportMsg(null);
+    setImportSkipped(0);
+  };
+  const doImport = () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(importText);
+    } catch (e) {
+      setImportMsg({ ok: false, text: t("settings.importFail", { error: errText(e) }) });
+      return;
+    }
+    const { entries, skipped } = parseMcpImport(parsed);
+    if (entries.length === 0) {
+      setImportMsg({ ok: false, text: t("settings.importNone") });
+      setImportSkipped(0);
+      return;
+    }
+    // id 在面板侧生成(解析层保持纯函数,不依赖 crypto)
+    const added: McpServerEntry[] = entries.map((e) => ({
+      ...e,
+      id: crypto.randomUUID(),
+    }));
+    const next = { ...mcp, servers: [...mcp.servers, ...added] };
+    setMcp(next);
+    run(savePrefs({ mcp: next }));
+    setImportMsg({ ok: true, text: t("settings.importOk", { n: entries.length }) });
+    setImportSkipped(skipped);
+    setImportText("");
+  };
+
   return (
     <SettingsSection title={t("settings.sectionMcp")}>
       <SwitchRow
@@ -118,7 +159,7 @@ export default function McpSection({
               {t("settings.serverEmpty")}
             </p>
           )}
-          <div className="mt-2">
+          <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
               onClick={addServer}
@@ -126,7 +167,46 @@ export default function McpSection({
             >
               {t("settings.addServer")}
             </button>
+            <button
+              type="button"
+              onClick={() => (importOpen ? closeImport() : setImportOpen(true))}
+              className="settings-btn tonal"
+            >
+              {t("settings.importJson")}
+            </button>
           </div>
+          {importOpen && (
+            <div className="settings-block mt-2">
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder={t("settings.importPlaceholder")}
+                rows={4}
+                autoComplete="off"
+                spellCheck={false}
+                className="field-input font-mono"
+              />
+              <p className="field-hint">{t("settings.importHint")}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <button type="button" onClick={doImport} className="settings-btn tonal">
+                  {t("settings.importConfirm")}
+                </button>
+                <button type="button" onClick={closeImport} className="settings-btn">
+                  {t("common.cancel")}
+                </button>
+              </div>
+              {importMsg && (
+                <p className={`field-hint${importMsg.ok ? "" : " text-error"}`}>
+                  {importMsg.text}
+                </p>
+              )}
+              {importMsg?.ok && importSkipped > 0 && (
+                <p className="field-hint">
+                  {t("settings.importSkipped", { n: importSkipped })}
+                </p>
+              )}
+            </div>
+          )}
           {mcp.servers.length > 0 && (
             <p className="field-hint">
               {t("settings.serverHint")}
@@ -162,6 +242,31 @@ function McpServerCard({
   const [toolsLoading, setToolsLoading] = useState(false);
   const [toolsError, setToolsError] = useState("");
   const [headersText, setHeadersText] = useState(headersToText(entry.headers));
+  // 超时输入的本地文本态:与 headersText 同款的一次性初始化模式(失焦提交)
+  const [timeoutText, setTimeoutText] = useState(
+    entry.timeoutMs != null ? String(entry.timeoutMs) : "",
+  );
+  const commitTimeout = () => {
+    const raw = timeoutText.trim();
+    if (!raw) {
+      onPatch({ timeoutMs: undefined }, true);
+      return;
+    }
+    const n = Number(raw);
+    // 非数字等效清空(回缺省);范围收窄与归一口径同源(shared/mcp.ts)
+    onPatch(
+      { timeoutMs: Number.isFinite(n) ? clampMcpTimeoutMs(n) : undefined },
+      true,
+    );
+  };
+
+  /** 工具级启停:整包提交 disabledTools;清空收敛为 undefined(全启用) */
+  const toggleTool = (toolName: string) => {
+    const next = new Set(entry.disabledTools ?? []);
+    if (next.has(toolName)) next.delete(toolName);
+    else next.add(toolName);
+    onPatch({ disabledTools: next.size > 0 ? [...next] : undefined }, true);
+  };
   // url 的「提交后快照」:url 输入是每键 onChange(不落盘),失焦才提交。
   // 工具清单的重拉必须跟随提交值 —— 跟随 entry.url 的话每敲一键都会对
   // 半截 URL 发起一次真实 MCP 连接(同 headersKey 对鉴权头的处理)
@@ -203,6 +308,18 @@ function McpServerCard({
     };
   }, [open, committedUrl, headersKey]);
 
+  const disabledSet = new Set(entry.disabledTools ?? []);
+  const enabledCount = tools?.filter(
+    (tool) => !disabledSet.has(tool.name),
+  ).length;
+  // 收起态徽标:全启用报总数,有禁用报「启用/总数」
+  const enabledCountText =
+    enabledCount != null &&
+    tools != null &&
+    enabledCount !== tools.length
+      ? t("settings.toolCountPartial", { n: enabledCount, m: tools.length })
+      : t("settings.toolCount", { n: tools?.length ?? 0 });
+
   return (
     <ExpandCard
       open={open}
@@ -211,11 +328,7 @@ function McpServerCard({
       badge={!entry.enabled && (
         <span className="model-badge">{t("common.disabled")}</span>
       )}
-      meta={
-        tools?.length != null
-          ? t("settings.toolCount", { n: tools.length })
-          : hostOf(entry.url)
-      }
+      meta={tools?.length != null ? enabledCountText : hostOf(entry.url)}
     >
       <div className="flex items-center justify-between">
         <span className="settings-row-label">{t("common.enabled")}</span>
@@ -291,6 +404,26 @@ function McpServerCard({
         />
       </div>
 
+      <div className="settings-field">
+        <div className="field-label-row">
+          <label className="field-label" htmlFor={`mcp-timeout-${entry.id}`}>
+            {t("settings.serverTimeout")}
+          </label>
+          <InfoTip text={t("settings.serverTimeoutHint")} />
+        </div>
+        <input
+          id={`mcp-timeout-${entry.id}`}
+          type="text"
+          inputMode="numeric"
+          value={timeoutText}
+          onChange={(e) => setTimeoutText(e.target.value)}
+          onBlur={commitTimeout}
+          autoComplete="off"
+          spellCheck={false}
+          className="field-input font-mono"
+        />
+      </div>
+
       <McpTestRow entry={entry} headersKey={headersKey} />
 
       {/* 工具清单:启用前审阅描述 —— MCP 工具描述是外部文本,这是注入防线的一环 */}
@@ -298,6 +431,8 @@ function McpServerCard({
         tools={tools}
         toolsLoading={toolsLoading}
         toolsError={toolsError}
+        disabledTools={entry.disabledTools ?? []}
+        onToggleTool={toggleTool}
       />
 
       <div className="danger-divider mb-1">
