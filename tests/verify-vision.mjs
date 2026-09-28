@@ -1,8 +1,8 @@
-// 验证多模态图片链路(选择图片 → 压缩 → user parts 发送 → 持久化 → 历史回放)
+// 验证视觉图片链路(选择图片 → 压缩 → user parts 发送 → 持久化 → 历史回放)
 // 用法: pnpm build && node tests/verify-vision.mjs
 //
 // 场景:
-//   V1 门控:模型未勾选「多模态」时贴图 → 面板提示,不产生附件
+//   V1 门控:模型未勾选「视觉」时贴图 → 面板提示,不产生附件
 //   V2 发送:勾选后经文件选择器贴图发送 → 模型请求里 user content 是
 //      parts 数组(文本 + image_url data URL)
 //   V3 持久化:消息行只存图片元数据(无字节),字节在 images store
