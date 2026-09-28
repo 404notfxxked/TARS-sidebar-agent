@@ -152,6 +152,45 @@ function isHttpUrl(url: string): boolean {
   }
 }
 
+// ---- run 侧状态注入:连接失败的服务器对模型明示 ----
+
+/** MCP 连接失败条目(mcpManager 失败隔离的产出,runSetup 捕获后传入) */
+export interface McpConnectionError {
+  server: string;
+  error: string;
+}
+
+/** 单台错误文本上限:errText 可能带响应片段,块总量必须有界(硬规则 8) */
+const MCP_STATUS_ERROR_MAX_CHARS = 200;
+/** 状态块列出的服务器上限,超出折叠计数(配置再大块也有界) */
+const MCP_STATUS_MAX_SERVERS = 10;
+
+/** 连接失败服务器的模型可见状态块(user message 通道:插在 <user-request>
+ *  包裹外,落盘全量、历史回放投影自动丢弃 —— 与技能块同款;不进 system,
+ *  SYSTEM_PROMPT 保持静态是 prompt cache 的前提)。英文与 system prompt
+ *  同语言;模型据此知道本轮哪些 mcp_ 工具缺席,用户问到时能转告原因,
+ *  而不是幻觉工具名或硬编数据 */
+export function renderMcpStatusBlock(errors: McpConnectionError[]): string {
+  if (errors.length === 0) return "";
+  const listed = errors.slice(0, MCP_STATUS_MAX_SERVERS);
+  const lines = listed.map((e) => {
+    const text =
+      e.error.length > MCP_STATUS_ERROR_MAX_CHARS
+        ? `${e.error.slice(0, MCP_STATUS_ERROR_MAX_CHARS)}…[truncated ${e.error.length} chars]`
+        : e.error;
+    return `- ${e.server}: ${text}`;
+  });
+  const overflow = errors.length - listed.length;
+  if (overflow > 0) lines.push(`- …and ${overflow} more`);
+  return [
+    "<mcp-status>",
+    "These MCP servers failed to connect this run, so their mcp_ tools are NOT available:",
+    ...lines,
+    "If the user's request seems to need one of them, briefly say which server could not be reached and suggest checking its URL and headers in Settings → MCP. Never fabricate their results.",
+    "</mcp-status>",
+  ].join("\n");
+}
+
 // ---- 工具 wire 命名 ----
 // MCP 工具名进 function calling 要过 OpenAI 兼容端点的名字校验
 // ^[a-zA-Z0-9_-]{1,64}$,且要防不同服务器同名工具互撞、防遮蔽内置工具。

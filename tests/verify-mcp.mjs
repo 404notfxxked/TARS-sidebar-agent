@@ -13,7 +13,9 @@
 //       结果回填;现代头(Mcp-Name/Mcp-Method/Protocol-Version)与静态
 //       请求头(Authorization)正确;旧版握手 + 会话头正确
 //   T3. isError 结果 → Error 文本回给模型,run 正常收束
-//   T4. 一台服务器宕机:其余工具照常注入,告警日志出现
+//   T4. 一台服务器宕机:其余工具照常注入,告警日志出现,user 消息注入
+//       <mcp-status>(点名宕机服务器,且在 <user-request> 包裹外);
+//       健康轮(T2)反向断言不注入
 //   T5. 设置页 UI:开关/添加/展开自动拉工具清单/测试连接
 
 import { readFileSync } from "fs";
@@ -417,6 +419,11 @@ await setMcp(mcpOn);
     ),
     "T2-11 握手后发 initialized 通知",
   );
+  // 无失败服务器时不得注入状态块(反向断言:块只在有失败时出现)
+  check(
+    !JSON.stringify(lastAgentBody.messages ?? []).includes("<mcp-status>"),
+    "T2-12 全部健康时不注入 <mcp-status>",
+  );
 }
 
 // ---- T3. isError 结果 → 错误文本回给模型 ----
@@ -480,6 +487,21 @@ console.log("\n===== T4. 单台宕机:其余工具照常 =====");
       console.log("DEBUG 日志转储:\n", err.message);
       check(false, "T4-3 记录服务器连接失败告警", "日志未找到");
     },
+  );
+  // <mcp-status> 注入断言:在 user 消息里点名宕机服务器,且位于
+  // <user-request> 包裹外(回放投影的自动丢弃区,与技能块同层)
+  const userText4 = JSON.stringify(lastAgentBody.messages ?? []);
+  const statusIdx = userText4.indexOf("<mcp-status>");
+  const wrapIdx = userText4.indexOf("<user-request>");
+  check(
+    statusIdx !== -1 && userText4.includes("Down"),
+    "T4-4 user 消息注入 <mcp-status> 并点名宕机服务器",
+    `statusIdx=${statusIdx}`,
+  );
+  check(
+    statusIdx !== -1 && wrapIdx !== -1 && statusIdx < wrapIdx,
+    "T4-5 状态块在 <user-request> 包裹外",
+    `status=${statusIdx} wrap=${wrapIdx}`,
   );
   await setMcp(mcpOn);
 }

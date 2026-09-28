@@ -8,6 +8,7 @@ import {
   MCP_TIMEOUT_MIN_MS,
   normalizeMcp,
   parseMcpImport,
+  renderMcpStatusBlock,
 } from "./mcp";
 
 describe("normalizeMcp 新字段", () => {
@@ -46,6 +47,35 @@ describe("normalizeMcp 新字段", () => {
     expect(clampMcpTimeoutMs(0)).toBe(MCP_TIMEOUT_MIN_MS);
     expect(clampMcpTimeoutMs(12345.6)).toBe(12346);
     expect(clampMcpTimeoutMs(Number.NaN)).toBe(60_000);
+  });
+});
+
+describe("renderMcpStatusBlock", () => {
+  it("空 errors 返回空串:run 不注入无谓块", () => {
+    expect(renderMcpStatusBlock([])).toBe("");
+  });
+
+  it("逐台列 server: error,声明工具缺席并给设置指引;整块包 <mcp-status>", () => {
+    const block = renderMcpStatusBlock([
+      { server: "GitHub", error: "MCP 请求失败(HTTP 401)" },
+      { server: "Legacy", error: "无法连接 MCP 服务器(https://x):网络不可达" },
+    ]);
+    expect(block).toContain("<mcp-status>");
+    expect(block).toContain("- GitHub: MCP 请求失败(HTTP 401)");
+    expect(block).toContain("- Legacy: 无法连接");
+    expect(block).toContain("NOT available");
+    expect(block).toContain("Settings → MCP");
+  });
+
+  it("超长错误截断并注记体量;超过 10 台折叠计数(硬预算护栏)", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      server: `S${i}`,
+      error: "e".repeat(300),
+    }));
+    const block = renderMcpStatusBlock(many);
+    expect(block).toContain("[truncated 300 chars]");
+    expect(block).toContain("…and 2 more");
+    expect(block.match(/- S\d+:/g)?.length).toBe(10); // 列出 10 台 + 1 行折叠
   });
 });
 
