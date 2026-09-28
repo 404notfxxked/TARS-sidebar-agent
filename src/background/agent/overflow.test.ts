@@ -62,4 +62,16 @@ describe("projectEmergency 发送投影", () => {
     const out = projectEmergency(messages, summaryMsg, 99);
     expect(out).toEqual([messages[0], summaryMsg]);
   });
+
+  it("pinnedMsgs(<user-memory>)重插在 system 与摘要之间,不随前缀被压缩掉", () => {
+    const memoryMsg = user("<user-memory>\n- identity: 测试用户\n</user-memory>");
+    const summaryMsg = user("<context-summary>问1答1的摘要</context-summary>");
+    // compactHistory 吃 slice(1),uptoSeq=1 → afterIdx=3;记忆块在压缩输入里,
+    // 但投影必须保留直注(摘要有损,不能替代每轮直注)
+    const out = projectEmergency(messages, summaryMsg, 3, [memoryMsg]);
+    expect(out[0]).toBe(messages[0]); // system 原位
+    expect(out[1]).toBe(memoryMsg); // 记忆紧随 system(正常装配同位)
+    expect(out[2]).toBe(summaryMsg); // 摘要其后
+    expect(out.slice(3)).toEqual(messages.slice(3)); // 问2 起
+  });
 });

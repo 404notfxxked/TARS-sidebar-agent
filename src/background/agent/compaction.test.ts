@@ -102,13 +102,54 @@ describe("compactHistory", () => {
     expect(requests[0][1].content).not.toContain("[user] 问题5");
   });
 
-  it("滚动压缩:旧摘要进 <previous_summary>,增量走 <new_messages>", async () => {
+  it("滚动压缩:旧摘要进 <previous_summary>,完整前缀走 <conversation_prefix>", async () => {
     const { provider, requests } = stubSummarizer("合并后的摘要");
     await compactHistory(provider, turns(6), "旧摘要内容", { keepTurns: 2 });
     const usr = requests[0][1].content;
     expect(usr).toContain("<previous_summary>\n旧摘要内容\n</previous_summary>");
-    expect(usr).toContain("<new_messages>");
+    expect(usr).toContain("<conversation_prefix>");
+    // 输入是完整前缀(含已被旧摘要覆盖的轮次),不是增量 —— 标签与指令
+    // 如实命名,防 summarizer 把重复内容当新信息(见 compaction.ts 头注)
+    expect(usr).toContain("may overlap");
     expect(usr).not.toContain("<conversation>");
+    expect(usr).not.toContain("<new_messages>");
+  });
+
+  it("紧急压缩输入含 <user-memory>:合成块不算轮起点,真实轮才占 keep 槽位", async () => {
+    const { provider, requests } = stubSummarizer("s");
+    // 模拟 chatCall 紧急压缩的输入形态:messages.slice(1) 含记忆块,
+    // 记忆开启 + 短对话 + 单轮堆出巨大工具结果撞窗的典型场景
+    const history = [
+      user("<user-memory>\n- identity: 测试用户\n</user-memory>"),
+      user("<user-request>问1</user-request>"),
+      assistant("答1"),
+      tool("x".repeat(50_000)),
+      user("<user-request>问2</user-request>"),
+    ];
+    const outcome = await compactHistory(provider, history, "", { keepTurns: 2 });
+    // 记忆块不算轮起点 → starts=[1,4] → keep=1 → 保问2 → 问1+巨大结果整轮进摘要
+    // (修复前:记忆块占走首个轮起点,uptoSeq=0,只摘要记忆块,挤不出空间)
+    expect(outcome.uptoSeq).toBe(3);
+    const usr = requests[0][1].content;
+    expect(usr).toContain("问1");
+    expect(usr).not.toContain("问2");
+    // 记忆块随前缀进转写(直注由发送投影的 pinned 保证,见 overflow.projectEmergency)
+    expect(usr).toContain("[user] <user-memory>");
+  });
+
+  it("旧摘要块 <context-summary> 同样不算轮起点", async () => {
+    const { provider, requests } = stubSummarizer("s");
+    const history = [
+      user("<context-summary>\n旧摘要\n</context-summary>"),
+      user("<user-request>问1</user-request>"),
+      assistant("答1"),
+      user("<user-request>问2</user-request>"),
+    ];
+    const outcome = await compactHistory(provider, history, "", { keepTurns: 2 });
+    // starts=[1,3] → keep=1 → 保问2 → 问1+答1 进摘要,旧摘要随前缀并入新摘要
+    expect(outcome.uptoSeq).toBe(2);
+    expect(requests[0][1].content).toContain("问1");
+    expect(requests[0][1].content).not.toContain("问2");
   });
 
   it("不足两轮:没有可压缩的整轮,抛错由调用方回退 trim", async () => {

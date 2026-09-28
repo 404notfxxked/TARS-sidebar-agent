@@ -1,9 +1,11 @@
 // 上下文压缩(第二层):历史占用超过阈值时,把较早的整轮用 LLM 压成结构化
 // 摘要,替换进 prompt —— 摘要进上下文,原文留库。第一层「清旧工具结果」
-// 见 agent.enforceToolResultBudget(便宜无损),先于本层生效。
+// 见 tokenBudget.enforceToolResultBudget(便宜无损),先于本层生效。
 // - 只改「发给模型的」,不动「存下来的」:全量历史仍在 IndexedDB,转写完整,
 //   压缩点(uptoSeq)存会话行,面板据此渲染分隔条
-// - 滚动压缩:再次触发时摘要输入 = 旧摘要 + 增量前缀,摘要本身不无限膨胀
+// - 滚动压缩:再次触发时摘要输入 = 旧摘要 + 完整前缀(会重复包含上次摘要
+//   已覆盖的轮次)。刻意不做真增量:压缩点虽落库,但保留期清理会让历史
+//   下标整体左移,存的 uptoSeq 对新库不可信;合并式重摘用重复输入换正确性
 // 与业界对齐:Claude Code(结构化摘要/保留近期原文)、Gemini CLI(阈值比例)、
 // Anthropic Context Editing(先清工具结果再摘要的两层策略)
 
@@ -50,15 +52,33 @@ export function shouldCompact(
  *  否则会把 assistant+toolCalls 和它的观察结果劈到摘要两侧 */
 export const SYSTEM_NOTE_PREFIX = "[System note:";
 
-/** 整轮分组:每轮 = 一条 user 起,到下一条 user 前。与 trim 同一单位,
- *  保证 assistant+toolCalls 和它的 tool 观察结果永远在同一侧,不会裁出
- *  「tool 消息悬空」的非法结构。系统注记(截图附件)不算轮起点 */
+/** 合成 user 块的包裹前缀:它们是常驻注入/派生块,不是对话轮。紧急压缩的
+ *  输入是 loop.messages.slice(1)(chatCall.ts),里头会出现这两类块 —— 若算作
+ *  轮起点,会占掉 pickSplit 的 keep 槽位:短对话(1~2 个真实轮)时 uptoSeq
+ *  落在合成块上,紧急压缩只摘要到记忆/旧摘要本身,挤不出真实空间,重试
+ *  大概率再撞窗(先例推演:2 真实轮在记忆关闭时可救、开启后不可救)。
+ *  ⚠️ `<user-memory>` 与 memoryStore.memoryToMsg 的包裹串镜像 —— 改包裹
+ *  措辞必须同步这里;`<context-summary>` 的产出方 summaryToMsg 在本文件 */
+const SYNTHETIC_USER_PREFIXES = ["<user-memory>", "<context-summary>"];
+
+/** 轮起点判定(单位契约的单点真源):一条真实 user 消息开启一轮。排除两类
+ *  伪 user 消息——系统注记(截图附件,是前一工具轮的延续)与合成块(记忆
+ *  直注/旧摘要;后者在紧急压缩输入 loop.messages.slice(1) 里出现,正常装配
+ *  的 DB 历史里没有)。两个消费者:本文件 pickSplit 与
+ *  tokenBudget.trimHistoryForWindow —— 「轮的单位一致」由共享本函数保证,
+ *  不再靠注释互指 */
+export function isTurnStart(m: InternalMsg): boolean {
+  if (m.role !== "user") return false;
+  if (m.content.startsWith(SYSTEM_NOTE_PREFIX)) return false;
+  return !SYNTHETIC_USER_PREFIXES.some((p) => m.content.startsWith(p));
+}
+
+/** 整轮分组:每轮 = 一条轮起点起,到下一条轮起点前,保证 assistant+toolCalls
+ *  和它的 tool 观察结果永远在同一侧,不会裁出「tool 消息悬空」的非法结构 */
 function turnStarts(history: InternalMsg[]): number[] {
   const starts: number[] = [];
   history.forEach((m, i) => {
-    if (m.role === "user" && !m.content.startsWith(SYSTEM_NOTE_PREFIX)) {
-      starts.push(i);
-    }
+    if (isTurnStart(m)) starts.push(i);
   });
   return starts;
 }
@@ -182,7 +202,10 @@ export function toTranscript(prefix: InternalMsg[]): string {
     .join("\n\n");
 }
 
-/** 压缩请求的 messages:有旧摘要则合并(滚动压缩),否则直接摘 */
+/** 压缩请求的 messages:有旧摘要则合并(滚动压缩),否则直接摘。
+ *  注意滚动分支的输入是「完整前缀」而非增量(见文件头注):包裹标签用
+ *  <conversation_prefix> 如实命名,指令明说可能与旧摘要重叠,避免
+ *  summarizer 把重复内容当新信息 */
 function buildSummaryMessages(
   prevSummary: string,
   prefix: InternalMsg[],
@@ -193,7 +216,7 @@ function buildSummaryMessages(
     {
       role: "user",
       content: prevSummary
-        ? `<previous_summary>\n${prevSummary}\n</previous_summary>\n\n<new_messages>\n${transcript}\n</new_messages>\n\nMerge the previous summary and the new messages into one updated summary: keep still-relevant content from the previous summary, update or drop completed / outdated items, fold in key information from the new messages. Output only the new summary.`
+        ? `<previous_summary>\n${prevSummary}\n</previous_summary>\n\n<conversation_prefix>\n${transcript}\n</conversation_prefix>\n\nMerge the previous summary and the conversation prefix into one updated summary. The prefix may overlap with what the previous summary already covers: keep still-relevant content, update or drop completed / outdated items, and fold in anything the prefix adds beyond the previous summary. Output only the new summary.`
         : `<conversation>\n${transcript}\n</conversation>\n\nSummarize this conversation per the system instructions.`,
     },
   ];

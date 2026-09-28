@@ -18,8 +18,9 @@ import {
 const log = createLogger({ ctx: "bg" });
 
 /** 一个 run 的可变状态:整个 run 只此一份,抽函数时以引用传递。
- *  各执行模块(persistence/toolDispatch/imageProjection/chatCall/loop)都以
- *  本类型为第一参数,经同一引用读写 —— 禁止解构/复制字段。
+ *  经同一引用读写它的模块:persistence / imageProjection / loop 以本类型为
+ *  第一参数,chatCall 以第二参数收;toolDispatch 刻意不收 loop —— 它不读写
+ *  run 可变状态,只拿确认白名单的引用(见 toolDispatch.ts 头注)。
  *  ⚠️ messages 与三个落盘锚点(savedUpTo/persistedSeqs/persistedInCtx)**必须同生共死**——
  *  它们错位会覆写库里的行(2026-09 事故:失败轮 error 行被同会话追问写没)。
  *  ⚠️ emergency 是「发送投影」而非落盘状态:只影响请求投影的输入。 */
@@ -32,6 +33,9 @@ export interface RunLoopState {
   libraryRowsAtStart: number;
   persistedInCtx: number;
   savedUpTo: number;
+  /** 本 run 注入的 <user-memory> 消息(null = 记忆关)。落盘锚点不感知它
+   *  —— 紧急压缩投影要靠它把记忆块重新插回请求(见 overflow.projectEmergency) */
+  memoryMsg: InternalMsg | null;
   /** 随本轮 user 消息附带的图片(分配 id 后构建一次;只读,随 loop 传递) */
   runImages: MessageImage[];
   /** 本 run 内已水合的图片字节缓存(按 id):跨轮复用,避免每轮重读 IDB */
@@ -76,6 +80,7 @@ export async function runAgentLoop(
     libraryRowsAtStart: 0,
     persistedInCtx: 0,
     savedUpTo: 0,
+    memoryMsg: null,
     runImages: [],
     imageBytes: new Map(),
     emergency: null,

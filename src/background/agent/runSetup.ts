@@ -344,6 +344,8 @@ export async function assemblePrompt(
     ? renderMemoryBlock(await loadMemories(), modelEntry?.contextTokens)
     : null;
   const memoryMsg = memoryBlock ? memoryToMsg(memoryBlock) : null;
+  // 记到 loop 上:紧急压缩的发送投影要把它重新插回请求(chatCall → overflow)
+  loop.memoryMsg = memoryMsg;
   const fixedEstimate =
     estimateTokens(systemContent) +
     estimateTokens(userContent) +

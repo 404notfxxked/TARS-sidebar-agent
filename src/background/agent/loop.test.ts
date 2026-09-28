@@ -16,6 +16,7 @@ function makeLoop(): RunLoopState {
     libraryRowsAtStart: 0,
     persistedInCtx: 0,
     savedUpTo: 0,
+    memoryMsg: null,
     runImages: [],
     imageBytes: new Map(),
     emergency: null,

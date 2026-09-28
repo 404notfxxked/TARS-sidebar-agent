@@ -1,5 +1,5 @@
 // prompt 组装的输入侧小件:user 消息正文(tab 清单 + 技能块 + 原话)与
-// 显式技能调用的解析。装配主流程见 runSetup.ts(5a-2)。
+// 显式技能调用的解析。装配主流程见 runSetup.ts。
 
 import {
   parseSkillInvocation,
@@ -22,7 +22,7 @@ export async function buildUserContent(
   const tabs = await chrome.tabs.query({ currentWindow: true });
   // TODO(tab 上限):tab 很多时每轮全量注入清单 token 成本高。合理做法:
   //   激活 tab 置顶 + 按 lastAccessed 降序,只列前 ~20 个,超出标注"…还有 X 个未列出";
-  //   更彻底:context 只注入激活 tab,完整清单靠 list_tabs 工具按需获取(渐进式披露)。
+  //   更彻底:context 只注入激活 tab,完整清单靠 get_tabs 工具按需获取(渐进式披露)。
   const tabLines = tabs.map((t) => {
     const mark = t.active ? "* " : "  ";
     return `${mark}tabId ${t.id ?? "?"}: ${t.title ?? ""} | ${t.url ?? ""}`;

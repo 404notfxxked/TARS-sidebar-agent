@@ -192,14 +192,17 @@ export async function runTurns(
               ],
             });
           }
-          // 工具结果(网页窗口/搜索列表)是 run 内增长最快的部分,超预算时
-          // 把最旧的大结果替换为省略标记 —— 结构不变(tool 配对完整),只瘦身
-          enforceToolResultBudget(loop.messages, cfg.toolResultBudgetChars);
         }
       }
       // 本 turn 收口:assistant(toolCalls) 与全部工具结果已成对,是合法的
-      // 停止边界,立即落盘
+      // 停止边界。顺序刻意为先落盘、后裁剪:工具结果预算若抢在首次落盘前
+      // 执行,同 turn 早批的大结果会被换成省略标记写进库 —— 库里就从未存在
+      // 过全文(虚拟上下文不变式 15①;截断只准影响之后发给模型的 prompt,
+      // 「落盘失败后重写」是已知的唯一残留路径,见 persistence.ts 头注)
       await persistNewMessages(loop, sessionId);
+      // 工具结果(网页窗口/搜索列表)是 run 内增长最快的部分,超预算时
+      // 把最旧的大结果替换为省略标记 —— 结构不变(tool 配对完整),只瘦身
+      enforceToolResultBudget(loop.messages, cfg.toolResultBudgetChars);
       continue;
     }
 

@@ -44,6 +44,9 @@ export function createCallChat(
             loop.messages,
             loop.emergency.summaryMsg,
             loop.emergency.afterIdx,
+            // 记忆块必须常驻请求:紧急压缩会把它卷进摘要(有损),
+            // 投影时重插回 system 后 —— 与正常装配的放置契约一致
+            loop.memoryMsg ? [loop.memoryMsg] : [],
           )
         : loop.messages;
       return cfg.provider.chat({

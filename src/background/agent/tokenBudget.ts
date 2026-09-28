@@ -2,7 +2,7 @@
 // run 内工具结果预算共用这一套量级估算。精确记账不在目标内(见下)。
 
 import {
-  SYSTEM_NOTE_PREFIX,
+  isTurnStart,
   usableTokens,
 } from "./compaction";
 import type { InternalMsg } from "../provider";
@@ -143,14 +143,13 @@ export function trimHistoryForWindow(
   const limit = usableTokens(contextTokens, maxTokens);
   const sum = (from: number) => opts.currentEstimate + estimateRange(history, from);
   if (sum(0) <= limit) return history;
-  // 每轮起始 = 真实 user 消息的下标(截图等系统注记是上一轮的附件延续,
-  // 不算轮起点 —— 与 compaction 的 turnStarts 同一单位);从最旧的一轮开始
+  // 每轮起始 = isTurnStart(与 compaction.pickSplit 共享同一判定函数,轮的
+  // 单位契约单点在 compaction.ts;本函数的输入是装配后的 DB 历史,本就不含
+  // 合成块,共享判定是防未来输入域变化时两处漂移);从最旧的一轮开始
   // 整轮丢弃,直到塞得下或只剩最后一轮
   const roundStarts: number[] = [];
   history.forEach((m, i) => {
-    if (m.role === "user" && !m.content.startsWith(SYSTEM_NOTE_PREFIX)) {
-      roundStarts.push(i);
-    }
+    if (isTurnStart(m)) roundStarts.push(i);
   });
   let dropIdx = 0;
   while (
