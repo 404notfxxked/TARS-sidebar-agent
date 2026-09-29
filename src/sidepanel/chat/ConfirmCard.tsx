@@ -188,6 +188,14 @@ export function ConfirmCard({
           {t("chat.confirmAllow")}
         </button>
       </div>
+      {/* 超时口径明示:后台 120s 未答复即按拒绝结算,不写出来用户无从得知
+          挂起卡片 ≠ 安全中立。数值随载荷下发;缺省兜底镜像
+          confirmations.ts 的 CONFIRM_TIMEOUT_MS,改超时要同步两处 */}
+      <p className="mt-2 text-[11.5px] leading-4 text-on-surface-variant/80">
+        {t("chat.confirmTimeoutHint", {
+          n: String(Math.round((req.timeoutMs ?? 120_000) / 1000)),
+        })}
+      </p>
     </div>
   );
 }

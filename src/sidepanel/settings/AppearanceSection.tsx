@@ -108,6 +108,26 @@ export default function AppearanceSection({
           role="radiogroup"
           aria-label={t("settings.accent")}
           className="flex flex-wrap items-center gap-2.5"
+          onKeyDown={(e) => {
+            // 方向键移选(native radio 惯例,同 Segmented 的契约):移动即选中,
+            // 焦点跟到新选中色块;roving tabindex 由下方 tabIndex 渲染
+            const d =
+              e.key === "ArrowLeft" || e.key === "ArrowUp"
+                ? -1
+                : e.key === "ArrowRight" || e.key === "ArrowDown"
+                  ? 1
+                  : 0;
+            if (d === 0) return;
+            e.preventDefault();
+            const idx = ACCENT_COLORS.findIndex(([v]) => v === accent);
+            const next = ACCENT_COLORS[(idx + d + ACCENT_COLORS.length) % ACCENT_COLORS.length];
+            setAccent(next[0]);
+            applyAccent(next[0]);
+            run(savePrefs({ accent: next[0] }));
+            e.currentTarget
+              .querySelector<HTMLElement>(`[data-v="${next[0]}"]`)
+              ?.focus();
+          }}
         >
           {ACCENT_COLORS.map(([value, color]) => (
             // biome-ignore lint/a11y/useSemanticElements: 色板选择的 radio 语义经 role 声明,原生 radio 无法承载视觉
@@ -116,10 +136,12 @@ export default function AppearanceSection({
               type="button"
               role="radio"
               aria-checked={accent === value}
+              tabIndex={accent === value ? 0 : -1}
               aria-label={t("settings.accentAria", {
                 name: t(ACCENT_LABEL_KEYS[value]),
               })}
               title={t(ACCENT_LABEL_KEYS[value])}
+              data-v={value}
               onClick={() => {
                 setAccent(value);
                 applyAccent(value);

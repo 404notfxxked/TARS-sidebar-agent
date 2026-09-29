@@ -102,6 +102,7 @@ export const enUS = {
     confirmTitle: "wants to perform a page action",
     confirmAllow: "Allow",
     confirmDeny: "Deny",
+    confirmTimeoutHint: "Without a response within {n} s this counts as denied",
     confirmTarget: "Target page: {title}",
     confirmFillText: "Will type: {text}",
     confirmSubmitHint: "Presses Enter to submit after typing",
@@ -206,6 +207,7 @@ export const enUS = {
     settingsManage: "Manage memories",
     settingsSaved: "{n} saved · about {used} tokens injected per turn",
     settingsEmpty: "No memories yet",
+    loadFailed: "Failed to load memories",
   },
   skills: {
     settingsSection: "Skills",
@@ -213,6 +215,7 @@ export const enUS = {
     manage: "Manage skills",
     countLine: "{n} skills installed · type / in the chat to invoke",
     emptyShort: "No skills yet",
+    loadFailed: "Failed to load skills",
     title: "Skills",
     backToSettings: "Back to settings",
     add: "Add skill",
@@ -296,6 +299,8 @@ export const enUS = {
     baseUrlRequired: "Enter a Base URL first",
     namePlaceholder: "e.g. DeepSeek",
     apiKey: "API Key",
+    showKey: "Show API key",
+    hideKey: "Hide API key",
     models: "Models",
     modelCount: "{n} models",
     modelEmpty: "No models",
@@ -318,6 +323,10 @@ export const enUS = {
     modelRowHint:
       'Click a row to expand its configuration; the model marked "Default" is used for the current conversation.',
     modelIdPlaceholder: "Add a model ID manually, e.g. deepseek-chat",
+    modelIdLabel: "Model ID",
+    modelsFilterPlaceholder: "Filter models…",
+    modelsFilterLabel: "Filter models",
+    modelsNoMatch: "No matching models",
     alias: "Alias",
     aliasPlaceholder: "Name shown in the model picker",
     vision: "Vision",
@@ -398,12 +407,14 @@ export const enUS = {
     toolCountPartial: "{n}/{m} tools",
     toolsMeta: "({n} tools · approx. {tokens} tokens of definitions)",
     toolsFilterPlaceholder: "Filter tools…",
+    toolsFilterLabel: "Filter tools",
     toolsNoMatch: "No matching tools",
     serverTimeout: "Request timeout (ms)",
     serverTimeoutHint:
       "Leave empty for the default 60 s; raise it for slow tools (5–600 s).",
     importJson: "Paste import",
     importPlaceholder: "Paste JSON config",
+    importTextareaLabel: "MCP server JSON config",
     importHint:
       "Accepts a single object, an array, or configs with servers / mcpServers keys; only entries with an http(s) URL are imported.",
     importConfirm: "Import",
@@ -437,6 +448,7 @@ export const enUS = {
     retentionAria: "Chat history retention period",
     localUsage: "Local usage",
     clearHistory: "Clear all history",
+    cleared: "Cleared",
     dataFooter:
       "Sessions exceeding the retention period are cleaned up automatically and cannot be recovered once deleted. All data is stored only on this device.",
     // Diagnostics
@@ -444,6 +456,7 @@ export const enUS = {
     logsUnit: "{n} entries",
     copyJsonl: "Copy logs",
     downloadLogs: "Download logs",
+    exportFailed: "Failed to export logs",
     diagFooter:
       'Logs are stored only on this device (up to 400 entries per context). If something goes wrong, click "Copy logs" or "Download logs" and include them with your problem report.',
   },

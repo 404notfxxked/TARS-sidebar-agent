@@ -156,6 +156,7 @@ export function McpToolsPanel({
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={t("settings.toolsFilterPlaceholder")}
+                  aria-label={t("settings.toolsFilterLabel")}
                   autoComplete="off"
                   spellCheck={false}
                   className="field-input mt-2 mb-1"

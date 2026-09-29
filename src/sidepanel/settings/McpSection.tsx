@@ -169,6 +169,7 @@ export default function McpSection({
             </button>
             <button
               type="button"
+              aria-expanded={importOpen}
               onClick={() => (importOpen ? closeImport() : setImportOpen(true))}
               className="settings-btn tonal"
             >
@@ -181,6 +182,7 @@ export default function McpSection({
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
                 placeholder={t("settings.importPlaceholder")}
+                aria-label={t("settings.importTextareaLabel")}
                 rows={4}
                 autoComplete="off"
                 spellCheck={false}
@@ -331,8 +333,15 @@ function McpServerCard({
       meta={tools?.length != null ? enabledCountText : hostOf(entry.url)}
     >
       <div className="flex items-center justify-between">
-        <span className="settings-row-label">{t("common.enabled")}</span>
+        {/* 行文本入 label(点击同开关):热区与 SwitchRow 一致,不只开关本体 */}
+        <label
+          htmlFor={`mcp-enabled-${entry.id}`}
+          className="settings-row-label"
+        >
+          {t("common.enabled")}
+        </label>
         <button
+          id={`mcp-enabled-${entry.id}`}
           type="button"
           role="switch"
           aria-checked={entry.enabled}

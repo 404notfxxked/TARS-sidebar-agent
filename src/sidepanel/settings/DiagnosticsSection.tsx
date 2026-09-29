@@ -18,20 +18,27 @@ export default function DiagnosticsSection() {
       .catch(() => setLogCount(-1));
   }, []);
 
+  // 导出前未捕获的 rejection 会静默失败(按钮无任何反馈),失败态就地示错
+  const [exportFailed, setExportFailed] = useState(false);
   const downloadLogs = async () => {
-    const entries = await readAllLogEntries();
-    const blob = new Blob([toJsonl(entries)], {
-      type: "application/x-ndjson",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `sidebar-logs-${new Date()
-      .toISOString()
-      .slice(0, 19)
-      .replace(/[:T]/g, "-")}.jsonl`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const entries = await readAllLogEntries();
+      const blob = new Blob([toJsonl(entries)], {
+        type: "application/x-ndjson",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sidebar-logs-${new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/[:T]/g, "-")}.jsonl`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportFailed(false);
+    } catch {
+      setExportFailed(true);
+    }
   };
 
   return (
@@ -58,6 +65,11 @@ export default function DiagnosticsSection() {
           <button type="button" onClick={downloadLogs} className="btn-text">
             {t("settings.downloadLogs")}
           </button>
+          {exportFailed && (
+            <span className="text-[12px] text-error">
+              {t("settings.exportFailed")}
+            </span>
+          )}
         </div>
       </SettingsSection>
       <p className="settings-group-footer mt-2">

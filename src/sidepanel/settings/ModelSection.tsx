@@ -10,6 +10,7 @@ import {
 } from "../../shared/configStore";
 import { useConfirmReset, useT } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
+import { EyeIcon } from "../ui/icons";
 import { ExpandCard, SettingsSection, hostOf } from "./parts";
 import { useProviderFetch } from "./useProviderFetch";
 
@@ -210,8 +211,15 @@ function ModelRow({
         className="field-input"
       />
       <div className="mt-2.5 flex items-center justify-between">
-        <span className="text-[12.5px] font-medium text-on-surface">{t("settings.vision")}</span>
+        {/* 行文本入 label(点击同开关):热区与 SwitchRow 一致,不只开关本体 */}
+        <label
+          htmlFor={`model-vision-${entry.id}`}
+          className="text-[12.5px] font-medium text-on-surface"
+        >
+          {t("settings.vision")}
+        </label>
         <button
+          id={`model-vision-${entry.id}`}
           type="button"
           role="switch"
           aria-checked={!!entry.vision}
@@ -346,12 +354,26 @@ function ProviderCard({
   const t = useT();
   const [newId, setNewId] = useState("");
   const [openModelId, setOpenModelId] = useState<string | null>(null);
+  // API Key 明文回显(核对已存 Key 用;缺省 password 形态,不因卡片展开泄漏)
+  const [showKey, setShowKey] = useState(false);
+  // 模型筛选(>12 才出现:一屏放得下的量不用筛;拉取列表动辄上百条,
+  // 靠它定位模型 —— 同 MCP 工具清单筛选的先例,语义取 id/别名包含)
+  const [modelQuery, setModelQuery] = useState("");
   const [confirmModelId, armConfirmModel, resetConfirmModel] =
     useConfirmReset<string>();
   const { fetchState, fetchError, fetchList, fixSuggestion, applyFix } =
     useProviderFetch(entry, onPatch);
 
   const displayName = entry.name || hostOf(entry.baseUrl) || t("settings.providerUnnamed");
+
+  const mq = modelQuery.trim().toLowerCase();
+  const visibleModels = mq
+    ? entry.models.filter(
+        (m) =>
+          m.id.toLowerCase().includes(mq) ||
+          (m.alias?.toLowerCase().includes(mq) ?? false),
+      )
+    : entry.models;
 
   /** 供应商内某个模型条目的局部更新;save=true 即时落盘 */
   const patchModel = (mid: string, patch: Partial<ModelEntry>, save = false) =>
@@ -479,17 +501,28 @@ function ProviderCard({
         <label className="field-label" htmlFor={`p-apikey-${entry.id}`}>
           {t("settings.apiKey")}
         </label>
-        <input
-          id={`p-apikey-${entry.id}`}
-          type="password"
-          value={entry.apiKey}
-          onChange={(e) => onPatch({ apiKey: e.target.value })}
-          onBlur={onCommit}
-          placeholder="sk-…"
-          autoComplete="off"
-          spellCheck={false}
-          className="field-input font-mono"
-        />
+        <div className="relative">
+          <input
+            id={`p-apikey-${entry.id}`}
+            type={showKey ? "text" : "password"}
+            value={entry.apiKey}
+            onChange={(e) => onPatch({ apiKey: e.target.value })}
+            onBlur={onCommit}
+            placeholder="sk-…"
+            // new-password:off 在部分浏览器不拦「保存密码」气泡,这个更稳
+            autoComplete="new-password"
+            spellCheck={false}
+            className="field-input has-eye font-mono"
+          />
+          <button
+            type="button"
+            className="settings-eye-btn"
+            aria-label={showKey ? t("settings.hideKey") : t("settings.showKey")}
+            onClick={() => setShowKey((v) => !v)}
+          >
+            <EyeIcon />
+          </button>
+        </div>
       </div>
 
       <div className="settings-block">
@@ -519,9 +552,21 @@ function ProviderCard({
             </div>
           </>
         )}
+        {entry.models.length > 12 && (
+          <input
+            type="text"
+            value={modelQuery}
+            onChange={(e) => setModelQuery(e.target.value)}
+            placeholder={t("settings.modelsFilterPlaceholder")}
+            aria-label={t("settings.modelsFilterLabel")}
+            autoComplete="off"
+            spellCheck={false}
+            className="field-input mt-2 mb-1"
+          />
+        )}
         {entry.models.length > 0 ? (
           <div className="model-list">
-            {entry.models.map((m) => (
+            {visibleModels.map((m) => (
               <ModelRow
                 key={m.id}
                 entry={m}
@@ -538,6 +583,9 @@ function ProviderCard({
                 onRemove={() => removeModel(m.id)}
               />
             ))}
+            {visibleModels.length === 0 && (
+              <p className="field-hint">{t("settings.modelsNoMatch")}</p>
+            )}
           </div>
         ) : (
           <p className="field-hint">
@@ -557,6 +605,7 @@ function ProviderCard({
               }
             }}
             placeholder={t("settings.modelIdPlaceholder")}
+            aria-label={t("settings.modelIdLabel")}
             autoComplete="off"
             spellCheck={false}
             className="field-input font-mono"

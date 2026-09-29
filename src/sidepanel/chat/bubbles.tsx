@@ -213,6 +213,11 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(() => peekImgUrl(meta.id));
   const [failed, setFailed] = useState(false);
+  // 展示盒按 meta 比例预留(meta 是入库时的真实尺寸):加载占位与成图同
+  // 尺寸,字节到位不推挤消息列表(CLS);高封顶 192 与既有 max-h-48 一致
+  const scale = Math.min(1, 192 / meta.h);
+  const dispW = Math.round(meta.w * scale);
+  const dispH = Math.round(meta.h * scale);
   useEffect(() => {
     if (url) return;
     let alive = true;
@@ -234,7 +239,10 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
   }
   if (!url) {
     return (
-      <div className="h-20 w-28 animate-pulse rounded-md bg-surface-container-high" />
+      <div
+        className="animate-pulse rounded-md bg-surface-container-high"
+        style={{ width: dispW, height: dispH }}
+      />
     );
   }
   return (
@@ -242,7 +250,9 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
       <img
         src={url}
         alt={t("chat.imageAlt", { w: meta.w, h: meta.h })}
-        className="max-h-48 rounded-md object-contain"
+        width={dispW}
+        height={dispH}
+        className="max-h-48 max-w-full rounded-md object-contain"
         // URL 失效(已被回收/字节被清理)时退到失效占位:否则是破图 + 点开
         // 死链(气泡缓存里的 blob URL 会随会话切换回收)
         onError={() => setFailed(true)}

@@ -26,6 +26,16 @@ body {
   outline-offset: 2px;
 }
 
+/* 触屏(触屏笔记本/ChromeOS):交互控件免双击缩放延迟;不影响滚动与
+   捏合缩放,文本双击选词也不受 touch-action 管辖 */
+button,
+a,
+[role="switch"],
+[role="radio"],
+[role="option"] {
+  touch-action: manipulation;
+}
+
 /* 入场:轻浮升 + emphasized 曲线(消息、悬浮层、过程卡共用) */
 @keyframes msg-in {
   from {

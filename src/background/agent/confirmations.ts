@@ -105,6 +105,8 @@ export async function requestConfirmation(
     name: req.name,
     ...(req.displayName ? { displayName: req.displayName } : {}),
     args: req.args,
+    // 超时口径随载荷下发:确认卡展示「多久不答复算拒绝」,UI 不另存一份
+    timeoutMs: CONFIRM_TIMEOUT_MS,
     ...target,
   });
 

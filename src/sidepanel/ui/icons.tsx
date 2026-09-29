@@ -125,6 +125,27 @@ export function CheckIcon() {
   );
 }
 
+/** 眼睛(API Key 显示/隐藏切换,见 .settings-eye-btn) */
+export function EyeIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="block"
+    >
+      <path d="M1.8 8s2.2-4 6.2-4 6.2 4 6.2 4-2.2 4-6.2 4S1.8 8 1.8 8Z" />
+      <circle cx="8" cy="8" r="1.8" />
+    </svg>
+  );
+}
+
 /** 循环双箭头(重新生成/换一批,rotate 语义) */
 export function RefreshIcon() {
   return (

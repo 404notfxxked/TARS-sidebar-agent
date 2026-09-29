@@ -235,6 +235,8 @@ export type AgentEvent =
       name: string;
       displayName?: string;
       args?: unknown;
+      /** 等待答复上限(毫秒),超时按拒绝;确认卡据此展示倒计时口径 */
+      timeoutMs?: number;
       /** 目标标签页(确认卡展示「操作将落在哪个页面」);取不到时缺省 */
       tabTitle?: string;
       tabUrl?: string;

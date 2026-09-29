@@ -16,8 +16,16 @@ export default function InfoTip({ text }: { text: string }) {
         className={`info-tip-btn ${open ? "open" : ""}`}
         aria-label={t("common.moreInfo")}
         aria-describedby={id}
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          // Esc 先关气泡不冒泡:悬浮层(App 层)的 Esc 关页面留给第二次按键
+          if (e.key === "Escape" && open) {
+            e.stopPropagation();
+            setOpen(false);
+          }
+        }}
       >
         <svg
           width="12"
