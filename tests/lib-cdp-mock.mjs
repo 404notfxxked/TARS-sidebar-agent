@@ -476,6 +476,32 @@ export function bodyText(page) {
   return page.evaluate(() => document.body.innerText);
 }
 
+/**
+ * 面板滚动几何探针(probe-layout / probe-focus 共用,唯一实现):取最后一个
+ * `.overflow-y-auto` 容器(面板全部滚动容器的统一类名:MessageList/
+ * Sessions/Settings/Memory/Skill 五处皆是),读它与文档层/顶栏的几何。
+ * headerTop 用 null 作缺失哨兵 —— 顶栏整个消失时让断言失败(吸顶硬规则
+ * 防线);inner 系字段缺失时以 -1 兜底,断言自然失败。
+ * 字段名同时照顾两套件原叫法:innerScrollTop(layout)≡ top(focus),
+ * innerHeight/innerClient/innerBottom 对应 focus 的 height/client/bottom。
+ */
+export function scrollProbe(page) {
+  return page.evaluate(() => {
+    const doc = document.scrollingElement;
+    const header = document.querySelector("header");
+    const inner = [...document.querySelectorAll(".overflow-y-auto")].at(-1);
+    return {
+      docScrollable: doc.scrollHeight - doc.clientHeight,
+      headerTop: header ? header.getBoundingClientRect().top : null,
+      innerScrollable: inner ? inner.scrollHeight - inner.clientHeight : -1,
+      innerScrollTop: inner ? inner.scrollTop : -1,
+      innerBottom: inner ? inner.scrollTop + inner.clientHeight : -1,
+      innerHeight: inner?.scrollHeight ?? -1,
+      innerClient: inner?.clientHeight ?? -1,
+    };
+  });
+}
+
 /** 读取扩展环形日志(log:bg / log:panel / log:off),只取 since 之后的条目 */
 export async function readLogs(page, since) {
   const bag = await page.evaluate(() => chrome.storage.local.get(null));

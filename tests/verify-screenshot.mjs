@@ -3,12 +3,13 @@
 //
 // 场景:
 //   SS1 主链路:视觉模型 + mock LLM 脚本驱动 find_elements → scroll_page →
-//      page_screenshot,断言 —— 工具消息的 marks 表/page 几何;截图附件经
-//      「紧随带图 user 消息」注入(wire 出现 image_url data:image/jpeg);
-//      图片字节落 images store;mock 页面为真实 Chromium 渲染(headful)
+//      page_screenshot,断言 —— 工具消息的 marks 表/page 几何(含滚动落点:
+//      scroll_y>0/at_bottom=false,与 find_elements/screenshot 的 page 字段
+//      联动);截图附件经「紧随带图 user 消息」注入(wire 出现 image_url
+//      data:image/jpeg);图片字节落 images store;mock 页面为真实 Chromium
+//      渲染(headful)
 //   SS2 门控:非视觉模型 → wire 的 tools 列表不含 page_screenshot
-//   SS3 滚动落点:scroll_page 返回几何(scroll_y>0/at_bottom=false),与
-//      find_elements/screenshot 的 page 字段联动
+//   SS3 目标对齐:目标 ≠ 活动 tab,必须截目标页且截完恢复
 //
 // 注意:本套件需要 headful 环境(xvfb-run),captureVisibleTab 在无头下不可用。
 
@@ -68,7 +69,7 @@ mock.setRoutes([
       }),
   },
   {
-    // 诱饵页:纯饱和蓝。SS4 用它做「用户正看着的页」——若截图误抓活动 tab,
+    // 诱饵页:纯饱和蓝。SS3 用它做「用户正看着的页」——若截图误抓活动 tab,
     // 采到的像素就是蓝色,回归一测便知
     match: (url) => url.includes("mock.test/decoy"),
     handle: async (ctx) =>
@@ -324,8 +325,8 @@ await ask(sidepanel, "换个问法");
   );
 }
 
-// ---- SS4 目标对齐:目标 ≠ 活动 tab,必须截目标页且截完恢复 ----
-console.log("\nSS4 截图目标对齐(激活目标 → 截图 → 恢复活动)");
+// ---- SS3 目标对齐:目标 ≠ 活动 tab,必须截目标页且截完恢复 ----
+console.log("\nSS3 截图目标对齐(激活目标 → 截图 → 恢复活动)");
 {
   // 打开诱饵页(新开 tab 即成为活动 tab),用户此刻「看着」蓝色页
   const decoy = await browser.newPage();
@@ -345,7 +346,7 @@ console.log("\nSS4 截图目标对齐(激活目标 → 截图 → 恢复活动)"
   );
 
   // mock 的调用推进按「全会话累计 assistant tool_calls」计数(SS1 已消耗 3 次),
-  // SS4 的脚本要补齐占位才会轮到截图这一拍
+  // SS3 的脚本要补齐占位才会轮到截图这一拍
   chain = [
     { name: "get_tabs", args: {} },
     { name: "get_tabs", args: {} },

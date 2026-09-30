@@ -3,9 +3,10 @@
 //   网络受限环境: VERIFY_PROXY=http://127.0.0.1:8118 (mock 全在 CDP 层,一般不需要)
 //
 // 用 CDP Fetch 拦截 LLM 端点,断言:
-//   S1. 触发与滚动:超阈值 run 前先发摘要调用;agent 请求含 <context-summary>
-//       且不含被压缩轮原文;库仍是全量历史;二次触发合并旧摘要(rolling)
-//   S1b. HISTORY 载荷带 compaction 元数据与消息 seq;UI 渲染压缩分隔条
+//   S1. 触发:超阈值 run 前先发摘要调用;agent 请求含 <context-summary>
+//       且不含被压缩轮原文;库仍是全量历史
+//   S1b. 滚动压缩:二次触发合并旧摘要(rolling)
+//   S1c. HISTORY 载荷带 compaction 元数据与消息 seq;UI 渲染压缩分隔条
 //   S2. 压缩用模型:摘要请求 model=cheap-test、agent 请求 model=gpt-test
 //       引用失效(ghost)时回落当前模型 + 告警日志
 //   S3. 摘要调用 500 → 回退溢出裁剪,run 正常完成

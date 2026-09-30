@@ -374,13 +374,13 @@ await setMcp(mcpOn);
   check(
     legacyInit?.body.params?.clientInfo?.name === "TARS" && // i18n-ok 协议常量
       legacyInit?.body.params?.clientInfo?.version === MANIFEST_VERSION,
-    "T2-12 旧版握手 clientInfo 声明 manifest 版本",
+    "T2-10 旧版握手 clientInfo 声明 manifest 版本",
     JSON.stringify(legacyInit?.body.params?.clientInfo),
   );
   check(
     modernCall?.body.params?._meta?.["io.modelcontextprotocol/clientInfo"]
       ?.version === MANIFEST_VERSION,
-    "T2-13 现代请求 _meta clientInfo 声明 manifest 版本",
+    "T2-11 现代请求 _meta clientInfo 声明 manifest 版本",
     JSON.stringify(
       modernCall?.body.params?._meta?.["io.modelcontextprotocol/clientInfo"],
     ),
@@ -393,7 +393,7 @@ await setMcp(mcpOn);
   );
   check(
     !!legacyRetry && legacyRetry.headers["mcp-session-id"] === "sess-123",
-    "T2-10 重试请求携带会话头",
+    "T2-12 重试请求携带会话头",
   );
   check(
     mcpLog.some(
@@ -401,12 +401,12 @@ await setMcp(mcpOn);
         m.url.startsWith(LEGACY_URL) &&
         m.body.method === "notifications/initialized",
     ),
-    "T2-11 握手后发 initialized 通知",
+    "T2-13 握手后发 initialized 通知",
   );
   // 无失败服务器时不得注入状态块(反向断言:块只在有失败时出现)
   check(
     !JSON.stringify(lastAgentBody.messages ?? []).includes("<mcp-status>"),
-    "T2-12 全部健康时不注入 <mcp-status>",
+    "T2-14 全部健康时不注入 <mcp-status>",
   );
 }
 

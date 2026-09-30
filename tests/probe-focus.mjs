@@ -8,6 +8,7 @@ import {
   launchWithCdp,
   ask,
   openPanel,
+  scrollProbe,
   sleep,
   sse,
 } from "./lib-cdp-mock.mjs";
@@ -102,26 +103,12 @@ ok((await activeLabel()) === zh.chat.askInput, "面板打开输入框即聚焦")
 
 // ---- B. 两轮长回复 → 列表可滚 ----
 console.log("\nB. 长回复撑出滚动");
-const listState = () =>
-  page.evaluate(() => {
-    const els = [...document.querySelectorAll("div")].filter((d) => {
-      const s = getComputedStyle(d);
-      return s.overflowY === "auto" && d.querySelector(".markdown");
-    });
-    const el = els[els.length - 1];
-    return el
-      ? {
-          top: el.scrollTop,
-          bottom: el.scrollTop + el.clientHeight,
-          height: el.scrollHeight,
-          client: el.clientHeight,
-        }
-      : null;
-  });
+// 滚动几何探针唯一实现在 lib scrollProbe(类名策略选容器,聊天列表同用)
+const listState = () => scrollProbe(page);
 await ask(page, "第一问");
 await ask(page, "第二问");
 const st = await listState();
-ok(st && st.height > st.client + 100, `列表已可滚动(h=${st?.height})`);
+ok(st.innerHeight > st.innerClient + 100, `列表已可滚动(h=${st.innerHeight})`);
 await page.screenshot({ path: `${OUT}/1-scrolled.png` });
 
 // ---- C. 回到最新悬浮钮 ----
@@ -129,11 +116,8 @@ console.log("\nC. 回到最新悬浮钮");
 const pill = page.locator(`button[aria-label="${zh.chat.jumpLatest}"]`);
 ok((await pill.count()) === 0, "贴底时按钮不出现");
 await page.evaluate(() => {
-  const els = [...document.querySelectorAll("div")].filter((d) => {
-    const s = getComputedStyle(d);
-    return s.overflowY === "auto" && d.querySelector(".markdown");
-  });
-  els[els.length - 1].scrollTop = 0;
+  const el = [...document.querySelectorAll(".overflow-y-auto")].at(-1);
+  if (el) el.scrollTop = 0;
 });
 await sleep(250);
 ok(await pill.isVisible(), "上翻回看后按钮出现");
@@ -142,12 +126,12 @@ await pill.click();
 // headless 下平滑滚动偶发停滞/偏慢,轮询等待到底(最长 ~3s)
 let st2 = await listState();
 for (let i = 0; i < 20; i++) {
-  if (st2 && st2.height - st2.bottom < 40) break;
+  if (st2.innerHeight - st2.innerBottom < 40) break;
   await sleep(150);
   st2 = await listState();
 }
 ok(
-  st2 && st2.height - st2.bottom < 40,
+  st2.innerHeight - st2.innerBottom < 40,
   `点击后平滑滚回底部(${JSON.stringify(st2)})`,
 );
 ok((await pill.count()) === 0, "贴底后按钮消失");

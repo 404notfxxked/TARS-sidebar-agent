@@ -515,19 +515,14 @@ console.log("\n===== T8. 回复尾轻提示 =====");
 {
   llm.mode = "save-fresh";
   // memory_save 过确认门,不能走 ask()(run 等卡片答复、ask 等 run,死锁):
-  // 手动发送 → 卡片弹出后断言记忆族标题并放行 → 等 run 收口
+  // 手动发送 → 卡片弹出后放行 → 等 run 收口(卡内容断言归 verify-confirm 场景 3)
   const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
   await input.waitFor({ timeout: 5000 });
   await input.fill("记住我喜欢用列表整理信息");
   await sidepanel.locator(`button[aria-label="${zh.chat.send}"]`).click();
   const allowBtn = sidepanel.locator(`button[aria-label="${zh.chat.confirmAllow}"]`);
+  // memory_save 过确认门;卡内容/拒绝路径断言归 verify-confirm(场景 3),此处等卡弹出后放行
   await allowBtn.waitFor({ timeout: 20000 });
-  check(
-    (await sidepanel.locator('[role="alertdialog"]').innerText()).includes(
-      zh.chat.confirmMemorySaveTitle,
-    ),
-    "T8-0 确认卡为记忆族标题",
-  );
   await allowBtn.click();
   await waitForRunLog(sidepanel, (e) => e.msg === "run ended", "run ended");
   const text = await bodyText(sidepanel);

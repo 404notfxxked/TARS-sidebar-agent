@@ -9,7 +9,7 @@
 import { mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { launchWithCdp, makeChecker, openPanel, seedSessions, setTheme, sleep } from "./lib-cdp-mock.mjs";
+import { launchWithCdp, makeChecker, openPanel, scrollProbe, seedSessions, setTheme, sleep } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,20 +43,9 @@ await seedSessions(
   })),
 );
 
-/** 数值探针:文档层/顶栏/内页滚动状态。headerTop 用 null 作缺失哨兵 ——
- *  顶栏整个消失时必须让断言失败(吸顶硬规则的唯一自动化防线) */
-const probe = () =>
-  page.evaluate(() => {
-    const doc = document.scrollingElement;
-    const header = document.querySelector("header");
-    const inner = [...document.querySelectorAll(".overflow-y-auto")].at(-1);
-    return {
-      docScrollable: doc.scrollHeight - doc.clientHeight,
-      headerTop: header ? header.getBoundingClientRect().top : null,
-      innerScrollable: inner ? inner.scrollHeight - inner.clientHeight : -1,
-      innerScrollTop: inner ? inner.scrollTop : -1,
-    };
-  });
+/** 数值探针:文档层/顶栏/内页滚动状态 —— 实现在 lib scrollProbe(唯一实现,
+ *  probe-focus 的 listState 同源) */
+const probe = () => scrollProbe(page);
 const scrollInner = async (dy) => {
   await page.mouse.move(210, 400);
   await page.mouse.wheel(0, dy);

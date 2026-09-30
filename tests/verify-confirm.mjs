@@ -1,13 +1,16 @@
 // 验证写操作确认门(安全 V1)
 // 用法: pnpm build && node tests/verify-confirm.mjs
 //
-// CDP Fetch 拦截 LLM 端点,mock 模型先调 fill_input(写操作)再给终答,断言:
-//   C1. 默认开启(confirmActions 键缺席 = 开):面板弹确认卡,卡内含
-//       目标页面 / 写入内容 / 回车提交提示 / 元素定位 —— 信息足够做决定
-//   C2. 拒绝:fill_input 不执行,「declined」错误文案回给模型,run 正常收口
-//   C3. 允许:门放行,工具真实分发(本测试环境无普通页面可注入,执行期
-//       失败也算放行 —— 关键是错误不再是 declined)
-//   C4. 期间后台日志带 confirm 语义,便于与其他工具失败区分
+// CDP Fetch 拦截 LLM 端点,mock 模型先调一个「过门工具」再给终答,断言:
+//   场景 1(C1/C2):默认开启(confirmActions 键缺席 = 开)弹确认卡,卡内
+//       含目标页面 / 写入内容 / 回车提交提示 / 元素定位 —— 信息足够做决定;
+//       拒绝后 fill_input 不执行,「declined」错误文案回给模型,run 正常收口
+//   场景 2(C3):允许 → 门放行,工具真实分发(本测试环境无普通页面可注入,
+//       执行期失败也算放行 —— 关键是错误不再是 declined)
+//   场景 3(M):memory_save 过门(拒绝 → 拒;允许 → 落库)
+//   场景 4(W):web_fetch 出口底线:私网必卡;白名单命中直抓
+//   场景 5(W2):同轮两个白名单外 fetch 串行出卡(批次屏障)+ 同域复用
+//   场景 6:设置页安全分节渲染
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -222,7 +225,7 @@ try {
     }
   }
 
-  // ---- 场景 4:memory_save 过门(拒绝 → 拒;允许 → 落库) ----
+  // ---- 场景 3:memory_save 过门(拒绝 → 拒;允许 → 落库) ----
   scene = "M memory_save 确认门";
   console.log("\n── M memory_save 确认门(拒绝/允许)──");
   mode = "memory";
@@ -255,7 +258,7 @@ try {
     JSON.stringify(memRows2.map((r) => r.text)), 
   );
 
-  // ---- 场景 5:web_fetch 出口底线(私网过门;公开页直抓) ----
+  // ---- 场景 4:web_fetch 出口底线(私网过门;公开页直抓) ----
   scene = "W web_fetch 出口底线";
   console.log("\n── W web_fetch 出口底线 ──");
   await sidepanel.evaluate(() =>
@@ -297,7 +300,7 @@ try {
     JSON.stringify(wfOpenLog?.data ?? null).slice(0, 200), 
   );
 
-  // ---- 场景 5b:同轮两个白名单外 fetch 串行出卡(批次屏障) ----
+  // ---- 场景 5:同轮两个白名单外 fetch 串行出卡(批次屏障) ----
   scene = "W2 双白名单外 fetch 串行确认";
   console.log("\n── W2 同轮双过门 fetch:逐个出卡 + 同域复用 ──");
   mode = "webfetch-parallel";

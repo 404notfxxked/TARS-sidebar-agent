@@ -433,7 +433,7 @@ console.log("\n===== T8. 删除技能 =====");
   // 收尾:回聊天页,留干净状态
   await backToChat();
   await chatInput().waitFor({ state: "visible", timeout: 5000 });
-  check(await chatInput().isVisible(), "T9 收尾回到聊天视图");
+  check(await chatInput().isVisible(), "T8-2 收尾回到聊天视图");
 }
 
 // ---- 汇总 ----
