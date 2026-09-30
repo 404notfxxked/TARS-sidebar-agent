@@ -129,3 +129,58 @@ describe("MemoryView 列表读取失败(REQ-P0-3 回归)", () => {
     expect(screen.queryByText(zhCN.memory.empty)).not.toBeInTheDocument();
   });
 });
+
+describe("MemoryView 行内编辑", () => {
+  it("点文本进入编辑:textarea 预填原文,Enter 提交 MEM_UPDATE;长文本整段可见而非单行", async () => {
+    const user = userEvent.setup();
+    render(<MemoryView onBack={() => {}} />);
+    const listReq = memByType("mem_list");
+    await act(async () => {
+      listReq!.resolve({ memories: [item("m1", "旧记忆")] });
+    });
+    await screen.findByText("旧记忆");
+
+    await user.click(screen.getByTitle(zhCN.memory.clickToEdit));
+    const editor = screen.getByRole("textbox", {
+      name: zhCN.memory.editMemory,
+    });
+    // 编辑框是 textarea 且预填原文:长记忆整段折行可见,不做单行横向滚动
+    expect(editor.tagName).toBe("TEXTAREA");
+    expect(editor).toHaveValue("旧记忆");
+
+    await user.clear(editor);
+    await user.type(editor, "新记忆文本");
+    await user.keyboard("{Enter}");
+
+    const updateReq = memByType("mem_update");
+    expect(updateReq).toBeTruthy();
+    expect(updateReq!.msg).toMatchObject({ id: "m1", text: "新记忆文本" });
+    await act(async () => {
+      updateReq!.resolve({ memories: [item("m1", "新记忆文本")] });
+    });
+    await screen.findByText("新记忆文本");
+  });
+
+  it("Esc 取消编辑:不触发 MEM_UPDATE,行恢复原文显示", async () => {
+    const user = userEvent.setup();
+    render(<MemoryView onBack={() => {}} />);
+    const listReq = memByType("mem_list");
+    await act(async () => {
+      listReq!.resolve({ memories: [item("m1", "旧记忆")] });
+    });
+    await screen.findByText("旧记忆");
+
+    await user.click(screen.getByTitle(zhCN.memory.clickToEdit));
+    const editor = screen.getByRole("textbox", {
+      name: zhCN.memory.editMemory,
+    });
+    await user.type(editor, "改了一半");
+    await user.keyboard("{Escape}");
+
+    expect(memByType("mem_update")).toBeFalsy();
+    expect(
+      screen.queryByRole("textbox", { name: zhCN.memory.editMemory }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("旧记忆")).toBeInTheDocument();
+  });
+});

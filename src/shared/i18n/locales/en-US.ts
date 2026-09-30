@@ -194,6 +194,7 @@ export const enUS = {
     add: "Add memory",
     addBtn: "Save this memory",
     clickToEdit: "Click to edit",
+    editMemory: "Edit memory",
     pin: "Pin",
     unpin: "Unpin",
     deleteOne: "Delete memory",

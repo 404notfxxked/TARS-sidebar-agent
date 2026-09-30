@@ -186,6 +186,7 @@ export const zhCN = {
     add: "添加记忆",
     addBtn: "保存这条记忆",
     clickToEdit: "点击编辑",
+    editMemory: "编辑记忆",
     pin: "置顶",
     unpin: "取消置顶",
     deleteOne: "删除记忆",

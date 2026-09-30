@@ -438,9 +438,9 @@ console.log("\n===== T5. 记忆页:添加/编辑/置顶/删除 =====");
     "T5-1 添加落库(source=user)",
   );
 
-  // 行内编辑:点文本 → input → 改 → 回车提交
+  // 行内编辑:点文本 → textarea → 改 → 回车提交
   await row.locator("button").first().click();
-  const editInput = sidepanel.locator("ul li input");
+  const editInput = sidepanel.locator("ul li textarea");
   await editInput.waitFor({ timeout: 3000 });
   await editInput.fill("用户在减脂期,饮食建议注意热量与蛋白质");
   await editInput.press("Enter");

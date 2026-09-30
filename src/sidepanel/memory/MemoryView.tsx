@@ -348,6 +348,7 @@ export default function MemoryView({
                 }}
                 onEditText={setEditingText}
                 onEditCommit={() => void commitEdit(m.id, editingText)}
+                onEditCancel={() => setEditingId(null)}
                 onPin={() => void togglePin(m)}
                 onRemove={() => remove(m.id)}
               />
@@ -389,6 +390,7 @@ function MemoryRow({
   onEditStart,
   onEditText,
   onEditCommit,
+  onEditCancel,
   onPin,
   onRemove,
 }: {
@@ -400,26 +402,50 @@ function MemoryRow({
   onEditStart: () => void;
   onEditText: (t: string) => void;
   onEditCommit: () => void;
+  onEditCancel: () => void;
   onPin: () => void;
   onRemove: () => void;
 }) {
   const t = useT();
+  // 行内编辑框:textarea 自适应高度(ref + scrollHeight,manifest 声明的
+  // minimum_chrome_version 116 不支持 field-sizing)—— 记忆最长 200 字,
+  // 单行 input 只能横向滚动,改前看不到全文;高度封顶后内部滚动
+  const editRef = useRef<HTMLTextAreaElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 高度跟着 DOM 内容走,editText 经受控 value 落到 DOM 后才可重测 scrollHeight
+  useEffect(() => {
+    const el = editRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editText]);
   return (
     <li className="memory-row-in" style={{ animationDelay: `${delay}ms` }}>
       <div className="group flex items-start gap-1 rounded-md px-2 py-2 transition-colors duration-150 hover:bg-on-surface/8">
         {editing ? (
-          <input
-            type="text"
+          <textarea
+            ref={editRef}
+            rows={1}
             // biome-ignore lint/a11y/noAutofocus: 点「编辑」即进入行内编辑,自动聚焦是产品语义
             autoFocus
             value={editText}
             maxLength={MEMORY_MAX_CHARS}
+            aria-label={t("memory.editMemory")}
             onChange={(e) => onEditText(e.target.value)}
             onBlur={onEditCommit}
             onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
+              // Enter(含修饰变体)一律提交:记忆注入按条拼行,单条保持
+              // 一行文本,textarea 只为长文折行可见,不引入换行语义
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+              // Esc 取消:还原原文退出;拦下不冒泡,否则 App 层会关整页
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                onEditCancel();
+              }
             }}
-            className="field-input flex-1"
+            className="field-input min-h-0 max-h-40 flex-1 resize-none overflow-y-auto leading-5"
           />
         ) : (
           <button
