@@ -19,6 +19,8 @@ import {
   setTheme,
   sse,
   injectTestConfig,
+  answerSSE,
+  toolCallSSE,
 } from "./lib-cdp-mock.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -406,38 +408,6 @@ if (SOM_ONLY) {
 let script = "search";
 const WIRE_GET = "mcp_GitHub_get_issue";
 
-const toolCallSSE = (ctx, id, name, args) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      {
-        choices: [
-          {
-            delta: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id,
-                  type: "function",
-                  function: { name, arguments: JSON.stringify(args) },
-                },
-              ],
-            },
-          },
-        ],
-      },
-      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
-    ),
-  });
-const answerSSE = (ctx, text) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      { choices: [{ delta: { content: text } }] },
-      { choices: [{ delta: {}, finish_reason: "stop" }] },
-    ),
-  });
-
 // 搜索引擎 mock(web_search 工具会真的去抓)
 mock.setRoutes([
   {
@@ -517,13 +487,13 @@ mock.setRoutes([
       const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
       const usedTool = msgs.slice(lastUserIdx + 1).some((m) => m.role === "tool");
       if (script === "mcp") {
-        if (!usedTool) return toolCallSSE(ctx, "call_m1", WIRE_GET, { issue_number: 42 });
+        if (!usedTool) return toolCallSSE(ctx, WIRE_GET, { issue_number: 42 });
         return answerSSE(ctx, "issue #42 的要点已整理完毕。");
       }
       if (!usedTool) {
         // 第一轮:让模型发起 web_search 工具调用(驱动过程卡)
         await ctx.delay(400);
-        return toolCallSSE(ctx, "call_1", "web_search", {
+        return toolCallSSE(ctx, "web_search", {
           query: "Material Design 3 设计规范",
         });
       }
