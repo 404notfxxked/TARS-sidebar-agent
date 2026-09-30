@@ -286,15 +286,25 @@ try {
   // 会话来源域白名单:URL 出自用户消息 → 命中 → 不弹卡直抓
   await sendOnly("读一个公开页 https://mock.test/open-page");
   // 公开页要真实走一次 fetch(DNS 失败需数秒),waitIdle 的两段判定有
-  // 既有竞态 —— 事件驱动等工具日志出现(若被门拦住,工具日志不会出现)
+  // 既有竞态 —— 事件驱动等工具日志出现(若被门拦住,工具日志不会出现)。
+  // ⚠️ 谓词必须按本轮 URL 限定:run started 落库晚一拍时,run 窗口仍停在
+  // 上一轮(私网拒绝),宽松匹配会立刻假阳性命中上一轮的 declined
+  // (2026-09-30 CI release 预检实测)。W2 场景第三跳的同款限定是既有先例
   const entriesW2 = await waitForRunLog(
     sidepanel,
     (e) =>
-      `${e.ctx}/${e.tag}` === "bg/tool" && /web_fetch (失败|完成)/.test(e.msg),
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /web_fetch (失败|完成)/.test(e.msg) &&
+      /mock\.test\/open-page/.test(e.data ?? "{}"),
     "web_fetch 直达执行日志",
   );
   check((await sidepanel.locator(card).count()) === 0, "白名单内链接不弹确认卡");
-  const wfOpenLog = findToolLog(entriesW2, /web_fetch (失败|完成)/);
+  const wfOpenLog = entriesW2.find(
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /web_fetch (失败|完成)/.test(e.msg) &&
+      /mock\.test\/open-page/.test(e.data ?? "{}"),
+  );
   check(
     !!wfOpenLog && !/declined/.test(wfOpenLog.data ?? "{}"), "白名单命中直达工具(失败也非 declined)", 
     JSON.stringify(wfOpenLog?.data ?? null).slice(0, 200), 
@@ -303,6 +313,9 @@ try {
   // ---- 场景 5:同轮两个白名单外 fetch 串行出卡(批次屏障) ----
   scene = "W2 双白名单外 fetch 串行确认";
   console.log("\n── W2 同轮双过门 fetch:逐个出卡 + 同域复用 ──");
+  // 上一轮(mock.test DNS 失败要数秒)收口后再发:发送钮仍隐藏时 sendOnly
+  // 会白等 30s(CI release 预检实测)
+  await waitIdle();
   mode = "webfetch-parallel";
   parStep = 0;
   await sendOnly("把这两个链接都读一下");
@@ -317,10 +330,15 @@ try {
     `卡片:${cardA.slice(0, 160)}`, 
   );
   await sidepanel.locator(allowBtn).click();
-  // 第一批完整收口(工具日志在场)后第二张卡才出现 —— 屏障串行化的时序证据
+  // 第一批完整收口(工具日志在场)后第二张卡才出现 —— 屏障串行化的时序证据。
+  // 谓词按 w2a 限定:宽匹配会命中上一轮 open-page 的失败日志(run started
+  // 落库晚一拍的窗口串轮,见场景 4 注)
   await waitForRunLog(
     sidepanel,
-    (e) => `${e.ctx}/${e.tag}` === "bg/tool" && /web_fetch 失败/.test(e.msg),
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /web_fetch 失败/.test(e.msg) &&
+      /w2a\.test/.test(e.data ?? "{}"),
     "第一个 fetch 执行完毕",
   );
   await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
