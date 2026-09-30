@@ -11,7 +11,18 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { injectTestConfig, idbGetAll, launchWithCdp, makeChecker, readRunLogs, sse, waitForRunLog } from "./lib-cdp-mock.mjs";
+import {
+  answerSSE,
+  injectTestConfig,
+  idbGetAll,
+  launchWithCdp,
+  makeChecker,
+  openPanel,
+  readRunLogs,
+  sse,
+  toolCallSSE,
+  waitForRunLog,
+} from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,37 +35,8 @@ const { browser, extId, mock } = await launchWithCdp({
 });
 console.log("✅ 扩展:", extId);
 
-const answer = (ctx, text) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      { choices: [{ delta: { content: text } }] },
-      { choices: [{ delta: {}, finish_reason: "stop" }] },
-    ),
-  });
-const toolCall = (ctx, name, args) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      {
-        choices: [
-          {
-            delta: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id: `call_${Math.random().toString(36).slice(2, 8)}`,
-                  type: "function",
-                  function: { name, arguments: JSON.stringify(args) },
-                },
-              ],
-            },
-          },
-          { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
-        ],
-      },
-    ),
-  });
+const answer = answerSSE;
+const toolCall = toolCallSSE;
 
 // 每轮:先按 mode 发一个「过门工具」调用,工具往返后终答。
 // 2026-09 确认门扩容后,这里覆盖三个族:页面写动作 / 记忆持久写 / web_fetch 出口底线
@@ -154,21 +136,14 @@ mock.setRoutes([
 console.log("✅ LLM mock 就绪(mode 驱动:fill/memory/webfetch)");
 
 // 面板 + 假配置(confirmActions 键缺席 = 默认开启,即被测默认态)
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
-await injectTestConfig(sidepanel);
-console.log("🔑 已注入假 Key");
-await sidepanel.reload();
-await new Promise((r) => setTimeout(r, 1500));
+const sidepanel = await openPanel(browser, extId, { configure: injectTestConfig });
 
 const sendBtn = `button[aria-label="${zh.chat.send}"]`;
 const denyBtn = `button[aria-label="${zh.chat.confirmDeny}"]`;
 const allowBtn = `button[aria-label="${zh.chat.confirmAllow}"]`;
 const card = '[role="alertdialog"]';
 
-const checker = makeChecker();
-const assert = (name, cond, detail = "") => checker(cond, `  ${name}`, detail);
+const check = makeChecker();
 
 /** 发消息但不等 run 结束(确认门会让 run 挂起等答复) */
 async function sendOnly(text) {
@@ -193,30 +168,28 @@ try {
   await sendOnly("帮我在搜索框填写内容并提交");
   await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
   const cardText = await sidepanel.locator(card).innerText();
-  assert(
-    "确认卡弹出(默认开启)",
-    (await sidepanel.locator(card).isVisible()) && cardText.trim().length > 0,
-    `卡片内容:${cardText}`,
+  check(
+    (await sidepanel.locator(card).isVisible()) && cardText.trim().length > 0, "确认卡弹出(默认开启)", 
+    `卡片内容:${cardText}`, 
   );
-  assert("展示写入内容", cardText.includes("确认门测试写入内容"));
-  assert("展示回车提交提示", cardText.includes(zh.chat.confirmSubmitHint));
-  assert("展示元素定位", cardText.includes("search-q"));
-  assert("展示目标页面", cardText.includes(zh.chat.confirmTarget.split("{")[0].trim()), `卡片内容:${cardText}`);
+  check(cardText.includes("确认门测试写入内容"), "展示写入内容");
+  check(cardText.includes(zh.chat.confirmSubmitHint), "展示回车提交提示");
+  check(cardText.includes("search-q"), "展示元素定位");
+  check(cardText.includes(zh.chat.confirmTarget.split("{")[0].trim()), "展示目标页面", `卡片内容:${cardText}`); // i18n-ok 断言标签(人读输出);惯用法统一后标签在第二参,不在守卫豁免窗内
 
   await sidepanel.locator(denyBtn).click();
   await waitIdle();
   // 断言用「当前 run」日志窗口:mock 环境整轮 <100ms,时间窗会串进上一 run
   const entries1 = await readRunLogs(sidepanel);
   const denyLog = findToolLog(entries1, /fill_input 失败/);
-  assert(
-    "拒绝 → 工具未执行,declined 文案回给模型",
-    !!denyLog && /declined/.test(denyLog.data ?? "{}"),
-    JSON.stringify(denyLog?.data ?? null).slice(0, 200),
+  check(
+    !!denyLog && /declined/.test(denyLog.data ?? "{}"), "拒绝 → 工具未执行,declined 文案回给模型", 
+    JSON.stringify(denyLog?.data ?? null).slice(0, 200), 
   );
   const answered1 = entries1.some(
     (e) => `${e.ctx}/${e.tag}` === "panel/chat" && /confirm answered/.test(e.msg) && /false/.test(`${e.data ?? ""}${e.msg}`),
   );
-  assert("面板记录拒绝答复", answered1);
+  check(answered1, "面板记录拒绝答复");
 
   // ---- 场景 2:允许 ----
   scene = "C3 允许放行";
@@ -232,15 +205,14 @@ try {
   // 且能看到「confirm answered true」→ 门确实放行到了内容层
   const gatePassed =
     !!okLog || (!!failLog && !/declined/.test(failLog.data ?? "{}"));
-  assert(
-    "允许 → 门放行,工具真实分发",
-    gatePassed,
-    JSON.stringify(failLog?.data ?? okLog?.data ?? null).slice(0, 200),
+  check(
+    gatePassed, "允许 → 门放行,工具真实分发", 
+    JSON.stringify(failLog?.data ?? okLog?.data ?? null).slice(0, 200), 
   );
   const answered2 = entries2.some(
     (e) => `${e.ctx}/${e.tag}` === "panel/chat" && /confirm answered/.test(e.msg) && /true/.test(`${e.data ?? ""}${e.msg}`),
   );
-  assert("面板记录允许答复", answered2);
+  check(answered2, "面板记录允许答复");
   if (!gatePassed) {
     console.log(`  [debug] 场景 2 时间线:`);
     for (const e of entries2) {
@@ -257,22 +229,20 @@ try {
   await sendOnly("记住我喜欢深色界面");
   await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
   const memCardText = await sidepanel.locator(card).innerText();
-  assert(
-    "确认卡为记忆族标题",
-    memCardText.includes(zh.chat.confirmMemorySaveTitle),
-    `卡片内容:${memCardText}`,
+  check(
+    memCardText.includes(zh.chat.confirmMemorySaveTitle), "确认卡为记忆族标题", 
+    `卡片内容:${memCardText}`, 
   );
-  assert("展示将记住的内容", memCardText.includes("用户偏好深色界面"));
+  check(memCardText.includes("用户偏好深色界面"), "展示将记住的内容");
   await sidepanel.locator(denyBtn).click();
   await waitIdle();
   const memRows1 = await idbGetAll(sidepanel, "memories");
-  assert("拒绝 → 记忆未落库", memRows1.length === 0, JSON.stringify(memRows1.map((r) => r.text)));
+  check(memRows1.length === 0, "拒绝 → 记忆未落库",  JSON.stringify(memRows1.map((r) => r.text)));
   const entriesM1 = await readRunLogs(sidepanel);
   const memDenyLog = findToolLog(entriesM1, /memory_save 失败/);
-  assert(
-    "拒绝 → declined 文案回给模型",
-    !!memDenyLog && /declined/.test(memDenyLog.data ?? "{}"),
-    JSON.stringify(memDenyLog?.data ?? null).slice(0, 200),
+  check(
+    !!memDenyLog && /declined/.test(memDenyLog.data ?? "{}"), "拒绝 → declined 文案回给模型", 
+    JSON.stringify(memDenyLog?.data ?? null).slice(0, 200), 
   );
 
   await sendOnly("再记一次");
@@ -280,10 +250,9 @@ try {
   await sidepanel.locator(allowBtn).click();
   await waitIdle();
   const memRows2 = await idbGetAll(sidepanel, "memories");
-  assert(
-    "允许 → 记忆落库(source=model)",
-    memRows2.length === 1 && memRows2[0].text === "用户偏好深色界面",
-    JSON.stringify(memRows2.map((r) => r.text)),
+  check(
+    memRows2.length === 1 && memRows2[0].text === "用户偏好深色界面", "允许 → 记忆落库(source=model)", 
+    JSON.stringify(memRows2.map((r) => r.text)), 
   );
 
   // ---- 场景 5:web_fetch 出口底线(私网过门;公开页直抓) ----
@@ -296,20 +265,18 @@ try {
   await sendOnly("读一下内网配置页");
   await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
   const wfCardText = await sidepanel.locator(card).innerText();
-  assert(
-    "私网目标弹确认卡(外链族标题)",
-    wfCardText.includes(zh.chat.confirmWebFetchTitle),
-    `卡片内容:${wfCardText}`,
+  check(
+    wfCardText.includes(zh.chat.confirmWebFetchTitle), "私网目标弹确认卡(外链族标题)", 
+    `卡片内容:${wfCardText}`, 
   );
-  assert("展示目标链接", wfCardText.includes("10.0.0.5"));
+  check(wfCardText.includes("10.0.0.5"), "展示目标链接");
   await sidepanel.locator(denyBtn).click();
   await waitIdle();
   const entriesW1 = await readRunLogs(sidepanel);
   const wfDenyLog = findToolLog(entriesW1, /web_fetch 失败/);
-  assert(
-    "私网拒绝 → declined 文案回给模型",
-    !!wfDenyLog && /declined/.test(wfDenyLog.data ?? "{}"),
-    JSON.stringify(wfDenyLog?.data ?? null).slice(0, 200),
+  check(
+    !!wfDenyLog && /declined/.test(wfDenyLog.data ?? "{}"), "私网拒绝 → declined 文案回给模型", 
+    JSON.stringify(wfDenyLog?.data ?? null).slice(0, 200), 
   );
 
   mode = "webfetch-open";
@@ -323,12 +290,11 @@ try {
       `${e.ctx}/${e.tag}` === "bg/tool" && /web_fetch (失败|完成)/.test(e.msg),
     "web_fetch 直达执行日志",
   );
-  assert("白名单内链接不弹确认卡", (await sidepanel.locator(card).count()) === 0);
+  check((await sidepanel.locator(card).count()) === 0, "白名单内链接不弹确认卡");
   const wfOpenLog = findToolLog(entriesW2, /web_fetch (失败|完成)/);
-  assert(
-    "白名单命中直达工具(失败也非 declined)",
-    !!wfOpenLog && !/declined/.test(wfOpenLog.data ?? "{}"),
-    JSON.stringify(wfOpenLog?.data ?? null).slice(0, 200),
+  check(
+    !!wfOpenLog && !/declined/.test(wfOpenLog.data ?? "{}"), "白名单命中直达工具(失败也非 declined)", 
+    JSON.stringify(wfOpenLog?.data ?? null).slice(0, 200), 
   );
 
   // ---- 场景 5b:同轮两个白名单外 fetch 串行出卡(批次屏障) ----
@@ -338,16 +304,14 @@ try {
   parStep = 0;
   await sendOnly("把这两个链接都读一下");
   await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
-  assert(
-    "第一批屏障生效:场上只有一张确认卡",
-    (await sidepanel.locator(card).count()) === 1,
+  check(
+    (await sidepanel.locator(card).count()) === 1, "第一批屏障生效:场上只有一张确认卡", 
   );
   const cardA = await sidepanel.locator(card).innerText();
-  assert(
-    "长参数只报字符数、不上原文(search 323 含?,参数 322)",
+  check(
     cardA.includes(zh.chat.confirmWebFetchQuery.replace("{n}", "322")) &&
-      !/x{40}/.test(cardA),
-    `卡片:${cardA.slice(0, 160)}`,
+      !/x{40}/.test(cardA), "长参数只报字符数、不上原文(search 323 含?,参数 322)", 
+    `卡片:${cardA.slice(0, 160)}`, 
   );
   await sidepanel.locator(allowBtn).click();
   // 第一批完整收口(工具日志在场)后第二张卡才出现 —— 屏障串行化的时序证据
@@ -357,9 +321,8 @@ try {
     "第一个 fetch 执行完毕",
   );
   await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
-  assert(
-    "另一个白名单外域随后单独出卡(w2a 已批准,不牵连 w2b)",
-    (await sidepanel.locator(card).count()) === 1,
+  check(
+    (await sidepanel.locator(card).count()) === 1, "另一个白名单外域随后单独出卡(w2a 已批准,不牵连 w2b)", 
   );
   await sidepanel.locator(allowBtn).click();
   // 第三跳复用已批准的 w2b 域:批准即知情,不再弹卡
@@ -371,20 +334,18 @@ try {
       /w2b\.test/.test(e.data ?? "{}"),
     "同域复用跳直达执行",
   );
-  assert(
-    "批准过的域同 run 内不再重复弹卡",
-    (await sidepanel.locator(card).count()) === 0,
+  check(
+    (await sidepanel.locator(card).count()) === 0, "批准过的域同 run 内不再重复弹卡", 
   );
   await waitIdle();
   const entriesP = await readRunLogs(sidepanel);
   const fetchFails = entriesP.filter(
     (e) => `${e.ctx}/${e.tag}` === "bg/tool" && /web_fetch 失败/.test(e.msg),
   );
-  assert(
-    "三个 fetch 都逐个真实执行(未 declined)",
+  check(
     fetchFails.length === 3 &&
-      fetchFails.every((e) => !/declined/.test(e.data ?? "{}")),
-    JSON.stringify(fetchFails.map((e) => e.data)).slice(0, 300),
+      fetchFails.every((e) => !/declined/.test(e.data ?? "{}")), "三个 fetch 都逐个真实执行(未 declined)", 
+    JSON.stringify(fetchFails.map((e) => e.data)).slice(0, 300), 
   );
 
   // ---- 场景 6:设置页开关存在(安全分节渲染) ----
@@ -396,17 +357,16 @@ try {
     .filter({ hasText: zh.security.confirmActions })
     .first();
   await securityRow.waitFor({ timeout: 10000 });
-  assert(
-    "设置页出现「安全」分节与确认开关",
-    (await securityRow.count()) > 0,
+  check(
+    (await securityRow.count()) > 0, "设置页出现「安全」分节与确认开关", 
   );
 } catch (err) {
   // 场景名 + 完整堆栈:失败要能定位到哪个场景哪一行,而不是折成一个匿名红点
-  checker(false, `场景「${scene ?? "初始化"}」执行异常`, err.stack ?? String(err));
+  check(false, `场景「${scene ?? "初始化"}」执行异常`, err.stack ?? String(err));
 } finally {
   await browser.close();
 }
 
-const passCount = checker.failures.length;
+const passCount = check.failures.length;
 console.log(`\n结果:异常断言 ${passCount} 条`);
 process.exit(passCount > 0 ? 1 : 0);

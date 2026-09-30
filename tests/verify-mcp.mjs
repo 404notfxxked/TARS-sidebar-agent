@@ -21,7 +21,7 @@
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { answerSSE, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
+import { answerSSE, launchWithCdp, makeChecker, openPanel, runAskViaPort, seedProviders, toolCallSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -209,27 +209,11 @@ mock.setRoutes([
 console.log("✅ mock 路由已注册(LLM + 现代/旧版/宕机 MCP 服务器)");
 
 // ---- 面板 + 基础配置 ----
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
+const sidepanel = await openPanel(browser, extId);
 
 const check = makeChecker();
 
-await sidepanel.evaluate(() =>
-  chrome.storage.local.set({
-    providers: [
-      {
-        id: "prov-1",
-        name: "TestProv",
-        baseUrl: "https://api.test.example.com/v1",
-        apiKey: "sk-test",
-        models: [{ id: "gpt-test" }],
-      },
-    ],
-    modelProvider: "prov-1",
-    model: "gpt-test",
-  }),
-);
+await seedProviders(sidepanel, [{ id: "gpt-test" }]);
 
 /** 写 mcp 配置(整包) */
 const setMcp = (mcp) =>

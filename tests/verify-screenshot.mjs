@@ -17,6 +17,11 @@ import { fileURLToPath } from "url";
 import {
   launchWithCdp,
   ask,
+  loadHistoryViaPort,
+  makeChecker,
+  openPanel,
+  seedProviders,
+  sleep,
   sse,
 } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
@@ -25,18 +30,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
 const USER_DATA_DIR = `/tmp/verify-screenshot-profile-${Date.now()}`;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let passed = 0;
-let failed = 0;
-function check(name, cond, detail = "") {
-  if (cond) {
-    passed++;
-    console.log(`  ✅ ${name}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${name} ${detail}`);
-  }
-}
+const check = makeChecker();
 
 // 目标页:顶部/中部/底部三个按钮(给 SoM 编号)。中部按钮的位置要让
 // scroll 2 个视口后正好落在第二个截图的视口里(viewport 900)
@@ -120,27 +114,11 @@ mock.setRoutes([
 ]);
 
 const setModels = (page, vision) =>
-  page.evaluate((vision) => {
-    const bag = {
-      providers: [
-        {
-          id: "p0",
-          name: "test",
-          baseUrl: "https://api.test.example.com/v1",
-          apiKey: "sk-test",
-          models: [{ id: "gpt-v", ...(vision ? { vision: true } : {}) }],
-        },
-      ],
-      modelProvider: "p0",
-      model: "gpt-v",
-    };
-    return chrome.storage.local.set(bag);
-  }, vision);
+  seedProviders(page, [{ id: "gpt-v", ...(vision ? { vision: true } : {}) }]);
 
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await setModels(sidepanel, true);
-await sleep(400);
+const sidepanel = await openPanel(browser, extId, {
+  configure: (p) => setModels(p, true),
+});
 
 // 目标页:CDP mock 出的 http(s) 页面(flavor 静态 <all_urls> 授权,权限门通过;
 // content script 静态注册,marks/滚动可直接调用)
@@ -155,7 +133,7 @@ const targetTabId = await sidepanel.evaluate(
       );
     }),
 );
-check("目标页已打开且拿到 tabId", targetTabId > 0, `tabId=${targetTabId}`);
+check(targetTabId > 0, "目标页已打开且拿到 tabId",  `tabId=${targetTabId}`);
 
 const toolMessagesOf = (body) => {
   const messages = body?.messages ?? [];
@@ -185,38 +163,33 @@ chain = [
 await ask(sidepanel, "看看这个页面长什么样");
 {
   check(
-    "wire 的 tools 列表含 page_screenshot 与 scroll_page",
     (lastRequest?.tools ?? []).some((t) => t.function?.name === "page_screenshot") &&
-      (lastRequest?.tools ?? []).some((t) => t.function?.name === "scroll_page"),
+      (lastRequest?.tools ?? []).some((t) => t.function?.name === "scroll_page"), "wire 的 tools 列表含 page_screenshot 与 scroll_page", 
   );
   const tools = toolMessagesOf(lastRequest);
-  check("三个工具按脚本顺序执行", tools.length === 3, `n=${tools.length}`);
+  check(tools.length === 3, "三个工具按脚本顺序执行",  `n=${tools.length}`);
 
   const find = JSON.parse(tools[0]?.content ?? "{}");
   check(
-    "find_elements 返回页面几何(scroll_y=0,未滚动)",
-    find.page?.scroll_y === 0 && find.page?.scroll_height > 3000 && find.page?.at_bottom === false,
-    JSON.stringify(find.page),
+    find.page?.scroll_y === 0 && find.page?.scroll_height > 3000 && find.page?.at_bottom === false, "find_elements 返回页面几何(scroll_y=0,未滚动)", 
+    JSON.stringify(find.page), 
   );
 
   const scrolled = JSON.parse(tools[1]?.content ?? "{}");
   check(
-    "scroll_page 落点几何(scroll_y>0,at_bottom=false)",
-    scrolled.scroll_y > 0 && scrolled.at_bottom === false,
-    JSON.stringify(scrolled),
+    scrolled.scroll_y > 0 && scrolled.at_bottom === false, "scroll_page 落点几何(scroll_y>0,at_bottom=false)", 
+    JSON.stringify(scrolled), 
   );
 
   const shot = JSON.parse(tools[2]?.content ?? "{}");
   check(
-    "screenshot 工具消息带 marks 表(n/tag/selector/label)",
     Array.isArray(shot.marks) && shot.marks.length >= 1 &&
-      shot.marks.every((m) => m.n >= 1 && typeof m.selector === "string" && typeof m.tag === "string"),
-    JSON.stringify(shot.marks)?.slice(0, 120),
+      shot.marks.every((m) => m.n >= 1 && typeof m.selector === "string" && typeof m.tag === "string"), "screenshot 工具消息带 marks 表(n/tag/selector/label)", 
+    JSON.stringify(shot.marks)?.slice(0, 120), 
   );
   check(
-    "screenshot 带捕获尺寸与页面几何(scroll_y>0)",
-    shot.viewport?.w > 0 && shot.viewport?.h > 0 && shot.page?.scroll_y > 0,
-    JSON.stringify({ viewport: shot.viewport, page: shot.page }),
+    shot.viewport?.w > 0 && shot.viewport?.h > 0 && shot.page?.scroll_y > 0, "screenshot 带捕获尺寸与页面几何(scroll_y>0)", 
+    JSON.stringify({ viewport: shot.viewport, page: shot.page }), 
   );
 
   // 注入的带图 user 消息:wire 侧应为 parts(文本注记 + image_url)
@@ -228,21 +201,19 @@ await ask(sidepanel, "看看这个页面长什么样");
     ? partsUser.content.find((p) => p.type === "image_url")
     : null;
   check(
-    "截图附件注入为带图 user 消息(image_url data:image/jpeg)",
     !!partsUser && !!imgPart && /^data:image\/jpeg;base64,/.test(imgPart.image_url.url),
+    "截图附件注入为带图 user 消息(image_url data:image/jpeg)",
     partsUser ? String(imgPart?.image_url?.url).slice(0, 40) : "无 parts user",
   );
   check(
-    "附件注记文本在图片之前且说明 marks 对应关系",
     Array.isArray(partsUser?.content) &&
       partsUser.content[0]?.type === "text" &&
       partsUser.content[0].text.includes("System note") &&
-      partsUser.content[0].text.includes("marks"),
+      partsUser.content[0].text.includes("marks"), "附件注记文本在图片之前且说明 marks 对应关系", 
   );
   check(
-    "截图真实非空(data URL 超 10KB,排除 1px 空图)",
-    (imgPart?.image_url?.url?.length ?? 0) > 10_000,
-    `len=${imgPart?.image_url?.url?.length ?? 0}`,
+    (imgPart?.image_url?.url?.length ?? 0) > 10_000, "截图真实非空(data URL 超 10KB,排除 1px 空图)", 
+    `len=${imgPart?.image_url?.url?.length ?? 0}`, 
   );
 
   // 落库:消息行只有元数据,字节进 images store
@@ -271,14 +242,12 @@ await ask(sidepanel, "看看这个页面长什么样");
     .map((r) => r.msg)
     .find((m) => m.role === "user" && typeof m.content === "string" && m.content.startsWith("[System note:"));
   check(
-    "落库消息行只有图片元数据无字节",
-    shotUserMsg?.images?.length === 1 && shotUserMsg.images[0].bytes === undefined,
-    JSON.stringify(shotUserMsg?.images)?.slice(0, 100),
+    shotUserMsg?.images?.length === 1 && shotUserMsg.images[0].bytes === undefined, "落库消息行只有图片元数据无字节", 
+    JSON.stringify(shotUserMsg?.images)?.slice(0, 100), 
   );
   check(
-    "images store 有截图字节(jpeg)",
-    snap.images.length === 1 && snap.images[0].byteLen > 10_000 && snap.images[0].mime === "image/jpeg",
-    `n=${snap.images.length} len=${snap.images[0]?.byteLen}`,
+    snap.images.length === 1 && snap.images[0].byteLen > 10_000 && snap.images[0].mime === "image/jpeg", "images store 有截图字节(jpeg)", 
+    `n=${snap.images.length} len=${snap.images[0]?.byteLen}`, 
   );
 
   // 注记行的投影:全量落盘的伪 user 消息必须标 synthetic,面板据此不作
@@ -301,35 +270,18 @@ await ask(sidepanel, "看看这个页面长什么样");
         rq.onerror = () => reject(rq.error);
       }),
   );
-  const records = await sidepanel.evaluate(
-    (sessionId) =>
-      new Promise((resolve, reject) => {
-        const port = chrome.runtime.connect({ name: "agent-port" });
-        const timer = setTimeout(() => reject(new Error("history 超时")), 10000);
-        port.onMessage.addListener((msg) => {
-          if (msg.type === "history") {
-            clearTimeout(timer);
-            port.disconnect();
-            resolve(msg.messages);
-          }
-        });
-        port.postMessage({ type: "load_history", sessionId });
-      }),
-    sessionId,
-  );
+  const records = await loadHistoryViaPort(sidepanel, sessionId);
   const noteRecord = records.find(
     (r) => r.role === "user" && r.content.startsWith("[System note:"),
   );
   check(
-    "注记行仍在历史投影中(落盘全量)且标 synthetic 带图",
     !!noteRecord &&
       noteRecord.synthetic === true &&
-      (noteRecord.images?.length ?? 0) === 1,
-    JSON.stringify(noteRecord)?.slice(0, 140),
+      (noteRecord.images?.length ?? 0) === 1, "注记行仍在历史投影中(落盘全量)且标 synthetic 带图", 
+    JSON.stringify(noteRecord)?.slice(0, 140), 
   );
   check(
-    "真实用户行不带 synthetic 标",
-    records.some((r) => r.role === "user" && r.synthetic === undefined),
+    records.some((r) => r.role === "user" && r.synthetic === undefined), "真实用户行不带 synthetic 标", 
   );
 
   // 回放 UI:重开面板(本地态清空)→ 历史切回该会话,注记文本不得以
@@ -345,15 +297,13 @@ await ask(sidepanel, "看看这个页面长什么样");
     .click();
   await sleep(600);
   check(
-    "回放不渲染注记文本(伪 user 不作真用户气泡)",
-    (await sidepanel.getByText("[System note:").count()) === 0,
+    (await sidepanel.getByText("[System note:").count()) === 0, "回放不渲染注记文本(伪 user 不作真用户气泡)", 
   );
   check(
-    "回放不渲染注入的截图附件(实况/回放对齐,附件只进模型管线)",
     (await sidepanel.getByText("看看这个页面长什么样").count()) >= 1 &&
       (await sidepanel
         .locator(`img[alt^="${zh.chat.imageAlt.split("{")[0]}"]`)
-        .count()) === 0,
+        .count()) === 0, "回放不渲染注入的截图附件(实况/回放对齐,附件只进模型管线)", 
   );
 }
 
@@ -366,13 +316,11 @@ await ask(sidepanel, "换个问法");
 {
   const names = (lastRequest?.tools ?? []).map((t) => t.function?.name);
   check(
-    "wire 的 tools 不含 page_screenshot",
-    !names.includes("page_screenshot"),
-    names.join(","),
+    !names.includes("page_screenshot"), "wire 的 tools 不含 page_screenshot", 
+    names.join(","), 
   );
   check(
-    "非视觉门控不影响其它工具(page_read/scroll_page 仍在)",
-    names.includes("page_read") && names.includes("scroll_page"),
+    names.includes("page_read") && names.includes("scroll_page"), "非视觉门控不影响其它工具(page_read/scroll_page 仍在)", 
   );
 }
 
@@ -392,9 +340,8 @@ console.log("\nSS4 截图目标对齐(激活目标 → 截图 → 恢复活动)"
       }),
   );
   check(
-    "诱饵页是当前活动 tab(且不同于截图目标)",
-    decoyTabId > 0 && decoyTabId !== targetTabId,
-    `decoy=${decoyTabId} target=${targetTabId}`,
+    decoyTabId > 0 && decoyTabId !== targetTabId, "诱饵页是当前活动 tab(且不同于截图目标)", 
+    `decoy=${decoyTabId} target=${targetTabId}`, 
   );
 
   // mock 的调用推进按「全会话累计 assistant tool_calls」计数(SS1 已消耗 3 次),
@@ -416,7 +363,7 @@ console.log("\nSS4 截图目标对齐(激活目标 → 截图 → 恢复活动)"
         );
       }),
   );
-  check("截图后活动 tab 恢复为用户所在页", activeNow === decoyTabId, `active=${activeNow}`);
+  check(activeNow === decoyTabId, "截图后活动 tab 恢复为用户所在页",  `active=${activeNow}`);
 
   // 像素断言:逐张检查 images store 的截图中心像素,任何一张都不该是诱饵蓝
   // (回归前误抓活动 tab → 必有纯蓝帧)。IDB getAll 按主键序返回、与写入
@@ -465,13 +412,12 @@ console.log("\nSS4 截图目标对齐(激活目标 → 截图 → 恢复活动)"
   );
   const isDecoyBlue = (p) => p.b > 180 && p.r < 120 && p.g < 120;
   check(
-    "截图像素来自目标页(无诱饵蓝帧)",
-    pixels.length >= 2 && pixels.every((p) => !isDecoyBlue(p)),
-    JSON.stringify(pixels),
+    pixels.length >= 2 && pixels.every((p) => !isDecoyBlue(p)), "截图像素来自目标页(无诱饵蓝帧)", 
+    JSON.stringify(pixels), 
   );
   await decoy.close();
 }
 
-console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
+console.log(`\n结果: ${check.failures.length} 条断言失败`);
 await browser.close();
-process.exit(failed > 0 ? 1 : 0);
+process.exit(check.failures.length > 0 ? 1 : 0);

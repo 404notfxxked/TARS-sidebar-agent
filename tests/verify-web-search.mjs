@@ -23,7 +23,7 @@
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { ask, injectTestConfig, launchWithCdp, makeChecker, sse, waitForRunLog } from "./lib-cdp-mock.mjs";
+import { ask, bodyText, injectTestConfig, launchWithCdp, makeChecker, openPanel, waitForRunLog, answerSSE, toolCallSSE } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -104,22 +104,8 @@ mock.setRoutes([
         .map((t) => t.function?.name);
 
       const lastToolMsg = [...messages.slice(lastUserIdx + 1)].reverse().find((m) => m.role === "tool");
-      const answer = (text) =>
-        ctx.fulfill({
-          headers: { "Content-Type": "text/event-stream" },
-          body: sse(
-            { choices: [{ delta: { content: text } }] },
-            { choices: [{ delta: {}, finish_reason: "stop" }] },
-          ),
-        });
-      const toolCall = (name, args) =>
-        ctx.fulfill({
-          headers: { "Content-Type": "text/event-stream" },
-          body: sse(
-            { choices: [{ delta: { tool_calls: [{ index: 0, id: `call-${Date.now()}`, function: { name, arguments: JSON.stringify(args) } }] } }] },
-            { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
-          ),
-        });
+      const answer = (text) => answerSSE(ctx, text);
+      const toolCall = (name, args) => toolCallSSE(ctx, name, args);
 
       if (done.length >= chain.length) {
         budgetMarkerSeen = (body.messages ?? []).some(
@@ -274,15 +260,8 @@ mock.setRoutes([
 console.log("✅ mock 路由已注册");
 
 // ---- 面板 + 配置 ----
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
-await injectTestConfig(sidepanel);
-console.log("🔑 已注入假 Key");
-await sidepanel.reload();
-await new Promise((r) => setTimeout(r, 1500));
+const sidepanel = await openPanel(browser, extId, { configure: injectTestConfig });
 
-const uiText = () => sidepanel.evaluate(() => document.body.innerText);
 const check = makeChecker();
 async function toolLogs(name) {
   const logs = await waitForRunLog(sidepanel,
@@ -370,7 +349,7 @@ searchArgs = { query: SEARCH_QUERY };
   );
   // A0-3(断言请求带 Accept-Language 头)已随 SW fetch 通道移除:tab 通道
   // 的请求头是浏览器原生的,Accept-Language 恒在,无断言价值。
-  const text = await uiText();
+  const text = await bodyText(sidepanel);
   check(text.includes("SEARCH_OK:DDG React 19 发布说明"),
     "A0-4 fixture 结果解析回填(uddg 跳转已还原)", text.slice(-300));
 }
@@ -386,8 +365,8 @@ scrapeMode.ddg = "captcha";
   check(!!switched && (switched.data ?? "").includes("bot-check"), "A0b-1 ddg 风控页被识别并切换", switched?.data);
   const done = logs.find((e) => e.msg.includes("web_search 完成"));
   check((done?.data ?? "").includes('"engine":"bing"'), "A0b-2 兜底引擎=bing", done?.data);
-  check((await uiText()).includes("SEARCH_OK:React v19 发布说明"),
-    "A0b-3 bing 结果回填(/ck/a 点击包装还原)", (await uiText()).slice(-300));
+  check((await bodyText(sidepanel)).includes("SEARCH_OK:React v19 发布说明"),
+    "A0b-3 bing 结果回填(/ck/a 点击包装还原)", (await bodyText(sidepanel)).slice(-300));
 }
 
 // ---- 场景 A0c:风控冷却(ddg 已因风控页进冷却)----
@@ -438,7 +417,7 @@ searchArgs = { query: SEARCH_QUERY, max_results: 3, recency: "week" };
   const body = JSON.parse(lastSearch.postData ?? "{}");
   check(body.query === SEARCH_QUERY && body.max_results === 3 && body.time_range === "week",
     "A3 query/max_results/time_range 映射正确", lastSearch.postData);
-  const text = await uiText();
+  const text = await bodyText(sidepanel);
   check(text.includes(`SEARCH_OK:${TAVILY_OK.results[0].title}`),
     "A4 结果回填模型,终答引用标题", text.slice(-300));
 }
@@ -457,7 +436,7 @@ await setSearchCfg({ provider: "bocha", apiKey: "bocha-test" });
   const body = JSON.parse(lastSearch.postData ?? "{}");
   check(body.count === 2 && body.summary === true && body.freshness === undefined,
     "B3 count/summary 映射正确(无 recency 时无 freshness)", lastSearch.postData);
-  const text = await uiText();
+  const text = await bodyText(sidepanel);
   check(text.includes("SEARCH_OK:博查搜索结果一"),
     "B4 webPages.value 解析(summary 优先于 snippet)", text.slice(-300));
 }
@@ -479,7 +458,7 @@ console.log("\n===== C. Brave 端到端(mock)=====");
     check(u.searchParams.get("freshness") === "pd", "C4 recency=day → freshness=pd", u.href);
     check(u.searchParams.get("search_lang") === "ja" && u.searchParams.get("country") === "jp",
       "C5 market=ja-JP → search_lang/country(小写)", u.href);
-    const text = await uiText();
+    const text = await bodyText(sidepanel);
     check(text.includes("SEARCH_OK:Brave Result One"), "C6 web.results 解析", text.slice(-300));
     // 中文市场:Brave 不接受 "zh",必须是 zh-hans
     searchArgs = { query: SEARCH_QUERY, market: "zh-CN" };
@@ -505,7 +484,7 @@ chain = ["web_search"];
     (e) => e.tag === "tool" && e.msg.includes("web_search 失败"), "web_search 失败日志");
   const err = errLogs.find((e) => e.tag === "tool");
   check((err?.data ?? "").includes("HTTP 429"), "D1 429 被识别并进入观察", err?.data);
-  check((await uiText()).includes("ERR_OK"), "D2 agent 未被打断,仍给出收尾回答", (await uiText()).slice(-300));
+  check((await bodyText(sidepanel)).includes("ERR_OK"), "D2 agent 未被打断,仍给出收尾回答", (await bodyText(sidepanel)).slice(-300));
 
   // 冷却生效:下一次直接报冷却错误,不再发请求(hits 不增长)
   const hitsBefore = searchHits.count;
@@ -566,7 +545,7 @@ chain = ["web_fetch", "web_fetch"];
   check(!firstData.includes("MARKER-MIDDLE-99"), "E2 第一窗不含中段标记(未越窗)");
   const secondData = unesc(fetchDone[1].data);
   check(secondData.includes("MARKER-MIDDLE-99"), "E3 第二窗按 offset 读到中段标记", secondData.slice(0, 200));
-  const text = await uiText();
+  const text = await bodyText(sidepanel);
   check(text.includes("FETCH_OK:GLM 侧栏使用手册"), "E4 终答引用网页标题", text.slice(-300));
   // 来源域白名单:URL 出自用户消息 → 命中 → 全程不弹确认卡(两跳都直抓)
   check(
@@ -618,7 +597,7 @@ chain = ["web_fetch"];
     !logs.some((e) => e.msg.includes("web_fetch 完成")),
     "R3 正文未读取(无完成日志,内网标记不可能进上下文)",
   );
-  const text = await uiText();
+  const text = await bodyText(sidepanel);
   check(text.includes("FETCH_OK"), "R4 run 正常收口(拒绝是转告不是崩溃)", text.slice(-200));
 }
 
@@ -633,7 +612,7 @@ chain = ["web_fetch", "web_fetch", "web_fetch", "web_fetch"];
     (e) => e.tag === "agent" && e.msg.includes("工具结果超出预算"), "预算截断日志");
   check(!!logs.find((e) => e.msg.includes("工具结果超出预算")), "J1 run 内触发预算截断");
   check(budgetMarkerSeen, "J2 截断标记已进入发给模型的请求(旧结果被替换为省略标记)");
-  const text = await uiText();
+  const text = await bodyText(sidepanel);
   check(text.includes("FETCH_OK:GLM 侧栏使用手册"), "J3 最新结果未被截断,终答正常引用", text.slice(-200));
 }
 
@@ -648,7 +627,7 @@ chain = [];
     "G1 关闭后请求不含 web_* 工具", JSON.stringify(lastToolNames));
   check(lastToolNames.includes("page_read"), "G2 页面工具保留", JSON.stringify(lastToolNames));
   check(lastSystemPrompt.includes("Web search is disabled in this session"), "G3 系统提示声明联网已关闭", lastSystemPrompt.slice(-120));
-  check((await uiText()).includes("EMPTY_OK"), "G4 agent 正常回答", (await uiText()).slice(-200));
+  check((await bodyText(sidepanel)).includes("EMPTY_OK"), "G4 agent 正常回答", (await bodyText(sidepanel)).slice(-200));
 
   await sidepanel.evaluate(() => chrome.storage.local.set({ webSearch: true }));
   chain = ["web_search"];

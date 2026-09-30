@@ -5,7 +5,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { answerSSE, idbGetAll, injectTestConfig, launchWithCdp, makeChecker, runAskViaPort, sse } from "./lib-cdp-mock.mjs";
+import { answerSSE, idbGetAll, injectTestConfig, launchWithCdp, loadHistoryViaPort, makeChecker, openPanel, runAskViaPort, sse } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -99,12 +99,7 @@ mock.setRoutes([
 ]);
 console.log("✅ CDP Fetch 拦截已就绪");
 
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
-await injectTestConfig(sidepanel);
-await sidepanel.reload();
-await new Promise((r) => setTimeout(r, 1500));
+const sidepanel = await openPanel(browser, extId, { configure: injectTestConfig });
 
 let seq = 0;
 const askRaw = (text) => runAskViaPort(sidepanel, `s-llm-${++seq}`, text);
@@ -127,22 +122,7 @@ try {
       "失败轮错误行已落库(error 标 + 401 文本)",
       JSON.stringify(errRow)?.slice(0, 140),
     );
-    const records = await sidepanel.evaluate(
-      (sessionId) =>
-        new Promise((resolve, reject) => {
-          const port = chrome.runtime.connect({ name: "agent-port" });
-          const timer = setTimeout(() => reject(new Error("history 超时")), 10000);
-          port.onMessage.addListener((msg) => {
-            if (msg.type === "history") {
-              clearTimeout(timer);
-              port.disconnect();
-              resolve(msg.messages);
-            }
-          });
-          port.postMessage({ type: "load_history", sessionId });
-        }),
-      "s-llm-1",
-    );
+    const records = await loadHistoryViaPort(sidepanel, "s-llm-1");
     check(
       records.some((r) => r.role === "assistant" && r.error === true),
       "历史投影错误行带 error 标(回放渲染错误气泡)",

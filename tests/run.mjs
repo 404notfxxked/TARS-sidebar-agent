@@ -162,4 +162,11 @@ console.log(
     ? `\n✅ ${results.length} 套全 PASS`
     : `\n❌ ${failed}/${results.length} 套 FAIL`,
 );
+// 全绿收尾顺手清扫本批的 /tmp profile(此时全部套件进程已退出,无活跃
+// profile;红跑不清,保留现场排查)。profile 是各套件 launch 时 Date.now()
+// 命名的一次性目录,launch 前已有同前缀清扫,这里管批跑的整体收尾。
+if (failed === 0) {
+  const { sweepAllStaleProfiles } = await import("./lib-cdp-mock.mjs");
+  sweepAllStaleProfiles();
+}
 process.exit(failed === 0 ? 0 : 1);

@@ -14,6 +14,7 @@ import { fileURLToPath } from "url";
 import {
   launchWithCdp,
   injectTestConfig,
+  openPanel,
   readLogs,
   sse,
 } from "./lib-cdp-mock.mjs";
@@ -46,13 +47,7 @@ mock.setRoutes([
 console.log("✅ CDP Fetch 拦截已就绪(轮询挂载扩展全部上下文 target)");
 
 // 面板 + 配置
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
-await injectTestConfig(sidepanel);
-console.log("🔑 已注入假 Key");
-await sidepanel.reload();
-await new Promise((r) => setTimeout(r, 1500));
+const sidepanel = await openPanel(browser, extId, { configure: injectTestConfig });
 
 // 发送 → 等停止按钮出现 → 点停止
 const since = Date.now() - 500;

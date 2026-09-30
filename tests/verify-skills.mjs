@@ -15,13 +15,12 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { injectTestConfig, launchWithCdp, makeChecker, runAskViaPort, sse, waitForRunLog } from "./lib-cdp-mock.mjs";
+import { bodyText, idbGetAll, injectTestConfig, launchWithCdp, loadHistoryViaPort, makeChecker, openPanel, runAskViaPort, sleep, sse, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
 const USER_DATA_DIR = `/tmp/verify-skills-${Date.now()}`;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SKILL_V1 = [
   "---",
@@ -79,57 +78,21 @@ mock.setRoutes([
 ]);
 console.log("✅ mock 路由已注册");
 
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
+const sidepanel = await openPanel(browser, extId);
 
 const check = makeChecker();
-const uiText = () => sidepanel.locator("body").innerText();
 const chatInput = () => sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
 
 await injectTestConfig(sidepanel);
 
 /** 直写/读取 skills store(断言落库用) */
-const readSkills = () =>
-  sidepanel.evaluate(
-    () =>
-      new Promise((done, fail) => {
-        const req = indexedDB.open("tars");
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("skills", "readonly");
-          const q = tx.objectStore("skills").getAll();
-          q.onsuccess = () => {
-            db.close();
-            done(q.result);
-          };
-          q.onerror = () => fail(q.error);
-        };
-        req.onerror = () => fail(req.error);
-      }),
-  );
+const readSkills = () => idbGetAll(sidepanel, "skills");
 
 /** 裸 port 跑一次 run(不经 UI) */
 const runAsk = (sessionId, text) => runAskViaPort(sidepanel, sessionId, text);
 
 /** 裸 port 拉历史投影(LOAD_HISTORY → ChatRecord[]) */
-const loadHistory = (sessionId) =>
-  sidepanel.evaluate(
-    (sessionId) =>
-      new Promise((resolve, reject) => {
-        const port = chrome.runtime.connect({ name: "agent-port" });
-        const timer = setTimeout(() => reject(new Error("history 超时")), 10000);
-        port.onMessage.addListener((msg) => {
-          if (msg.type === "history") {
-            clearTimeout(timer);
-            port.disconnect();
-            resolve(msg.messages);
-          }
-        });
-        port.postMessage({ type: "load_history", sessionId });
-      }),
-    sessionId,
-  );
+const loadHistory = (sessionId) => loadHistoryViaPort(sidepanel, sessionId);
 
 /** mock 记录的请求里最后一条 user 消息 */
 const lastUserMsg = () => {
@@ -186,7 +149,7 @@ console.log("\n===== T1. 技能页:安装(粘贴)=====");
   await sidepanel.getByRole("button", { name: zh.skills.save, exact: true }).click();
   await sidepanel.locator(".field-hint.text-error").waitFor({ timeout: 5000 });
   check(
-    (await uiText()).includes("frontmatter"),
+    (await bodyText(sidepanel)).includes("frontmatter"),
     "T1-1 无效文本保存报错(缺 frontmatter)",
   );
   check((await readSkills()).length === 0, "T1-2 无效文本未落库");
@@ -255,7 +218,7 @@ console.log("\n===== T2. / 菜单与 <skill> 注入 =====");
   await chatInput().fill("/zzz");
   await sidepanel.locator(".skill-pop-note").waitFor({ timeout: 3000 });
   check(
-    (await uiText()).includes(zh.skills.menuNoMatch.replace("{query}", "zzz")),
+    (await bodyText(sidepanel)).includes(zh.skills.menuNoMatch.replace("{query}", "zzz")),
     "T2-3 无匹配提示",
   );
 
@@ -332,7 +295,7 @@ console.log("\n===== T4. 停用技能 =====");
   await sidepanel.locator(".skill-pop-note").waitFor({ timeout: 5000 });
   check(
     (await sidepanel.locator('[role="option"]').count()) === 0 &&
-      (await uiText()).includes(zh.skills.menuEmpty),
+      (await bodyText(sidepanel)).includes(zh.skills.menuEmpty),
     "T4-2 菜单无启用技能时展示空态引导",
   );
   await chatInput().fill("");

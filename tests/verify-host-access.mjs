@@ -21,6 +21,7 @@ import {
   injectTestConfig,
   launchWithCdp,
   makeChecker,
+  openPanel,
   runAskViaPort,
   sse,
 } from "./lib-cdp-mock.mjs";
@@ -29,7 +30,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
 
 const check = makeChecker();
-const assert = (name, cond, detail = "") => check(cond, `  ${name}`, detail);
 
 // 目标页:一个可被 find_elements 观察的普通页面
 const PAGE_HTML = `<html><head><meta charset="utf-8"></head>
@@ -111,11 +111,7 @@ function registerRoutes(mock) {
 /** 开面板 → 注入配置 → 打开目标页(target 最后开 = 活动 tab,
  *  find_elements 的 tabId 解析由此落点) */
 async function startPanel(browser, extId) {
-  const panel = await browser.newPage();
-  await panel.goto(`chrome-extension://${extId}/sidepanel.html`);
-  await injectTestConfig(panel);
-  await panel.reload();
-  await new Promise((r) => setTimeout(r, 800));
+  const panel = await openPanel(browser, extId, { configure: injectTestConfig });
   const target = await browser.newPage();
   await target.goto("https://mock.test/hello", { waitUntil: "load" });
   await new Promise((r) => setTimeout(r, 300));
@@ -145,28 +141,26 @@ try {
 
     mode = "find";
     const done1 = await runAskViaPort(panel, "ha1", "看看这个页面上有什么");
-    assert("拒绝路径 run 正常收口(agent_done)", done1.type === "agent_done", done1.type);
+    check(done1.type === "agent_done", "拒绝路径 run 正常收口(agent_done)",  done1.type);
     const hint1 = lastToolContent();
-    assert(
-      "find_elements 被权限门拦下,指引含目标 origin 与安全页入口",
+    check(
       hint1.includes("尚未获得") &&
         hint1.includes("的站点访问授权") &&
-        hint1.includes("设置 → 安全"), // i18n-ok SW 侧面向模型的文案,不经字典(硬规则 16)
-      hint1.slice(0, 220),
+        hint1.includes("设置 → 安全"), "find_elements 被权限门拦下,指引含目标 origin 与安全页入口",  // i18n-ok SW 侧面向模型的文案, 不经字典(硬规则 16)
+      hint1.slice(0, 220), 
     );
 
     mode = "fetch";
     // 消息带显式 URL:命中来源域白名单,不被确认门拦(否则 fresh 会话
     // 白名单为空,先弹确认卡挂满 120s)—— 由此直达 web_fetch 的授权门
     const done2 = await runAskViaPort(panel, "ha2", "读一下 https://mock.test/hello");
-    assert("web_fetch 拒绝路径 run 正常收口", done2.type === "agent_done", done2.type);
+    check(done2.type === "agent_done", "web_fetch 拒绝路径 run 正常收口",  done2.type);
     const hint2 = lastToolContent();
-    assert(
-      "web_fetch 未授权指引明确(域 + 安全页入口)",
+    check(
       hint2.includes("web_fetch 需要访问") &&
         hint2.includes("的授权") &&
-        hint2.includes("设置 → 安全"), // i18n-ok SW 侧面向模型的文案,不经字典(硬规则 16)
-      hint2.slice(0, 220),
+        hint2.includes("设置 → 安全"), "web_fetch 未授权指引明确(域 + 安全页入口)",  // i18n-ok SW 侧面向模型的文案, 不经字典(硬规则 16)
+      hint2.slice(0, 220), 
     );
   } finally {
     await zero.browser.close();
@@ -186,12 +180,11 @@ try {
     const panel = await startPanel(dyn.browser, dyn.extId);
     mode = "find";
     const done3 = await runAskViaPort(panel, "ha3", "看看这个页面上有什么");
-    assert("生产注入路径 run 正常收口", done3.type === "agent_done", done3.type);
+    check(done3.type === "agent_done", "生产注入路径 run 正常收口",  done3.type);
     const result3 = lastToolContent();
-    assert(
-      "find_elements 经按需注入真实执行(元素文本来自目标页)",
-      result3.includes("Go Button") || result3.includes("开始按钮"),
-      result3.slice(0, 220),
+    check(
+      result3.includes("Go Button") || result3.includes("开始按钮"), "find_elements 经按需注入真实执行(元素文本来自目标页)", 
+      result3.slice(0, 220), 
     );
   } finally {
     await dyn.browser.close();

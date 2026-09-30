@@ -1,16 +1,15 @@
 // 语言切换留档:设置页外观分节把面板切成 English,验证整树文案跟随、
 // 返回对话与重载后语言保持。用法: pnpm build && node tests/probe-locale.mjs
-import { zh, en, escapeRegExp } from "./lib-i18n.mjs";
+import { zh, en, greetRe } from "./lib-i18n.mjs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { mkdirSync, rmSync } from "fs";
-import { launchWithCdp } from "./lib-cdp-mock.mjs";
+import { launchWithCdp, openPanel, sleep } from "./lib-cdp-mock.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
 const USER_DATA_DIR = "/tmp/probe-locale-profile";
 const OUT = "/tmp/tars-locale";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 持久 profile 会带上一次运行的语言偏好,先清掉
 rmSync(USER_DATA_DIR, { recursive: true, force: true });
@@ -20,21 +19,10 @@ const { browser, extId } = await launchWithCdp({
   extDir: EXT_DIR,
   userDataDir: USER_DATA_DIR,
 });
-const page = await browser.newPage({ deviceScaleFactor: 2 });
+const page = await openPanel(browser, extId, { deviceScaleFactor: 2 });
 await page.setViewportSize({ width: 420, height: 740 });
-await page.goto(`chrome-extension://${extId}/sidepanel.html`);
-await sleep(600);
 
-// 空态标题按时段定档(早/中/下午/晚/深夜 5 档),断言「任一档可见」;
-// 键位语义化后从字典显式取值,文案改动断言自动跟随
-const greetRe = (dict) =>
-  new RegExp(
-    "^(?:" +
-      ["greetMorning", "greetNoon", "greetAfternoon", "greetEvening", "greetLateNight"]
-        .map((k) => escapeRegExp(dict.chat[k]))
-        .join("|") +
-      ")$",
-  );
+// 空态标题按时段定档,断言「任一档可见」;正则构造在 lib-i18n 统一维护
 const EN_GREET_RE = greetRe(en);
 const ZH_GREET_RE = greetRe(zh);
 

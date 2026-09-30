@@ -37,3 +37,15 @@ export const en = await loadLocale("en-US.ts");
 export function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/** 空态标题按时段定档(早/中/下午/晚/深夜 5 档),断言「任一档可见」。
+ *  e2e 共用:verify-persist / probe-locale 曾各自手抄一份 */
+export function greetRe(dict) {
+  return new RegExp(
+    "^(?:" +
+      ["greetMorning", "greetNoon", "greetAfternoon", "greetEvening", "greetLateNight"]
+        .map((k) => escapeRegExp(dict.chat[k]))
+        .join("|") +
+      ")$",
+  );
+}

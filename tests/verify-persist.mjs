@@ -11,7 +11,7 @@
 //
 // 断言手段:UI 文本可见性 + 直接读扩展 origin 的 IndexedDB(测试特权,业务代码不这么干)
 
-import { zh, escapeRegExp } from "./lib-i18n.mjs";
+import { zh, greetRe } from "./lib-i18n.mjs";
 import { rmSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -19,6 +19,9 @@ import {
   launchWithCdp,
   injectTestConfig,
   ask,
+  makeChecker,
+  openPanel,
+  sleep,
   sse,
 } from "./lib-cdp-mock.mjs";
 
@@ -27,30 +30,12 @@ const EXT_DIR = resolve(__dirname, "..", "dist");
 const USER_DATA_DIR = `/tmp/verify-persist-profile`;
 const DAY = 24 * 3600 * 1000;
 
-// 空态标题按时段定档(早/中/下午/晚/深夜 5 档),断言「任一档可见」;
-// 键位语义化后从字典显式取值,文案改动断言自动跟随
-const EMPTY_GREET_RE = new RegExp(
-  "^(?:" +
-    ["greetMorning", "greetNoon", "greetAfternoon", "greetEvening", "greetLateNight"]
-      .map((k) => escapeRegExp(zh.chat[k]))
-      .join("|") +
-    ")$",
-);
+// 空态标题按时段定档(早/中/下午/晚/深夜 5 档),断言「任一档可见」
+const EMPTY_GREET_RE = greetRe(zh);
 
 rmSync(USER_DATA_DIR, { recursive: true, force: true });
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let passed = 0;
-let failed = 0;
-function check(name, cond, detail = "") {
-  if (cond) {
-    passed++;
-    console.log(`  ✅ ${name}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${name} ${detail}`);
-  }
-}
+const check = makeChecker();
 
 /** 直接读扩展 origin 的 IDB(面板页上下文):会话行 + 消息总数 */
 async function idbSnapshot(page) {
@@ -168,12 +153,6 @@ async function restartSW(cdpSend, extId) {
   await sleep(600);
 }
 
-const openPanel = async (browser, extId) => {
-  const page = await browser.newPage();
-  await page.goto(`chrome-extension://${extId}/sidepanel.html`);
-  return page;
-};
-
 const openSessionsView = async (page) => {
   await page.locator(`button[aria-label="${zh.chat.openSessions}"]`).click();
   await page.locator(`h2:has-text("${zh.sessions.title}")`).waitFor({ timeout: 5000 });
@@ -210,10 +189,7 @@ mock.setRoutes([
   },
 ]);
 
-let sidepanel = await openPanel(browser, extId);
-await injectTestConfig(sidepanel);
-await sidepanel.reload();
-await sleep(500);
+let sidepanel = await openPanel(browser, extId, { configure: injectTestConfig });
 
 // ---- S0 迁移 ----
 console.log("\nS0 旧数据迁移(storage.session → IDB)");
@@ -233,10 +209,10 @@ await openSessionsView(sidepanel);
 // 等待 + 对捕获值断言(硬规则 2:参数序 check(name, cond),条件必须真)
 const migratedTitle = sidepanel.getByText("旧会话迁移测试").first();
 await migratedTitle.waitFor({ timeout: 10000 }).catch(() => {});
-check("旧会话出现在历史列表", (await migratedTitle.count()) > 0);
+check((await migratedTitle.count()) > 0, "旧会话出现在历史列表");
 {
   const snap = await idbSnapshot(sidepanel);
-  check("迁移后 IDB 有 1 会话 2 消息", snap.rows.length === 1 && snap.msgTotal === 2,
+  check(snap.rows.length === 1 && snap.msgTotal === 2, "迁移后 IDB 有 1 会话 2 消息", 
     JSON.stringify(snap.rows.map((r) => r.title)));
 }
 await sidepanel.locator(`button[aria-label="${zh.common.backToChat}"]`).click();
@@ -251,7 +227,7 @@ const emptyVisible = await sidepanel
   .waitFor({ timeout: 3000 })
   .then(() => true)
   .catch(() => false);
-check("新对话后面板为空态(打开即新会话)", emptyVisible);
+check(emptyVisible, "新对话后面板为空态(打开即新会话)");
 await ask(sidepanel, "第二条测试消息");
 await openSessionsView(sidepanel);
 await sleep(300);
@@ -259,17 +235,15 @@ await sleep(300);
   const snap = await idbSnapshot(sidepanel);
   const titles = snap.rows.map((r) => r.title).sort();
   check(
-    "IDB 有 3 会话 6 消息",
-    snap.rows.length === 3 && snap.msgTotal === 6,
-    JSON.stringify({ titles, total: snap.msgTotal }),
+    snap.rows.length === 3 && snap.msgTotal === 6, "IDB 有 3 会话 6 消息", 
+    JSON.stringify({ titles, total: snap.msgTotal }), 
   );
-  check("会话标题取自首条用户消息",
-    titles.includes("第一条测试消息") && titles.includes("第二条测试消息"),
+  check(titles.includes("第一条测试消息") && titles.includes("第二条测试消息"), "会话标题取自首条用户消息", 
     JSON.stringify(titles));
   const hasEmpty = snap.rows.some(
     (r) => r.msgCount === 0 || !r.title,
   );
-  check("没有空会话记录(懒创建)", !hasEmpty);
+  check(!hasEmpty, "没有空会话记录(懒创建)");
 }
 
 // ---- S2 删除单条 ----
@@ -279,7 +253,7 @@ console.log("\nS2 删除单个会话");
   const snap = await idbSnapshot(sidepanel);
   const legacy = snap.rows.find((r) => r.title.startsWith("旧会话迁移测试"));
   await seedImages(sidepanel, legacy.id, ["img-legacy-1", "img-legacy-2"]);
-  check("删除前 images store 有 2 行", (await imageSnapshot(sidepanel)).length === 2);
+  check((await imageSnapshot(sidepanel)).length === 2, "删除前 images store 有 2 行");
 
   const row = sidepanel.locator("li", { hasText: "旧会话迁移测试" });
   await row
@@ -288,11 +262,11 @@ console.log("\nS2 删除单个会话");
   await row.locator(`button:has-text("${zh.common.confirmDelete}")`).click();
   await sleep(600);
   const gone = (await row.count()) === 0;
-  check("列表行已消失", gone);
+  check(gone, "列表行已消失");
   const after = await idbSnapshot(sidepanel);
-  check("IDB 剩 2 会话 4 消息", after.rows.length === 2 && after.msgTotal === 4,
+  check(after.rows.length === 2 && after.msgTotal === 4, "IDB 剩 2 会话 4 消息", 
     JSON.stringify({ n: after.rows.length, total: after.msgTotal }));
-  check("图片字节随会话级联删除(键序回归)", (await imageSnapshot(sidepanel)).length === 0);
+  check((await imageSnapshot(sidepanel)).length === 0, "图片字节随会话级联删除(键序回归)");
 }
 await sidepanel.locator(`button[aria-label="${zh.common.backToChat}"]`).click();
 
@@ -310,17 +284,16 @@ sidepanel = await openPanel(browser, extId);
     .waitFor({ timeout: 5000 })
     .then(() => true)
     .catch(() => false);
-  check("重启后打开仍是空态(不自动恢复)", emptyVisible);
+  check(emptyVisible, "重启后打开仍是空态(不自动恢复)");
 }
 await openSessionsView(sidepanel);
 await sleep(300);
 {
   const titles = await sidepanel.locator("li").allInnerTexts();
   check(
-    "重启后列表剩 2 个会话",
     titles.some((t) => t.includes("第一条测试消息")) &&
-      titles.some((t) => t.includes("第二条测试消息")),
-    JSON.stringify(titles),
+      titles.some((t) => t.includes("第二条测试消息")), "重启后列表剩 2 个会话", 
+    JSON.stringify(titles), 
   );
 }
 // 切回旧会话,消息回放
@@ -329,14 +302,12 @@ await sleep(800);
 {
   const text = await sidepanel.evaluate(() => document.body.innerText);
   check(
-    "切回后消息回放(用户消息与回复可见)",
-    text.includes("第一条测试消息") && text.includes("收到:第一条测试消息"),
+    text.includes("第一条测试消息") && text.includes("收到:第一条测试消息"), "切回后消息回放(用户消息与回复可见)", 
   );
   // 回归钉子:回显必须是用户输入原文,不得泄漏 wire 层的 context 包裹
   check(
-    "用户气泡回显无 context 包裹",
-    !text.includes("<context>") && !text.includes("user-request"),
-    text.slice(0, 200),
+    !text.includes("<context>") && !text.includes("user-request"), "用户气泡回显无 context 包裹", 
+    text.slice(0, 200), 
   );
 }
 
@@ -365,19 +336,17 @@ await sleep(300);
 {
   const titles = await sidepanel.locator("li").allInnerTexts();
   check(
-    "过期会话被清理,活跃会话保留",
     titles.some((t) => t.includes("第二条测试消息")) &&
-      !titles.some((t) => t.includes("第一条测试消息")),
-    JSON.stringify(titles),
+      !titles.some((t) => t.includes("第一条测试消息")), "过期会话被清理,活跃会话保留", 
+    JSON.stringify(titles), 
   );
   const imgs = await imageSnapshot(sidepanel);
   check(
-    "保留期清理级联回收过期会话图片,活跃会话图片保留(键序回归)",
-    imgs.length === 1 && imgs[0] === keptSessionId,
-    JSON.stringify({ imgs, keptSessionId }),
+    imgs.length === 1 && imgs[0] === keptSessionId, "保留期清理级联回收过期会话图片,活跃会话图片保留(键序回归)", 
+    JSON.stringify({ imgs, keptSessionId }), 
   );
 }
 
-console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
+console.log(`\n结果: ${check.failures.length} 条断言失败`);
 await browser.close();
-process.exit(failed > 0 ? 1 : 0);
+process.exit(check.failures.length > 0 ? 1 : 0);

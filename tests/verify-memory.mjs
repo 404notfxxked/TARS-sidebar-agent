@@ -19,7 +19,20 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { idbGet, idbGetAll, launchWithCdp, makeChecker, runAskViaPort, toolCallSSE, answerSSE, waitForRunLog } from "./lib-cdp-mock.mjs";
+import {
+  bodyText,
+  idbGet,
+  idbGetAll,
+  idbMessages,
+  launchWithCdp,
+  makeChecker,
+  openPanel,
+  runAskViaPort,
+  seedProviders,
+  toolCallSSE,
+  answerSSE,
+  waitForRunLog,
+} from "./lib-cdp-mock.mjs";
 import { zh, en } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -110,29 +123,12 @@ mock.setRoutes([
 console.log("✅ mock 路由已注册");
 
 // ---- 面板 + 配置 ----
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
+const sidepanel = await openPanel(browser, extId);
 
 const check = makeChecker();
-const uiText = () => sidepanel.locator("body").innerText();
 
 /** 模型配置(新 providers schema;SW 每次 run 现读) */
-await sidepanel.evaluate(() =>
-  chrome.storage.local.set({
-    providers: [
-      {
-        id: "prov-1",
-        name: "TestProv",
-        baseUrl: "https://api.test.example.com/v1",
-        apiKey: "sk-test",
-        models: [{ id: "gpt-test" }],
-      },
-    ],
-    modelProvider: "prov-1",
-    model: "gpt-test",
-  }),
-);
+await seedProviders(sidepanel, [{ id: "gpt-test" }]);
 
 /** 记忆条目直写 IDB(memories store);可指定 id(replaceOf 断言用),返回行 id */
 async function seedMemory(text, { pinned = false, ageMs = 0, id } = {}) {
@@ -169,29 +165,6 @@ const readMemories = () => idbGetAll(sidepanel, "memories");
 
 /** 读单个会话行(标题回归断言用) */
 const readSession = (sessionId) => idbGet(sidepanel, "sessions", sessionId);
-
-/** 读某会话消息行(虚拟注入断言用) */
-const readRows = (sessionId) =>
-  sidepanel.evaluate(
-    (sessionId) =>
-      new Promise((done, fail) => {
-        const req = indexedDB.open("tars");
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("messages", "readonly");
-          const q = tx
-            .objectStore("messages")
-            .index("bySession")
-            .getAll(IDBKeyRange.only(sessionId));
-          q.onsuccess = () => {
-            db.close();
-            done(q.result);
-          };
-          q.onerror = () => fail(q.error);
-        };
-      }),
-    sessionId,
-  );
 
 /** 裸 port 驱动一次 run(不经 UI):发 USER_MESSAGE,等 agent_done/error。
  *  autoConfirm:记忆工具 2026-09 起过确认门,裸 port 无 UI,自动应答放行;
@@ -277,7 +250,7 @@ await setMemoryFlag(true);
 // ---- T6. 虚拟注入:记忆不进会话历史 ----
 console.log("\n===== T6. 虚拟注入:消息历史无记忆块 =====");
 {
-  const rows = await readRows("s-t2");
+  const rows = await idbMessages(sidepanel, "s-t2");
   const inHistory = rows.some((r) =>
     JSON.stringify(r.msg).includes("user-memory"),
   );
@@ -557,7 +530,7 @@ console.log("\n===== T8. 回复尾轻提示 =====");
   );
   await allowBtn.click();
   await waitForRunLog(sidepanel, (e) => e.msg === "run ended", "run ended");
-  const text = await uiText();
+  const text = await bodyText(sidepanel);
   check(
     text.includes(zh.chat.memorySavedLabel.replace("{n}", "1")),
     "T8-1 保存后渲染轻提示(整条键值填参)",

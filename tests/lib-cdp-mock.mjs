@@ -14,11 +14,13 @@
 // - 路由表:setRoutes([{match(url), handle(ctx)}]),首个 match 生效;
 //   ctx 提供 fulfill({status,headers,body|bodyBase64}) / pass() / delay(ms)。
 //   未匹配的请求一律放行。注意 handler 不返回时请求会一直挂起。
+// - 陈旧 profile 清扫:launchWithCdp 自动 rm 同前缀的 /tmp 数字后缀目录
+//   (套件以 Date.now() 后缀换全新 profile,旧目录无人清理会积压)。
 
 import { chromium } from "playwright";
-import { cpSync, rmSync, readFileSync, existsSync, writeFileSync } from "fs";
+import { cpSync, rmSync, readFileSync, existsSync, writeFileSync, readdirSync } from "fs";
 import { tmpdir } from "os";
-import { resolve } from "path";
+import { basename, dirname, join, resolve } from "path";
 import { createHash } from "crypto";
 import { zh } from "./lib-i18n.mjs";
 
@@ -72,7 +74,45 @@ function prepareTestExtension(extDir, flavor = "granted") {
   return dir;
 }
 
+/**
+ * 清扫同套件前缀的陈旧 profile 目录。套件约定 userDataDir 写成
+ * `/tmp/<套件名>-<Date.now()>`(数字后缀保证每次全新 profile),代价是
+ * 旧目录无人清理——实测 /tmp 下曾积到 300+。launch 前把「同前缀 + 纯
+ * 数字后缀」的兄弟目录 rm 掉:同前缀即同套件,run.mjs 串行约定下不可
+ * 能是另一个活跃运行;固定路径套件(verify-persist 等)自管 rmSync,
+ * 不匹配此模式,不受影响。
+ * 已知局限:改了名/退役的套件,其历史存量不再被扫到(存量已于
+ * 2026-09-29 人工清零,此后只防增量)。
+ */
+function sweepStaleProfiles(userDataDir) {
+  const m =
+    typeof userDataDir === "string"
+      ? userDataDir.match(/^(\/tmp\/(?:verify|probe|real-search-probe)-.+)-\d{13,}$/)
+      : null;
+  if (!m) return;
+  const dir = dirname(m[1]);
+  const prefix = `${basename(m[1])}-`;
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith(prefix) || !/^\d{13,}$/.test(name.slice(prefix.length))) continue;
+    rmSync(join(dir, name), { recursive: true, force: true });
+  }
+}
+
+/**
+ * 批量清扫 /tmp 下全部 e2e 数字后缀 profile(批跑收尾用):run.mjs 在
+ * 全部套件退出且全绿时调用——串行约定下此时不可能有活跃 profile,红跑
+ * 不清,保留现场便于排查。扫字面 /tmp 而非 os.tmpdir():套件的 profile
+ * 约定写死 /tmp(macOS 的 os.tmpdir() 指向 /var/folders,不是同一目录)。
+ */
+export function sweepAllStaleProfiles() {
+  for (const name of readdirSync("/tmp")) {
+    if (!/^(?:verify|probe|real-search-probe)-.+-\d{13,}$/.test(name)) continue;
+    rmSync(join("/tmp", name), { recursive: true, force: true });
+  }
+}
+
 export async function launchWithCdp({ extDir, userDataDir, proxy, flavor = "granted" } = {}) {
+  sweepStaleProfiles(userDataDir);
   extDir = prepareTestExtension(extDir, flavor);
   const args = [
     `--disable-extensions-except=${extDir}`,
@@ -318,6 +358,124 @@ export async function injectTestConfig(page, baseUrl = "https://api.test.example
   );
 }
 
+/** 固定等待的唯一合法来源(套件不再各自定义同一行;check-fixed-waits
+ *  仍按调用点计数,基线只降不升) */
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 打开面板页并等其就绪,收敛各套件手抄的
+ * 「newPage → goto → sleep →(注配置 → reload → sleep)」样板(曾 8 处内联)。
+ * 就绪判据 = 输入框可见(与 ask 同款),事件驱动,替代盲等固定 sleep。
+ * - configure(page):面板就绪后注入配置,随后 reload 使其生效并再等就绪
+ *   (injectTestConfig / seedProviders / 自定义 storage 直写都可传入)
+ * - deviceScaleFactor:透传 newPage(它只能在页面创建时设定)。
+ *   ⚠️ 故意不透传 viewport:与 launchPersistentContext 的固定视口叠加时,
+ *   newPage 传 viewport 会让后续 mouse.wheel 滚不到内页容器(probe-layout
+ *   实测,Playwright/CDP 仿真时序怪癖)——要窄视口就 openPanel 之后自己
+ *   setViewportSize,行为与旧样板一致。
+ */
+export async function openPanel(browser, extId, { configure, deviceScaleFactor } = {}) {
+  const page = await browser.newPage(deviceScaleFactor ? { deviceScaleFactor } : {});
+  // 就绪判据用 locale 无关的 textarea(不钉 aria-label):configure 若切了
+  // 语言(如 probe-en-tools 的 en-US),reload 后 label 是英文,钉 zh 会超时
+  const ready = () => page.locator("textarea").first().waitFor({ timeout: 15_000 });
+  await page.goto(`chrome-extension://${extId}/sidepanel.html`);
+  await ready();
+  if (configure) {
+    await configure(page);
+    await page.reload();
+    await ready();
+  }
+  return page;
+}
+
+/**
+ * 写 providers 模型配置(新 schema;SW 每次 run 现读)。收敛 memory/mcp/
+ * vision/screenshot/compaction 各自手抄的 storage.local.set(曾 6 份、两种
+ * provider id 形态并存)。provider id/名无断言依赖,统一缺省;当前模型
+ * 缺省取 models[0].id。
+ */
+export function seedProviders(page, models, model = models[0]?.id) {
+  return page.evaluate(
+    ({ models, model, baseUrl }) =>
+      chrome.storage.local.set({
+        providers: [
+          {
+            id: "prov-1",
+            name: "TestProv",
+            baseUrl,
+            apiKey: "sk-test",
+            models,
+          },
+        ],
+        modelProvider: "prov-1",
+        model,
+      }),
+    // baseUrl 在 Node 侧拼好再传入 —— evaluate 回调跑在页面上下文,
+    // 引用不到本模块的常量
+    { models, model, baseUrl: `${TEST_ENDPOINT_ORIGIN}/v1` },
+  );
+}
+
+/**
+ * 读某会话全部消息行(messages store 按 bySession 索引;虚拟注入/全量
+ * 历史断言用)。idbGetAll 走主键 getAll,拿不到按会话过滤的行——此读法
+ * 在 memory/compaction 曾逐字重复两份。
+ */
+export function idbMessages(page, sessionId) {
+  return page.evaluate(
+    (sessionId) =>
+      new Promise((done, fail) => {
+        const req = indexedDB.open("tars");
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction("messages", "readonly");
+          const q = tx
+            .objectStore("messages")
+            .index("bySession")
+            .getAll(IDBKeyRange.only(sessionId));
+          q.onsuccess = () => {
+            db.close();
+            done(q.result);
+          };
+          q.onerror = () => fail(q.error);
+        };
+        req.onerror = () => fail(req.error);
+      }),
+    sessionId,
+  );
+}
+
+/**
+ * 裸 port 拉历史投影(load_history → ChatRecord[];回放/落库形状断言用)。
+ * skills/llm-errors/screenshot 曾各持一份 port+超时+promise 样板。
+ * 注意:verify-compaction 的 loadHistoryPayload 特意保留本地版 —— 它断言
+ * 整包载荷(含 compaction 元数据),不是只取 messages。
+ */
+export function loadHistoryViaPort(page, sessionId, timeoutMs = 10_000) {
+  return page.evaluate(
+    ({ sessionId, timeoutMs }) =>
+      new Promise((resolve, reject) => {
+        const port = chrome.runtime.connect({ name: "agent-port" });
+        const timer = setTimeout(() => reject(new Error("history 超时")), timeoutMs);
+        port.onMessage.addListener((msg) => {
+          if (msg.type === "history") {
+            clearTimeout(timer);
+            port.disconnect();
+            resolve(msg.messages);
+          }
+        });
+        port.postMessage({ type: "load_history", sessionId });
+      }),
+    { sessionId, timeoutMs },
+  );
+}
+
+/** 面板整页文本(断言 UI 含/不含某文案用;memory/skills/web-search 曾各持一份) */
+export function bodyText(page) {
+  return page.evaluate(() => document.body.innerText);
+}
+
 /** 读取扩展环形日志(log:bg / log:panel / log:off),只取 since 之后的条目 */
 export async function readLogs(page, since) {
   const bag = await page.evaluate(() => chrome.storage.local.get(null));
@@ -480,8 +638,9 @@ export async function seedSessions(page, rows) {
 
 /**
  * 断言助手工厂:check(ok,label,detail) 累积 failures,套件末尾统一判退出码。
- * 各 verify-* 的近逐字重复实现收敛于此。
- * 未统一:verify-persist/verify-vision 的 check(name,cond) 参数序相反。
+ * 全部断言套件的统一出口——曾经的本地反序实现(verify-persist/vision/
+ * screenshot/interact)与 assert 适配层(confirm/host-access)已于 2026-09-29
+ * 全部迁入本签名;新套件直接用它,不要再定义本地 check/assert。
  */
 export function makeChecker() {
   const failures = [];
@@ -570,13 +729,14 @@ export function idbGet(page, store, key) {
   );
 }
 
-/** LLM 端点 SSE 应答:一条纯文本回答 + 指定 finish_reason(默认 stop) */
-export const answerSSE = (ctx, text, { finish = "stop" } = {}) =>
+/** LLM 端点 SSE 应答:一条纯文本回答 + 指定 finish_reason(默认 stop)。
+ *  opts.usage 透传响应级 usage 字段(compaction 断言 token 口径用) */
+export const answerSSE = (ctx, text, { finish = "stop", usage } = {}) =>
   ctx.fulfill({
     headers: { "Content-Type": "text/event-stream" },
     body: sse(
       { choices: [{ delta: { content: text } }] },
-      { choices: [{ delta: {}, finish_reason: finish }] },
+      { choices: [{ delta: {}, finish_reason: finish }], ...(usage ? { usage } : {}) },
     ),
   });
 

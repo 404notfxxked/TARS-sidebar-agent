@@ -3,9 +3,11 @@
 //   形态 1:await sleep(<数字>)
 //   形态 2:await new Promise((r) => setTimeout(r, <数字>))
 // 超基线即 FAIL(报出文件 + 实测 + 基线)。基线 = 2026-09-21 修掉
-// probe-actions / probe-locale 两处承重等待(sleep 代轮询)后的实测数;
+// probe-actions / probe-locale 两处承重等待后的实测数;
 // 之后只降不升。确属必须的新增固定等待(如等外部 TTL),同步抬高基线并
 // 在改动说明里给理由。
+// 2026-09-29 降档:面板启动样板收敛进 lib openPanel(configure)、sleep 收敛
+// 进 lib,各套件的样板固定等待随之消失,基线按新实测全部下调。
 // 豁免(有意不入表):
 //   shot-m3.mjs —— 纯视觉留档,人看不判 PASS/FAIL,固定等待无 flake 代价;
 //   real-search-probe.mjs —— 真网探针,.gitignore 排除,不入库不入 CI;
@@ -28,23 +30,23 @@ const SETTIMEOUT_RE =
   /new\s+Promise\s*\(\s*\(?([A-Za-z_$][\w$]*)\)?\s*=>\s*setTimeout\s*\(\s*\1\s*,\s*\d+\s*\)\s*\)/g;
 
 const BASELINE = {
-  "probe-actions.mjs": 5,
-  "probe-en-tools.mjs": 4,
-  "probe-focus.mjs": 16,
-  "probe-layout.mjs": 7,
-  "probe-locale.mjs": 6,
-  "verify-cancel.mjs": 3,
-  "verify-compaction.mjs": 1,
-  "verify-confirm.mjs": 2,
-  "verify-host-access.mjs": 2,
-  "verify-llm-errors.mjs": 3,
-  "verify-mcp.mjs": 1,
-  "verify-memory.mjs": 3,
-  "verify-persist.mjs": 9,
-  "verify-screenshot.mjs": 6,
-  "verify-skills.mjs": 6,
-  "verify-vision.mjs": 6,
-  "verify-web-search.mjs": 3,
+  "probe-actions.mjs": 3,
+  "probe-en-tools.mjs": 2,
+  "probe-focus.mjs": 15,
+  "probe-layout.mjs": 6,
+  "probe-locale.mjs": 5,
+  "verify-cancel.mjs": 1,
+  "verify-compaction.mjs": 0,
+  "verify-confirm.mjs": 0,
+  "verify-host-access.mjs": 1,
+  "verify-llm-errors.mjs": 1,
+  "verify-mcp.mjs": 0,
+  "verify-memory.mjs": 2,
+  "verify-persist.mjs": 8,
+  "verify-screenshot.mjs": 5,
+  "verify-skills.mjs": 5,
+  "verify-vision.mjs": 4,
+  "verify-web-search.mjs": 1,
 };
 
 const EXEMPT = new Set([

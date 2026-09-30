@@ -5,14 +5,13 @@
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { mkdirSync, rmSync } from "fs";
-import { launchWithCdp, sse, ask } from "./lib-cdp-mock.mjs";
+import { ask, answerSSE, injectTestConfig, launchWithCdp, openPanel, sleep } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
 const USER_DATA_DIR = "/tmp/probe-actions-profile";
 const OUT = "/tmp/tars-actions";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 rmSync(USER_DATA_DIR, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -21,23 +20,16 @@ const { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
   userDataDir: USER_DATA_DIR,
 });
-const page = await browser.newPage({ deviceScaleFactor: 2 });
+const page = await openPanel(browser, extId, {
+  deviceScaleFactor: 2,
+  configure: injectTestConfig,
+});
 await page.setViewportSize({ width: 420, height: 740 });
-await page.goto(`chrome-extension://${extId}/sidepanel.html`);
-await sleep(600);
 
 const ok = (cond, label) => {
   if (!cond) throw new Error(`❌ ${label}`);
   console.log(`  ✅ ${label}`);
 };
-const answerSSE = (ctx, text) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      { choices: [{ delta: { content: text } }] },
-      { choices: [{ delta: {}, finish_reason: "stop" }] },
-    ),
-  });
 
 // 逐次换答案:首答 A、重答应 B、回放后再重答应 C——「真的重跑了」以文案为准
 // (mock 模型输出,非 UI 文案,不受文案门禁约束)
@@ -50,17 +42,6 @@ await mock.setRoutes([
       answerSSE(ctx, ANSWERS[Math.min(calls++, ANSWERS.length - 1)]),
   },
 ]);
-
-await page.evaluate(() =>
-  chrome.storage.local.set({
-    apiKey: "sk-test",
-    model: "gpt-test",
-    baseUrl: "https://api.test.example.com/v1",
-    models: [{ id: "gpt-test" }],
-  }),
-);
-await page.reload();
-await sleep(800);
 
 const QUESTION = "帮我把这段话润色一下";
 

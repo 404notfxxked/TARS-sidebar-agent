@@ -4,38 +4,33 @@
 // 断言:文档层不可滚(docScrollable=0)、滚动后顶栏纹丝不动(headerTop≥0)、
 //       内页真的在滚(innerScrollable>0,否则断言形同虚设)。
 // 用法: pnpm build && node tests/probe-layout.mjs
-// 产出: /tmp/tars-m3/layout-*.png;任一断言失败退出码 1。
+// 产出: /tmp/probe-layout-out/layout-*.png;任一断言失败退出码 1。
+// (产物目录勿与 shot-m3 的 /tmp/tars-m3 合用 —— 那边启动会整目录 rmSync)
 import { mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { launchWithCdp, seedSessions, setTheme } from "./lib-cdp-mock.mjs";
+import { launchWithCdp, makeChecker, openPanel, seedSessions, setTheme, sleep } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EXT_DIR = resolve(__dirname, "..", "dist");
 const USER_DATA_DIR = `/tmp/probe-layout-${Date.now()}`;
-const OUT = "/tmp/tars-m3";
+const OUT = "/tmp/probe-layout-out";
 mkdirSync(OUT, { recursive: true });
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const failures = [];
-const check = (ok, label, detail = "") => {
-  console.log(`${ok ? "✅" : "❌"} ${label}${detail ? ` — ${detail}` : ""}`);
-  if (!ok) failures.push(label);
-};
-
+const check = makeChecker();
 const { browser, extId } = await launchWithCdp({
   extDir: EXT_DIR,
   userDataDir: USER_DATA_DIR,
 });
-const page = await browser.newPage({ deviceScaleFactor: 2 });
-await page.setViewportSize({ width: 420, height: 740 });
-await page.goto(`chrome-extension://${extId}/sidepanel.html`);
-await page.evaluate(() =>
-  chrome.storage.local.set({ apiKey: "sk-test", model: "gpt-4o", theme: "light" }),
-);
-await page.reload();
-await sleep(800);
+const page = await openPanel(browser, extId, {
+  deviceScaleFactor: 2,
+  configure: (p) =>
+    p.evaluate(() =>
+      chrome.storage.local.set({ apiKey: "sk-test", model: "gpt-4o", theme: "light" }),
+    ),
+});
+await page.setViewportSize({ width: 420, height: 740 }); // 二分实验:视口后置
 
 // 种 24 条历史(跨 24 天,保证历史页超高、内页必然可滚)
 const DAY = 24 * 3600 * 1000;
@@ -108,8 +103,8 @@ for (const theme of ["light", "dark"]) {
 }
 
 console.log("\n========================================");
-if (failures.length > 0) {
-  console.log("❌ VERDICT: FAIL —", failures.join("; "));
+if (check.failures.length > 0) {
+  console.log("❌ VERDICT: FAIL —", check.failures.join("; "));
   await browser.close();
   process.exit(1);
 }

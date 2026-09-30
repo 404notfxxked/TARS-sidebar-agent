@@ -81,6 +81,10 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   第一参(断言标签与诊断横幅是人读输出,不是 UI 断言)。已知局限:
   跨行模板串、正则字面量里的 CJK 不在扫描范围;转义引号:单/双引号
   外层的同型转义内层不抽,模板串外层会抽出(内层正则不识别反斜杠)。
+  **2026-09-29 补充**:断言惯用法统一为 `check(条件, 标签)`(makeChecker,
+  参数序全仓归一)后,标签位于第二参,不再落入「第一参」豁免窗——
+  与字典值撞形的标签按行内 `i18n-ok` 豁免(人读断言标签,合法类),
+  条件内的字符串仍在扫描面内,不受影响。
   `run.mjs` 每次入口先跑它;写新测试先 import lib-i18n;拿不准键名
   查 `src/shared/i18n/locales/zh-CN.ts`。
 
@@ -100,6 +104,12 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 - `lib-cdp-mock.mjs` — CDP Fetch 拦截 + 环形日志断言(readLogs/waitForRunLog)
   + ask/sse + seedSessions/seedMemories/setTheme;所有套件的地基,新链路照
   verify-*.mjs 模式加套件(并在 run.mjs SUITES 登记)。
+  **统一入口(2026-09-29 收敛,新套件禁止再手抄这些样板)**:断言用
+  `makeChecker`(ok,label,detail,全仓唯一签名);面板开关用 `openPanel`
+  (goto/就绪/注配置+reload 一条龙;窄视口在其后 setViewportSize,勿在
+  newPage 传 viewport——会破坏 mouse.wheel,详见其头注);模型配置用
+  `seedProviders`;会话消息读 `idbMessages`;历史投影读 `loadHistoryViaPort`;
+  整页文本 `bodyText`;固定等待 `sleep`(仍按调用点入棘轮计数)。
   **manifest flavor**(`launchWithCdp({ flavor })`,缺省 `granted`):
   `granted` = 静态全站授权 + 静态 content script(既有套件);`zero` = 只授权
   模型端点域,页面全部未授权(拒绝路径);`dynamic` = 全站授权但无静态

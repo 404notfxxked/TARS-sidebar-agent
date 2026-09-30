@@ -8,19 +8,10 @@
 
 import { build } from "esbuild";
 import { chromium } from "playwright";
+// 只借断言助手(harness 仍不加载扩展:makeChecker 是纯函数,无副作用)
+import { makeChecker } from "./lib-cdp-mock.mjs";
 
-let passCount = 0;
-let failCount = 0;
-
-function assert(name, cond, detail = "") {
-  if (cond) {
-    passCount++;
-    console.log(`  ✅ ${name}`);
-  } else {
-    failCount++;
-    console.log(`  ❌ ${name} ${detail}`);
-  }
-}
+const check = makeChecker();
 
 async function main() {
   // 1. 编译 interact.ts → IIFE,暴露到 window.__interact
@@ -90,9 +81,9 @@ async function main() {
   const norm1 = await page.evaluate(() => window.__interact.normalizeRole("textbox"));
   const norm2 = await page.evaluate(() => window.__interact.normalizeRole("link"));
   const norm3 = await page.evaluate(() => window.__interact.normalizeRole("no-such-role"));
-  assert("textbox → input", norm1 === "input", `(got ${norm1})`);
-  assert("link 原样保留", norm2 === "link", `(got ${norm2})`);
-  assert("未知角色 → null", norm3 === null, `(got ${norm3})`);
+  check(norm1 === "input", "textbox → input",  `(got ${norm1})`);
+  check(norm2 === "link", "link 原样保留",  `(got ${norm2})`);
+  check(norm3 === null, "未知角色 → null",  `(got ${norm3})`);
 
   // 闭集逐值直行守卫:role 参数 schema enum 的 9 个值必须全部可归一——
   // 报错文案/结果字段/schema enum 都用这套词,别名表漏直行就会出现
@@ -106,46 +97,43 @@ async function main() {
     CLOSED_SET,
   );
   const broken = CLOSED_SET.filter((r, i) => normClosed[i] !== r);
-  assert(
-    "闭集 9 值逐一直行(报错文案承诺=校验现实)",
-    broken.length === 0,
-    `(不直行:${broken.join(",")})`,
+  check(
+    broken.length === 0, "闭集 9 值逐一直行(报错文案承诺=校验现实)", 
+    `(不直行:${broken.join(",")})`, 
   );
 
   console.log("\n── findInteractive ──");
   const all = await page.evaluate(() => window.__interact.findInteractive(document, {}));
-  assert("默认查找含按钮/链接/输入/select/textarea/checkbox", all.count >= 6, `(count=${all.count})`);
-  assert("跳过 display:none 内元素", !all.elements.some((e) => e.label === "看不见"), "hidden 元素不应出现在结果");
+  check(all.count >= 6, "默认查找含按钮/链接/输入/select/textarea/checkbox",  `(count=${all.count})`);
+  check(!all.elements.some((e) => e.label === "看不见"), "跳过 display:none 内元素",  "hidden 元素不应出现在结果");
   // visibility:hidden 不脱布局(仍有渲染盒),必须在有盒路径单独判定:
   // 自身隐藏 → 如实报原因;祖先隐藏但自身显式 visible → 真的可见可点,
   // 不能因祖先链被误判丢弃(2026-09 审计:自己的误判,实测 computed=visible
   // 且 elementFromPoint 命中该子元素)
   const selfHidden = all.elements.find((e) => e.label === "自身隐藏");
-  assert(
-    "自身 visibility:hidden 报 visibility-hidden",
-    selfHidden?.visible === false && selfHidden?.hidden === "visibility-hidden",
-    JSON.stringify(selfHidden),
+  check(
+    selfHidden?.visible === false && selfHidden?.hidden === "visibility-hidden", "自身 visibility:hidden 报 visibility-hidden", 
+    JSON.stringify(selfHidden), 
   );
   const overrideVisible = all.elements.find((e) => e.label === "覆盖可见");
-  assert(
-    "祖先 hidden + 自身 visible 仍算可见(覆盖写法)",
-    overrideVisible?.visible === true,
-    JSON.stringify(overrideVisible),
+  check(
+    overrideVisible?.visible === true, "祖先 hidden + 自身 visible 仍算可见(覆盖写法)", 
+    JSON.stringify(overrideVisible), 
   );
   const byRole = await page.evaluate(() => window.__interact.findInteractive(document, { role: "input" }));
-  assert("role=input 过滤", byRole.elements.every((e) => e.role === "input"), `(count=${byRole.count})`);
+  check(byRole.elements.every((e) => e.role === "input"), "role=input 过滤",  `(count=${byRole.count})`);
   const byText = await page.evaluate(() => window.__interact.findInteractive(document, { text: "行按钮" }));
-  assert("text 过滤命中 2 个", byText.count === 2, `(count=${byText.count})`);
+  check(byText.count === 2, "text 过滤命中 2 个",  `(count=${byText.count})`);
   const limited = await page.evaluate(() => window.__interact.findInteractive(document, { limit: 2 }));
-  assert("limit 截断", limited.returned === 2 && limited.truncated === true, `(got ${limited.returned})`);
+  check(limited.returned === 2 && limited.truncated === true, "limit 截断",  `(got ${limited.returned})`);
 
   console.log("\n── clickElement(事件序列 + 遮挡) ──");
   await page.evaluate(() => window.__interact.clickElement(document.querySelector("#btn-a")));
   const evs = await getEvents();
   for (const t of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
-    assert(`click 序列含 ${t}`, evs.includes(t));
+    check(evs.includes(t), `click 序列含 ${t}`);
   }
-  assert("mousedown 在 pointerup 之前", evs.indexOf("mousedown") < evs.indexOf("pointerup"));
+  check(evs.indexOf("mousedown") < evs.indexOf("pointerup"), "mousedown 在 pointerup 之前");
 
   const coverErr = await page.evaluate(() => {
     try {
@@ -155,25 +143,25 @@ async function main() {
       return e.message;
     }
   });
-  assert("被遮挡元素抛错(不硬点)", coverErr?.includes("遮挡"), `(got ${coverErr})`);
+  check(coverErr?.includes("遮挡"), "被遮挡元素抛错(不硬点)",  `(got ${coverErr})`);
 
   console.log("\n── fillElement ──");
   await page.evaluate(() => window.__interact.fillElement(document.querySelector("#inp"), "hello"));
   const inpVal = await page.evaluate(() => document.querySelector("#inp").value);
-  assert("input 值写入", inpVal === "hello", `(got ${inpVal})`);
+  check(inpVal === "hello", "input 值写入",  `(got ${inpVal})`);
   const inpEvs = await getEvents();
-  assert("input 事件触发", inpEvs.includes("input"));
-  assert("change 事件触发", inpEvs.includes("change"));
+  check(inpEvs.includes("input"), "input 事件触发");
+  check(inpEvs.includes("change"), "change 事件触发");
 
   await page.evaluate(() => window.__interact.fillElement(document.querySelector("#sel"), "选项乙"));
   const selVal = await page.evaluate(() => document.querySelector("#sel").value);
-  assert("select 按文字选 option", selVal === "b", `(got ${selVal})`);
-  assert("select change 触发", (await getEvents()).includes("sel-change"));
+  check(selVal === "b", "select 按文字选 option",  `(got ${selVal})`);
+  check((await getEvents()).includes("sel-change"), "select change 触发");
 
   await page.evaluate(() => window.__interact.fillElement(document.querySelector("#ce"), "富文本"));
   const ceText = await page.evaluate(() => document.querySelector("#ce").textContent);
-  assert("contenteditable 写入", ceText === "富文本", `(got ${JSON.stringify(ceText)})`);
-  assert("contenteditable input 事件", (await getEvents()).includes("ce-input"));
+  check(ceText === "富文本", "contenteditable 写入",  `(got ${JSON.stringify(ceText)})`);
+  check((await getEvents()).includes("ce-input"), "contenteditable input 事件");
 
   const badFill = await page.evaluate(() => {
     try {
@@ -183,17 +171,17 @@ async function main() {
       return e.message;
     }
   });
-  assert("对 button fill 抛错(不是输入控件)", badFill?.includes("不是可输入控件"), `(got ${badFill})`);
+  check(badFill?.includes("不是可输入控件"), "对 button fill 抛错(不是输入控件)",  `(got ${badFill})`);
 
   console.log("\n── dispatchEnter(keyCode) ──");
   await page.evaluate(() => window.__interact.dispatchEnter(document.querySelector("#inp")));
-  assert("Enter keydown 触发", (await getEvents()).includes("keydown"));
-  assert("keyCode 补全为 13", (await page.evaluate(() => window.__keyCode)) === 13, `(got ${await page.evaluate(() => window.__keyCode)})`);
+  check((await getEvents()).includes("keydown"), "Enter keydown 触发");
+  check((await page.evaluate(() => window.__keyCode)) === 13, "keyCode 补全为 13",  `(got ${await page.evaluate(() => window.__keyCode)})`);
 
   await browser.close();
 
-  console.log(`\n结果:${passCount} 通过,${failCount} 失败`);
-  process.exit(failCount > 0 ? 1 : 0);
+  console.log(`\n结果:${check.failures.length} 条断言失败`);
+  process.exit(check.failures.length > 0 ? 1 : 0);
 }
 
 main().catch((err) => {

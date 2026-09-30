@@ -19,6 +19,10 @@ import { fileURLToPath } from "url";
 import {
   launchWithCdp,
   ask,
+  makeChecker,
+  openPanel,
+  seedProviders,
+  sleep,
   sse,
 } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
@@ -29,18 +33,7 @@ const EXT_DIR = resolve(__dirname, "..", "dist");
 // 总条数),复用目录会让上一轮的数据混进本轮计数
 const USER_DATA_DIR = `/tmp/verify-vision-profile-${Date.now()}`;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let passed = 0;
-let failed = 0;
-function check(name, cond, detail = "") {
-  if (cond) {
-    passed++;
-    console.log(`  ✅ ${name}`);
-  } else {
-    failed++;
-    console.error(`  ❌ ${name} ${detail}`);
-  }
-}
+const check = makeChecker();
 
 // 1×1 PNG(最小编码):压缩管线要真能解码/重编码,1px 即可
 const PNG_PATH = join(tmpdir(), "verify-vision-1px.png");
@@ -77,23 +70,7 @@ mock.setRoutes([
 ]);
 
 const setModels = (page, vision) =>
-  page.evaluate((vision) => {
-    // 新 schema:供应商数组 + 当前引用(ChatView 监听 providers/modelProvider/model)
-    const bag = {
-      providers: [
-        {
-          id: "p0",
-          name: "test",
-          baseUrl: "https://api.test.example.com/v1",
-          apiKey: "sk-test",
-          models: [{ id: "gpt-v", ...(vision ? { vision: true } : {}) }],
-        },
-      ],
-      modelProvider: "p0",
-      model: "gpt-v",
-    };
-    return chrome.storage.local.set(bag);
-  }, vision);
+  seedProviders(page, [{ id: "gpt-v", ...(vision ? { vision: true } : {}) }]);
 
 /** 等面板真的采用目标视觉档(事件式,替代「赌 storage 变更已传播」的固定 sleep)。
  *  信号:附件钮的 aria-label 恒定,而 title 随 visionOk 翻转(ComposerBar.tsx:242)
@@ -110,11 +87,9 @@ const waitForVision = (page, vision) =>
     )
     .waitFor({ timeout: 5000 });
 
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await setModels(sidepanel, false); // V1:先不给 vision
-await sidepanel.reload();
-await sleep(500);
+const sidepanel = await openPanel(browser, extId, {
+  configure: (p) => setModels(p, false), // V1:先不给 vision
+});
 
 // ---- V1 门控 ----
 console.log("\nV1 无视觉模型的贴图门控");
@@ -127,11 +102,11 @@ console.log("\nV1 无视觉模型的贴图门控");
     .waitFor({ timeout: 3000 })
     .then(() => true)
     .catch(() => false);
-  check("贴图被拦截且给出提示", hint);
+  check(hint, "贴图被拦截且给出提示");
   const previews = await sidepanel
     .locator(`img[alt^="${zh.chat.pendingImageAlt.split("{")[0]}"]`)
     .count();
-  check("没有产生附件预览", previews === 0, `previews=${previews}`);
+  check(previews === 0, "没有产生附件预览",  `previews=${previews}`);
 }
 
 // ---- V2 贴图发送 ----
@@ -148,26 +123,25 @@ await sleep(400); // storage 事件 → modelList 更新
   const previews = await sidepanel
     .locator(`img[alt^="${zh.chat.pendingImageAlt.split("{")[0]}"]`)
     .count();
-  check("附件预览出现(压缩管线成功)", previews === 1, `previews=${previews}`);
+  check(previews === 1, "附件预览出现(压缩管线成功)",  `previews=${previews}`);
 }
 await ask(sidepanel, "这张图是什么");
 {
   const userMsg = lastRequest?.messages?.filter((m) => m.role === "user").at(-1);
   const isParts = Array.isArray(userMsg?.content);
-  check("user content 是 parts 数组", isParts, JSON.stringify(userMsg?.content).slice(0, 120));
+  check(isParts, "user content 是 parts 数组",  JSON.stringify(userMsg?.content).slice(0, 120));
   const imgPart = isParts
     ? userMsg.content.find((p) => p.type === "image_url")
     : null;
   check(
-    "包含 image_url part 且为 webp/jpeg data URL",
     !!imgPart && /^data:image\/(webp|jpeg);base64,/.test(imgPart.image_url.url),
+    "包含 image_url part 且为 webp/jpeg data URL",
     imgPart?.image_url?.url?.slice(0, 40),
   );
   check(
-    "文本 part 在图片之前",
-    isParts && userMsg.content[0].type === "text" && userMsg.content[0].text.includes("这张图是什么"),
+    isParts && userMsg.content[0].type === "text" && userMsg.content[0].text.includes("这张图是什么"), "文本 part 在图片之前", 
   );
-  check("模型有回复", await sidepanel.getByText("收到").first().isVisible().catch(() => false));
+  check(await sidepanel.getByText("收到").first().isVisible().catch(() => false), "模型有回复");
   // 本地回显气泡的图片必须真能解码:预览 objectURL 交棒给气泡缓存后,待发
   // 清单的清理不能把它撤掉(先撤销、后新建 <img> 的加载必失败,2026-09 审计)
   {
@@ -184,9 +158,8 @@ await ask(sidepanel, "这张图是什么");
     }
     const src = await bubble.getAttribute("src").catch(() => null);
     check(
-      "发送后气泡图片立即解码(预览 URL 未被回收)",
-      decoded,
-      `src=${String(src).slice(0, 24)}`,
+      decoded, "发送后气泡图片立即解码(预览 URL 未被回收)", 
+      `src=${String(src).slice(0, 24)}`, 
     );
   }
 }
@@ -218,19 +191,17 @@ console.log("\nV3 图片持久化(消息行存引用,字节进 images store)");
         rq.onerror = () => reject(rq.error);
       }),
   );
-  check("1 会话 2 消息", snap.sessions.length === 1 && snap.messages.length === 2,
+  check(snap.sessions.length === 1 && snap.messages.length === 2, "1 会话 2 消息", 
     `s=${snap.sessions.length} m=${snap.messages.length}`);
   const userMsg = snap.messages.map((r) => r.msg).find((m) => m.role === "user");
   check(
-    "消息行图片只有元数据无字节",
     userMsg?.images?.length === 1 && userMsg.images[0].bytes === undefined &&
-      typeof userMsg.images[0].id === "string",
-    JSON.stringify(userMsg?.images),
+      typeof userMsg.images[0].id === "string", "消息行图片只有元数据无字节", 
+    JSON.stringify(userMsg?.images), 
   );
   check(
-    "images store 有字节",
-    snap.images.length === 1 && snap.images[0].byteLen > 0,
-    `n=${snap.images.length} len=${snap.images[0]?.byteLen}`,
+    snap.images.length === 1 && snap.images[0].byteLen > 0, "images store 有字节", 
+    `n=${snap.images.length} len=${snap.images[0]?.byteLen}`, 
   );
 }
 
@@ -296,7 +267,7 @@ await waitForVision(sidepanel, false);
       );
     }
   }
-  check("发送时面板提示图片不会发送", hintSeen);
+  check(hintSeen, "发送时面板提示图片不会发送");
   // 等 run 真正开始(发送钮翻转为停止)再等收口(翻回发送),请求侧断言
   // 才读到本轮的 lastRequest —— 翻转被吞时按 ask() 同款语义吞掉超时
   await sidepanel
@@ -310,11 +281,10 @@ await waitForVision(sidepanel, false);
 {
   const users = lastRequest?.messages?.filter((m) => m.role === "user") ?? [];
   const allString = users.length > 0 && users.every((m) => typeof m.content === "string");
-  check("所有 user 消息都是纯文本(图片被请求侧投影剥离)", allString,
+  check(allString, "所有 user 消息都是纯文本(图片被请求侧投影剥离)", 
     JSON.stringify(users.map((m) => Array.isArray(m.content) ? "parts" : "string")));
   check(
-    "被剥离的图片消息带系统注(模型可知情回答)",
-    users.filter((m) => m.content.includes("当前模型不支持视觉识别")).length === 2,
+    users.filter((m) => m.content.includes("当前模型不支持视觉识别")).length === 2, "被剥离的图片消息带系统注(模型可知情回答)", 
   );
   const imgCount = await sidepanel.evaluate(
     () =>
@@ -333,7 +303,7 @@ await waitForVision(sidepanel, false);
         rq.onerror = () => reject(rq.error);
       }),
   );
-  check("非视觉期间发送的图片仍入库(切回后可引用)", imgCount === 2, `n=${imgCount}`);
+  check(imgCount === 2, "非视觉期间发送的图片仍入库(切回后可引用)",  `n=${imgCount}`);
 }
 
 // ---- V4 历史回放 ----
@@ -351,12 +321,12 @@ await sidepanel.locator("li").first().click();
     .first()
     .evaluate((el) => (el instanceof HTMLImageElement ? el.naturalWidth > 0 : false))
     .catch(() => false);
-  check("气泡图片经 GET_IMAGE 取到字节(blob: URL)", !!src && src.startsWith("blob:"), String(src).slice(0, 40));
-  check("图片真实解码成功(naturalWidth > 0)", decoded);
+  check(!!src && src.startsWith("blob:"), "气泡图片经 GET_IMAGE 取到字节(blob: URL)",  String(src).slice(0, 40));
+  check(decoded, "图片真实解码成功(naturalWidth > 0)");
   const bodyText = await sidepanel.evaluate(() => document.body.innerText);
-  check("回放回显无 context 包裹", !bodyText.includes("<context>") && !bodyText.includes("user-request"));
+  check(!bodyText.includes("<context>") && !bodyText.includes("user-request"), "回放回显无 context 包裹");
 }
 
-console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
+console.log(`\n结果: ${check.failures.length} 条断言失败`);
 await browser.close();
-process.exit(failed > 0 ? 1 : 0);
+process.exit(check.failures.length > 0 ? 1 : 0);

@@ -18,7 +18,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { launchWithCdp, makeChecker, runAskViaPort, sse, waitForRunLog } from "./lib-cdp-mock.mjs";
+import { answerSSE, idbMessages, launchWithCdp, makeChecker, openPanel, runAskViaPort, seedProviders, waitForRunLog } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -36,17 +36,7 @@ let summaryTexts = []; // 已返回的摘要文本(rolling 断言用)
 let lastSummaryInput = null; // 最近一次摘要请求的 messages
 let lastAgentBody = null; // 最近一次 agent 请求的 body(断言 summary 注入/原文排除)
 
-const answer = (ctx, text, usage) =>
-  ctx.fulfill({
-    headers: { "Content-Type": "text/event-stream" },
-    body: sse(
-      { choices: [{ delta: { content: text } }] },
-      {
-        choices: [{ delta: {}, finish_reason: "stop" }],
-        ...(usage ? { usage } : {}),
-      },
-    ),
-  });
+const answer = (ctx, text, usage) => answerSSE(ctx, text, { usage });
 
 const { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
@@ -96,33 +86,15 @@ mock.setRoutes([
 console.log("✅ mock 路由已注册");
 
 // ---- 面板 + 配置 ----
-const sidepanel = await browser.newPage();
-await sidepanel.goto(`chrome-extension://${extId}/sidepanel.html`);
-await new Promise((r) => setTimeout(r, 1000));
+const sidepanel = await openPanel(browser, extId);
 
 const check = makeChecker();
 
 /** 写 providers 配置(新 schema;SW 每次 run 现读)。models 里 cheap-test
  *  供「压缩用模型」场景引用 */
 async function setModelCfg(contextTokens) {
-  const models = [{ id: "gpt-test" }];
-  if (contextTokens) models[0].contextTokens = contextTokens;
-  models.push({ id: "cheap-test" });
-  await sidepanel.evaluate((models) => {
-    return chrome.storage.local.set({
-      providers: [
-        {
-          id: "prov-1",
-          name: "TestProv",
-          baseUrl: "https://api.test.example.com/v1",
-          apiKey: "sk-test",
-          models,
-        },
-      ],
-      modelProvider: "prov-1",
-      model: "gpt-test",
-    });
-  }, models);
+  const models = [{ id: "gpt-test", ...(contextTokens ? { contextTokens } : {}) }, { id: "cheap-test" }];
+  await seedProviders(sidepanel, models);
 }
 const setCompactCfg = (patch) =>
   sidepanel.evaluate((p) => chrome.storage.local.set(p), patch);
@@ -169,30 +141,6 @@ async function seedSession(id, title, rounds, cjkChars) {
     { id, title, rounds, cjkChars },
   );
 }
-
-/** 读某会话全部消息行(全量历史断言用) */
-const readRows = (sessionId) =>
-  sidepanel.evaluate(
-    (sessionId) =>
-      new Promise((done, fail) => {
-        const req = indexedDB.open("tars");
-        req.onsuccess = () => {
-          const db = req.result;
-          const tx = db.transaction("messages", "readonly");
-          const q = tx
-            .objectStore("messages")
-            .index("bySession")
-            .getAll(IDBKeyRange.only(sessionId));
-          q.onsuccess = () => {
-            db.close();
-            done(q.result);
-          };
-          q.onerror = () => fail(q.error);
-        };
-        req.onerror = () => fail(req.error);
-      }),
-    sessionId,
-  );
 
 /** 读会话行(compaction/ctx/msgCount 断言用) */
 const readSessionRow = (sessionId) =>
@@ -248,7 +196,7 @@ await setModelCfg(8000); // usable = 8000-4096-1600 = 2304;标准档阈值 1728,
 await setCompactCfg({ compact: "standard" });
 await seedSession("s-main", "压缩主会话", 3, 1100);
 {
-  const rowsBefore = (await readRows("s-main")).length;
+  const rowsBefore = (await idbMessages(sidepanel, "s-main")).length;
   const before = llm.calls.length;
   const done = await runAsk("s-main", "新问题:总结一下前面聊的(S1)");
   check(done.type === "agent_done", "S1-0 run 正常完成", JSON.stringify(done));
@@ -265,7 +213,7 @@ await seedSession("s-main", "压缩主会话", 3, 1100);
   check(agentText.includes("MARK-s-main-R2"),
     "S1-5 保留尾部的最后一轮原文仍在 prompt");
 
-  const rowsAfter = await readRows("s-main");
+  const rowsAfter = await idbMessages(sidepanel, "s-main");
   check(rowsAfter.length === rowsBefore + 2,
     `S1-6 库保全量:行数 ${rowsBefore} → ${rowsAfter.length}(+2 本轮新增)`);
   const row = await readSessionRow("s-main");
