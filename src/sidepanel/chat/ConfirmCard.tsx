@@ -108,7 +108,7 @@ export function ConfirmCard({
     <div
       role="alertdialog"
       aria-label={t(titleKey)}
-      className="mx-3 mb-2 rounded-lg bg-surface-container-high p-3 shadow-2"
+      className="mx-auto mb-2 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high p-3 shadow-2"
     >
       <p className="flex items-center gap-1.5 text-[13px] font-medium text-on-surface">
         <ConfirmIcon />
