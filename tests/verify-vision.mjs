@@ -224,50 +224,19 @@ await waitForVision(sidepanel, false);
 {
   const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
   await input.fill("再问一次");
-  // T18 预定诊断落地(2026-09-26,接台账「下次复现时做」):点击前挂页内
-  // 采样器,按字典文本记录提示 <p> 的出现/消失时刻;下方 check 失败时 dump
-  // ——「亮过而 waitFor 没抓到」= 抓取/可见性时机问题;「全程没亮」= 提交
-  // 瞬间 pendingImages/visionOk 取值问题,两者修法完全不同。采样器只记录
-  // 不等待,控制流仍由 waitFor 驱动(硬规则 3)
-  await sidepanel.evaluate((needle) => {
-    window.__hintSamples = [];
-    window.__hintProbe = setInterval(() => {
-      const el = [...document.querySelectorAll("p")].find((p) =>
-        p.textContent?.includes(needle),
-      );
-      window.__hintSamples.push({
-        t: Date.now(),
-        text: el?.textContent ?? null,
-      });
-    }, 100);
-  }, zh.chat.visionModelFallback);
   await sidepanel.locator(`button[aria-label="${zh.chat.send}"]`).click();
   // 前置条件(面板处于非视觉档)已由 waitForVision 保证;下面的 waitFor 只负责
   // 抓这个 ~3s 的瞬时窗口(框架内部轮询,不手写循环)。断言不删:用户被明确
   // 告知图片不会发送,有产品价值。
-  // ⚠️ T18 首条(vision V5 偶发红):已排除两种假设 —— ①手写轮询采样不足
-  // (改 waitFor 后仍红);②提交瞬间面板 visionOk 陈旧(waitForVision 已通过
-  // 的那次照样红)。失败签名固定:本行红,紧随的三条请求侧断言恒绿。
-  // 失败时的现场诊断见上方采样器
+  // ⚠️ T18(vision V5 偶发红,台账 memory/test-optimization-plan.md):已排除
+  // 两种假设 —— ①手写轮询采样不足;②提交瞬间面板 visionOk 陈旧(waitForVision
+  // 已通过的那次照样红)。失败签名固定:本行红,紧随的三条请求侧断言恒绿
+  // (产品行为正确,仅测试脆弱)。页内诊断采样器已按 2026-09-30 决策移除
+  // (当日 11 连跑未复现);复现时从 git 历史(f5cbae5 及之前)找回采样器,
+  // 按「提示亮过没抓到 vs 全程没亮」判明时机/取值两类根因后再定修法
   const fallbackHint = sidepanel.getByText(zh.chat.visionModelFallback).first();
   await fallbackHint.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-  const hintSeen = (await fallbackHint.count()) > 0;
-  const samples = await sidepanel.evaluate(() => {
-    clearInterval(window.__hintProbe);
-    return window.__hintSamples.filter((s) => s.text);
-  });
-  if (!hintSeen) {
-    if (samples.length === 0) {
-      console.log(
-        "  🩺 T18 诊断:提示全程未亮 → flashHint 未触发,查提交瞬间 pendingImages/visionOk 取值",
-      );
-    } else {
-      console.log(
-        `  🩺 T18 诊断:提示亮过 ${samples.length} 次采样(${new Date(samples[0].t).toISOString()} 起)→ waitFor 未捕获,查抓取/可见性时机`,
-      );
-    }
-  }
-  check(hintSeen, "发送时面板提示图片不会发送");
+  check((await fallbackHint.count()) > 0, "发送时面板提示图片不会发送");
   // 等 run 真正开始(发送钮翻转为停止)再等收口(翻回发送),请求侧断言
   // 才读到本轮的 lastRequest —— 翻转被吞时按 ask() 同款语义吞掉超时
   await sidepanel
