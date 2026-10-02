@@ -38,6 +38,14 @@ const coverageThresholds = {
   // 2026-09 候选回退探测重写时随新测试钉上(未盖为 TS 防御分支),白名单直打后抬升
   "src/background/provider/models.ts": { statements: 98, branches: 96, functions: 100, lines: 100 },
   "src/background/provider/sse.ts": { statements: 100, branches: 85, functions: 85, lines: 100 },
+  // 2026-10-02 确认档位三档化随组件测试钉上(branches 未满为 Segmented 内
+  // 键盘环绕分支的未走边,实测 94.44)
+  "src/sidepanel/settings/SecuritySection.tsx": {
+    statements: 100,
+    branches: 94,
+    functions: 100,
+    lines: 100,
+  },
 } as const;
 const configRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 for (const key of Object.keys(coverageThresholds)) {

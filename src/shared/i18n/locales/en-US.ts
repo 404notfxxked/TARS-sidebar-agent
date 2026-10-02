@@ -252,11 +252,18 @@ export const enUS = {
     hostAccessGrant: "Grant page & network access",
     hostAccessRevoke: "Revoke",
     hostAccessOn: "Granted",
-    confirmActions: "Confirm sensitive actions",
-    confirmActionsHint:
-      "TARS shows a confirmation card before sensitive actions like clicking, typing, or writing memories.",
-    confirmActionsDetail:
-      "Covers page writes (click_element / fill_input), memory save and delete, and web_fetch of private-network addresses and links outside the session's source domains: the card shows the target page and the action, and no reply within 2 minutes counts as a denial. Source domains = links you typed in messages, search results, and domains already fetched this session; the first fetch of any new domain asks once, and approving it keeps the domain quiet for the rest of the session. Web content can contain injection-style instructions, so this gate is the final human review; turn it off only when you trust the scenario — TARS will then perform these actions immediately.",
+    confirmLevel: "Confirmation level",
+    confirmLevelStrict: "Confirm every action",
+    confirmLevelAuto: "Auto-approve page actions",
+    confirmLevelOff: "Skip all confirmations",
+    confirmLevelHint: "Changing the level does not affect a task in progress; it applies from your next message.",
+    confirmLevelScope:
+      "Approved page actions run without asking on any site you have authorized, not just the current page.",
+    confirmLevelSubmit:
+      "Submit-style actions (pressing Enter, clicking submit buttons) are also auto-approved.",
+    confirmLevelOffWarning:
+      "With all confirmations skipped, page actions, memory save and delete, MCP server tool calls, and reads of private-network addresses or unseen links all run without asking. Use only in scenarios you can supervise.",
+    confirmLevelArm: "Click again to skip all confirmations",
     notifyDone: "Task completion notifications",
     notifyDoneHint:
       "When the panel is not visible, a system notification is posted when a task finishes or fails; click it to return.",
