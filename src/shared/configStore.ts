@@ -192,6 +192,13 @@ export interface SearchConfig {
 export type CompactLevel = "early" | "standard" | "late";
 export const COMPACT_LEVELS: CompactLevel[] = ["early", "standard", "late"];
 
+/** 写操作确认门档位(confirmLevel 的真源,消费在 agent/confirmations.ts):
+ *  strict = 一切写动作逐次过确认卡(缺省,安全默认);auto = 页面写动作
+ *  (click/fill,含提交型)免门,记忆写/MCP/可疑出站仍过门;off = 全部免审
+ *  (用户自担)。语义与迁移见 permission-levels-plan */
+export type ConfirmLevel = "strict" | "auto" | "off";
+export const CONFIRM_LEVELS: ConfirmLevel[] = ["strict", "auto", "off"];
+
 export async function loadConfig(): Promise<AppConfig> {
   // 历史兼容:旧版曾支持「仅本次会话」的 key,现无写入方(见文件头注)
   const s = await chrome.storage.session.get("apiKey");

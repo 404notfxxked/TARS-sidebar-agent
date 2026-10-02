@@ -1,9 +1,14 @@
-// 写操作确认门(SW 侧):页面写动作(click_element / fill_input)与跨会话
-// 持久写(memory_save / memory_delete)在执行前向面板发 AGENT_CONFIRM_REQUEST,
+// 写操作确认门(SW 侧):写动作在执行前向面板发 AGENT_CONFIRM_REQUEST,
 // 等用户答复(CONFIRM_RESPONSE);web_fetch 走参数级底线判定(见
 // needsConfirmation)。防的是页面内容注入指令后诱导模型「替用户动手」或
 // 「把数据编码外带」——确认卡带完整上下文(工具、目标页/写入内容),由人
 // 做最后决定。
+//
+// 档位(confirmLevel,真源 shared/configStore.ts):strict = 一切写动作
+// 过门(缺省);auto = 页面写免门,记忆写/MCP/出站判定仍过门;off = 全免
+// (用户自担)。判定与分组由 TOOL_CATEGORY 单一真源派生;门闭包
+// (ConfirmGate)在 run 装配处建一次,dispatch 与批次屏障共用同一实例
+// ——两处判定必须同源,屏障分歧会打破确认卡单槽约束(见 toolBatch.ts)。
 //
 // 从严语义:
 // - 超时未答复 = 拒绝(宁慢勿错,不给人不在场时放行写动作的口子)
@@ -14,6 +19,7 @@
 // —— pending Map 随 SW 消失,迟到答复在此静默忽略,属预期兜底而非卡死。
 
 import { MSG } from "../../shared/messages";
+import type { ConfirmLevel } from "../../shared/configStore";
 import type { AgentPort } from "./agent";
 import type { ToolExecutionContext } from "../tools/toolContext";
 import { webFetchNeedsConfirm } from "../web/outboundGuard";
@@ -27,31 +33,72 @@ export const CONFIRM_DENIED_MSG =
 
 const pending = new Map<string, (approved: boolean) => void>();
 
-/** 需要人工确认的动作:
- *  - click_element / fill_input:页面写操作(含 pressEnterAfter 的提交路径)。
- *    读页三件套/搜索/元素查找是纯观察,不过门
- *  - memory_save / memory_delete:跨会话持久写。记忆每轮以 user 角色注入
- *    所有会话,被注入的指令可借它形成跨会话持久化操纵;delete 还是按子串
- *    的破坏性删除 —— 两者都过门 */
-export const CONFIRM_TOOLS: ReadonlySet<string> = new Set([
-  "click_element",
-  "fill_input",
-  "memory_save",
-  "memory_delete",
-]);
+/**
+ * 静态写工具的唯一真源(P1-17 定案):name → 风险类别。三个派生集合
+ * (PAGE_WRITE_TOOLS / PERSISTENT_TOOLS / WRITE_TOOLS)全部由它算出,
+ * 改分组只改这份数据,不动 needsConfirmation 函数体 —— C2 的 MCP
+ * annotations 分流、C3 的敏感动作分类届时在对应分支接入。
+ *  - page-write:页面写动作(点按/填写,含 pressEnterAfter 提交路径)。
+ *    auto 档免门 —— 浏览器 agent 的日常高频动作,逐次过卡必逼用户走
+ *    极端(off);但它们作用于任意已授权页面(auto 档 UI 明示此范围)
+ *  - persistent:跨会话持久写。auto 档仍过门 —— 记忆每轮以 user 角色
+ *    注入所有会话,被注入的指令可借它形成跨会话持久化操纵;delete 还是
+ *    按子串的破坏性删除
+ * (web_fetch 不在表内:是否过门是参数级判定,见 webFetchNeedsConfirm;
+ *  mcp_* 不在表内:语义由各服务器自定义,一律过门,宁慢勿错)
+ */
+export const TOOL_CATEGORY: Readonly<Record<string, "page-write" | "persistent">> =
+  {
+    click_element: "page-write",
+    fill_input: "page-write",
+    memory_save: "persistent",
+    memory_delete: "persistent",
+  };
 
-/** 统一确认门判定:静态集合 + MCP 动态工具 + web_fetch 的参数级判定
- *  (私网目标,或会话来源域白名单未命中 —— 见 outboundGuard/fetchAllowlist;
- *  命中直抓)。confirmActions 总开关由调用点(agent 的 dispatch)把守 */
+/** auto 档免门的组:由 TOOL_CATEGORY 派生(page-write) */
+export const PAGE_WRITE_TOOLS: ReadonlySet<string> = new Set(
+  Object.entries(TOOL_CATEGORY)
+    .filter(([, category]) => category === "page-write")
+    .map(([name]) => name),
+);
+
+/** auto 档仍过门的组:由 TOOL_CATEGORY 派生(persistent) */
+export const PERSISTENT_TOOLS: ReadonlySet<string> = new Set(
+  Object.entries(TOOL_CATEGORY)
+    .filter(([, category]) => category === "persistent")
+    .map(([name]) => name),
+);
+
+/** 静态写工具全集(替代旧名 CONFIRM_TOOLS):write 标记双向不变式
+ *  (tools.test.ts)钉的是它;「会过门」的权威判定是 needsConfirmation
+ *  + 档位,不再等价于本集合(auto/off 档下部分成员免门) */
+export const WRITE_TOOLS: ReadonlySet<string> = new Set(
+  Object.keys(TOOL_CATEGORY),
+);
+
+/** 共享门闭包的类型:dispatch 与批次屏障必须调用同一个实例(契约点 1) */
+export type ConfirmGate = (name: string, args: unknown) => boolean;
+
+/** 统一确认门判定(带档位):
+ *  - off:恒 false(用户显式自担,UI 已明示记忆写与 MCP 也不再人审)
+ *  - auto:page-write 组免门(日常高频动作),记忆写/MCP/web_fetch 出口
+ *    判定不变 —— 与调研共性对齐:持久写/外部执行/数据外带通道无论哪档
+ *    都有人审,直到 off
+ *  - strict:现行为(一切写动作过门)
+ *  web_fetch 走参数级底线判定(见 needsConfirmation 旧注释与 outboundGuard):
+ *  私网目标,或会话来源域白名单未命中 —— 命中直抓 */
 export function needsConfirmation(
   name: string,
   args: unknown,
+  level: ConfirmLevel,
   fetchAllowlist?: ReadonlySet<string>,
 ): boolean {
-  if (CONFIRM_TOOLS.has(name)) return true;
+  if (level === "off") return false;
+  if (level === "auto" && PAGE_WRITE_TOOLS.has(name)) return false;
+  if (WRITE_TOOLS.has(name)) return true;
   // MCP 工具语义由各服务器自定义,无法静态判定只读:删除/发送/改配置皆可能,
   // 也可能就是把数据外带的通道 —— 一律过门,宁慢勿错(架构不变式:写工具
-  // 必须过确认门再上线;confirmActions 关闭即用户自担,同页面写动作口径)
+  // 必须过确认门再上线;off 档关闭即用户自担,同页面写动作口径)
   if (name.startsWith("mcp_")) return true;
   if (name === "web_fetch") return webFetchNeedsConfirm(args, fetchAllowlist);
   return false;

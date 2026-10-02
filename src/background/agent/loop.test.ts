@@ -34,7 +34,7 @@ const cfg = {
   cur: { id: "p1" },
   modelEntry: undefined,
   toolResultBudgetChars: 4000,
-  confirmActions: false,
+  confirmLevel: "off",
 } as unknown as RunCfg;
 
 function makeDeps(reply: ChatResult, events: AgentEvent[]): TurnDeps {
@@ -44,6 +44,7 @@ function makeDeps(reply: ChatResult, events: AgentEvent[]): TurnDeps {
     port,
     sessionId: undefined, // 不落盘:本用例只验循环收口口径
     fetchAllowlist: new Set<string>(),
+    confirmGate: () => false, // 本用例无工具调用,门不参与
     callChat: async () => reply,
     dispatchToolCall: async () => ({}),
   };
