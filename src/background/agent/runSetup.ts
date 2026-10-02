@@ -253,11 +253,6 @@ export async function resolveRunConfig(
   }
   // 视觉能力:决定图片是否随请求发送,并滤除截图工具(纯文本模型看不了图)
   const visionOk = !!modelEntry?.vision;
-  // 档位装配:T2 起由 AppConfig.confirmLevel 提供(loadConfig 内做 legacy
-  // 布尔与非法值回落);此前按旧布尔最简映射,行为与旧版完全等价
-  // (auto 在旧存储下不可达,只影响 T1 单测的直接调用路径)
-  const confirmLevel: ConfirmLevel =
-    config.confirmActions === false ? "off" : "strict";
   const tools = [...toProviderToolSchemas()
     .filter((t) => webEnabled || !t.name.startsWith("web_"))
     .filter((t) => memoryEnabled || !t.name.startsWith("memory_"))
@@ -272,11 +267,11 @@ export async function resolveRunConfig(
     web: webEnabled,
     memory: memoryEnabled,
     mcpTools: mcpSchemas.length,
-    confirmLevel,
+    confirmLevel: config.confirmLevel,
   });
   return {
     config,
-    confirmLevel,
+    confirmLevel: config.confirmLevel,
     cur,
     modelEntry,
     provider,

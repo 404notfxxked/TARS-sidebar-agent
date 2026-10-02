@@ -3,7 +3,12 @@
 // 所以直接喂 chrome.storage 桩再 loadConfig,断言返回的投影。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { detectLocale, loadConfig, normalizeSearch } from "./configStore";
+import {
+  detectLocale,
+  loadConfig,
+  normalizeSearch,
+  saveConfirmLevel,
+} from "./configStore";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -213,5 +218,48 @@ describe("loadConfig 读时迁移", () => {
     await storage().set({ locale: "zh-CN" });
     vi.stubGlobal("navigator", { language: "en-US" });
     expect((await loadConfig()).locale).toBe("zh-CN");
+  });
+});
+
+describe("confirmLevel 读时迁移(legacy confirmActions 布尔 → 档位)", () => {
+  it("无任何键 → strict(安全默认)", async () => {
+    const cfg = await loadConfig();
+    expect(cfg.confirmLevel).toBe("strict");
+  });
+
+  it("legacy confirmActions: false → off;缺席或 true → strict", async () => {
+    await storage().set({ confirmActions: false });
+    expect((await loadConfig()).confirmLevel).toBe("off");
+    await storage().clear();
+    await storage().set({ confirmActions: true });
+    expect((await loadConfig()).confirmLevel).toBe("strict");
+  });
+
+  it("confirmLevel 合法值优先于 legacy 布尔", async () => {
+    await storage().set({ confirmLevel: "auto", confirmActions: false });
+    expect((await loadConfig()).confirmLevel).toBe("auto");
+  });
+
+  it("confirmLevel 非法(大小写/未知值)→ 回落 legacy → 再回落 strict", async () => {
+    await storage().set({ confirmLevel: "STRICT", confirmActions: false });
+    expect((await loadConfig()).confirmLevel).toBe("off");
+    await storage().set({ confirmLevel: "yolo", confirmActions: true });
+    expect((await loadConfig()).confirmLevel).toBe("strict");
+  });
+});
+
+describe("saveConfirmLevel(档位写入唯一入口,legacy 双写保回滚安全)", () => {
+  it("写 auto:confirmLevel 与 confirmActions 两键同时在场,后者为 true", async () => {
+    await saveConfirmLevel("auto");
+    const bag = await chrome.storage.local.get(["confirmLevel", "confirmActions"]);
+    expect(bag.confirmLevel).toBe("auto");
+    expect(bag.confirmActions).toBe(true);
+  });
+
+  it("写 off:双写 legacy false(回滚到旧版读到的也是全免,与用户所选档一致)", async () => {
+    await saveConfirmLevel("off");
+    const bag = await chrome.storage.local.get(["confirmLevel", "confirmActions"]);
+    expect(bag.confirmLevel).toBe("off");
+    expect(bag.confirmActions).toBe(false);
   });
 });

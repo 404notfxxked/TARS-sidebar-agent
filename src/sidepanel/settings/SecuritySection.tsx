@@ -5,7 +5,11 @@
 // 默认开启;机制细节(覆盖哪些动作、超时语义)按需展开。
 
 import { useEffect, useState } from "react";
-import { savePrefs } from "../../shared/configStore";
+import {
+  saveConfirmLevel,
+  savePrefs,
+  type ConfirmLevel,
+} from "../../shared/configStore";
 import { useT } from "../ui/hooks";
 import SwitchRow from "../ui/SwitchRow";
 import {
@@ -16,16 +20,18 @@ import {
 import { HintMore, SettingsSection } from "./parts";
 
 export default function SecuritySection({
-  initialConfirmActions,
+  initialConfirmLevel,
   initialNotifyDone,
   run,
 }: {
-  initialConfirmActions: boolean;
+  initialConfirmLevel: ConfirmLevel;
   initialNotifyDone: boolean;
   run: (p: Promise<void>) => void;
 }) {
   const t = useT();
-  const [confirmActions, setConfirmActions] = useState(initialConfirmActions);
+  // T2 过渡形态:开关数据源已切档位(写入走 saveConfirmLevel 双写),
+  // 开 = strict、关 = off,auto 不可从本 UI 产生 —— T3 换三档 Segmented
+  const [confirmLevel, setConfirmLevel] = useState(initialConfirmLevel);
   const [notifyDone, setNotifyDone] = useState(initialNotifyDone);
   // null = 授权态查询中(避免首帧误闪「未授权」)
   const [pageAccess, setPageAccess] = useState<boolean | null>(null);
@@ -81,15 +87,16 @@ export default function SecuritySection({
       <SwitchRow
         id="settings-confirm-actions"
         label={t("security.confirmActions")}
-        checked={confirmActions}
+        checked={confirmLevel !== "off"}
         onChange={(next) => {
-          setConfirmActions(next);
-          run(savePrefs({ confirmActions: next }));
+          const level: ConfirmLevel = next ? "strict" : "off";
+          setConfirmLevel(level);
+          run(saveConfirmLevel(level));
         }}
         hint={t("security.confirmActionsHint")}
       />
       {/* 关闭前的最后一次告知:关掉即放弃人审,值得让用户展开看一眼 */}
-      {confirmActions && <HintMore detail={t("security.confirmActionsDetail")} />}
+      {confirmLevel !== "off" && <HintMore detail={t("security.confirmActionsDetail")} />}
 
       <SwitchRow
         id="settings-notify-done"
