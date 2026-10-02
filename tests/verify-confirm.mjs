@@ -1,8 +1,8 @@
-// 验证写操作确认门(安全 V1)
+// 验证写操作确认门(安全 V1 + 三档 confirmLevel)
 // 用法: pnpm build && node tests/verify-confirm.mjs
 //
 // CDP Fetch 拦截 LLM 端点,mock 模型先调一个「过门工具」再给终答,断言:
-//   场景 1(C1/C2):默认开启(confirmActions 键缺席 = 开)弹确认卡,卡内
+//   场景 1(C1/C2):默认开启(confirmLevel 键缺席 = strict)弹确认卡,卡内
 //       含目标页面 / 写入内容 / 回车提交提示 / 元素定位 —— 信息足够做决定;
 //       拒绝后 fill_input 不执行,「declined」错误文案回给模型,run 正常收口
 //   场景 2(C3):允许 → 门放行,工具真实分发(本测试环境无普通页面可注入,
@@ -10,7 +10,10 @@
 //   场景 3(M):memory_save 过门(拒绝 → 拒;允许 → 落库)
 //   场景 4(W):web_fetch 出口底线:私网必卡;白名单命中直抓
 //   场景 5(W2):同轮两个白名单外 fetch 串行出卡(批次屏障)+ 同域复用
-//   场景 6:设置页安全分节渲染
+//   场景 7(OFF):confirmLevel=off → click/fill/memory 全程无卡真实分发
+//   场景 8(AUTO):confirmLevel=auto → click 免门;memory_save 仍过门,
+//       拒绝后 declined 回给模型
+//   场景 6:设置页安全分节渲染(三档 Segmented)
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -42,8 +45,8 @@ const answer = answerSSE;
 const toolCall = toolCallSSE;
 
 // 每轮:先按 mode 发一个「过门工具」调用,工具往返后终答。
-// 2026-09 确认门扩容后,这里覆盖三个族:页面写动作 / 记忆持久写 / web_fetch 出口底线
-let mode = "fill"; // fill | memory | webfetch-private | webfetch-open | webfetch-parallel
+// 2026-09 确认门扩容后,这里覆盖三个族:页面写动作 / 记忆持久写 / web_fetch 出口底线;
+// 2026-10 三档化新增 click 档(off/auto 场景的页面写族用,含免门分发语义)
 let parStep = 0; // webfetch-parallel 的轮次推进(两连发 → 同域复用 → 终答)
 mock.setRoutes([
   {
@@ -55,20 +58,37 @@ mock.setRoutes([
       const usedTool = msgs
         .slice(lastUserIdx + 1)
         .some((m) => m.role === "tool");
-      if (mode === "memory") {
+      // 本轮意图按消息文本自描述路由(2026-10-02 改造):click_element 在真实
+      // 标签页上执行可达数十秒,跨轮全局 mode 会在慢工具执行期间被下一场景
+      // 覆盖,让在途请求被错误伺服 —— 路由必须与到达时序解耦
+      const lastUser = String(msgs[lastUserIdx]?.content ?? "");
+      if (/记住我喜欢简洁回答/.test(lastUser)) {
+        // off 场景专用新文本:同文记忆会被 addMemory 去重(少而精语义),
+        // 用新文本才能以条数增加佐证免门落库
+        if (!usedTool) return toolCall(ctx, "memory_save", { content: "用户偏好简洁回答" });
+        return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
+      }
+      if (/记住我喜欢深色界面|再记一次/.test(lastUser)) {
         if (!usedTool) return toolCall(ctx, "memory_save", { content: "用户偏好深色界面" });
         return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
       }
-      if (mode === "webfetch-private") {
+      if (/点一下提交按钮/.test(lastUser)) {
+        if (!usedTool)
+          return toolCall(ctx, "click_element", {
+            selector: "form > button[type=submit]",
+          });
+        return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
+      }
+      if (/读一下内网配置页/.test(lastUser)) {
         if (!usedTool)
           return toolCall(ctx, "web_fetch", { url: "http://10.0.0.5:8080/internal/config" });
         return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
       }
-      if (mode === "webfetch-open") {
+      if (/open-page/.test(lastUser)) {
         if (!usedTool) return toolCall(ctx, "web_fetch", { url: "https://mock.test/open-page" });
         return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
       }
-      if (mode === "webfetch-parallel") {
+      if (/两个链接/.test(lastUser)) {
         // 同轮两个白名单外 fetch:批次屏障下必须逐个出卡,不允许同批并发
         // 派发把先到的确认请求挤丢。第三跳复用已批准的域:
         // 批准即知情,同域不再重复弹卡。
@@ -228,7 +248,6 @@ try {
   // ---- 场景 3:memory_save 过门(拒绝 → 拒;允许 → 落库) ----
   scene = "M memory_save 确认门";
   console.log("\n── M memory_save 确认门(拒绝/允许)──");
-  mode = "memory";
   await sendOnly("记住我喜欢深色界面");
   await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
   const memCardText = await sidepanel.locator(card).innerText();
@@ -264,7 +283,6 @@ try {
   await sidepanel.evaluate(() =>
     chrome.storage.local.set({ webSearch: true }),
   );
-  mode = "webfetch-private";
   await sendOnly("读一下内网配置页");
   await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
   const wfCardText = await sidepanel.locator(card).innerText();
@@ -282,7 +300,6 @@ try {
     JSON.stringify(wfDenyLog?.data ?? null).slice(0, 200), 
   );
 
-  mode = "webfetch-open";
   // 会话来源域白名单:URL 出自用户消息 → 命中 → 不弹卡直抓
   await sendOnly("读一个公开页 https://mock.test/open-page");
   // 公开页要真实走一次 fetch(DNS 失败需数秒),waitIdle 的两段判定有
@@ -316,7 +333,6 @@ try {
   // 上一轮(mock.test DNS 失败要数秒)收口后再发:发送钮仍隐藏时 sendOnly
   // 会白等 30s(CI release 预检实测)
   await waitIdle();
-  mode = "webfetch-parallel";
   parStep = 0;
   await sendOnly("把这两个链接都读一下");
   await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
@@ -369,18 +385,133 @@ try {
     JSON.stringify(fetchFails.map((e) => e.data)).slice(0, 300), 
   );
 
-  // ---- 场景 6:设置页开关存在(安全分节渲染) ----
+  // ---- 场景 7:off 档全部免问 ----
+  // 切档照场景 4 的 storage.set 先例;run 开始快照 → 对后续新 run 生效。
+  // 断言口径:工具日志在场(失败也行)且无 declined + 场上无确认卡 ——
+  // 别只断言卡不在(免门后工具必须真的分发了)
+  scene = "OFF 全部免问";
+  console.log("\n── OFF 全部免问 ──");
+  await sidepanel.evaluate(() =>
+    chrome.storage.local.set({ confirmLevel: "off" }),
+  );
+  await sendOnly("点一下提交按钮");
+  // 等工具日志而非 send 钮可见:点击瞬间 send 钮尚可见(翻转在 React 渲染
+  // 批次里),waitIdle 会假通过 —— 断言时机必须事件驱动(run 窗口轮询)
+  const entriesOff1 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /click_element (失败|完成)/.test(e.msg),
+    "off click 轮工具日志",
+  );
+  const clickOff = findToolLog(entriesOff1, /click_element (失败|完成)/);
+  check(
+    !!clickOff && !/declined/.test(clickOff.data ?? "{}"), "off:click 免门真实分发(失败也非 declined)",
+    JSON.stringify(clickOff?.data ?? null).slice(0, 200),
+  );
+  check((await sidepanel.locator(card).count()) === 0, "off:click 无确认卡");
+
+  await sendOnly("再填一次");
+  const entriesOff2 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /fill_input (失败|完成)/.test(e.msg),
+    "off fill 轮工具日志",
+  );
+  const fillOff = findToolLog(entriesOff2, /fill_input (失败|完成)/);
+  check(
+    !!fillOff && !/declined/.test(fillOff.data ?? "{}"), "off:fill(提交型)免门真实分发",
+    JSON.stringify(fillOff?.data ?? null).slice(0, 200),
+  );
+
+  await sendOnly("记住我喜欢简洁回答");
+  const offMemLog = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /memory_save (失败|完成)/.test(e.msg),
+    "off memory 轮工具日志",
+  );
+  const offMemDone = offMemLog.some(
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" && /memory_save 完成/.test(e.msg),
+  );
+  const memRowsOff = await idbGetAll(sidepanel, "memories");
+  check(
+    offMemDone && memRowsOff.length === 2, "off:memory_save 免门直接落库(场景 3 已落 1 条)",
+    JSON.stringify(memRowsOff.map((r) => r.text)),
+  );
+  check((await sidepanel.locator(card).count()) === 0, "off:全程无确认卡");
+
+  // ---- 场景 8:auto 档仅页面操作免问 ----
+  scene = "AUTO 仅页面操作免问";
+  console.log("\n── AUTO 仅页面操作免问 ──");
+  await sidepanel.evaluate(() =>
+    chrome.storage.local.set({ confirmLevel: "auto" }),
+  );
+  await sendOnly("点一下提交按钮");
+  const entriesAuto1 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /click_element (失败|完成)/.test(e.msg),
+    "auto click 轮工具日志",
+  );
+  const clickAuto = findToolLog(entriesAuto1, /click_element (失败|完成)/);
+  check(
+    !!clickAuto && !/declined/.test(clickAuto.data ?? "{}"), "auto:click 免门真实分发",
+    JSON.stringify(clickAuto?.data ?? null).slice(0, 200),
+  );
+  check((await sidepanel.locator(card).count()) === 0, "auto:click 无确认卡");
+
+  await sendOnly("记住我喜欢深色界面");
+  await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
+  const memCardAuto = await sidepanel.locator(card).innerText();
+  check(
+    memCardAuto.includes(zh.chat.confirmMemorySaveTitle), "auto:memory_save 仍过门(记忆族标题)",
+    `卡片内容:${memCardAuto}`,
+  );
+  await sidepanel.locator(denyBtn).click();
+  const entriesAuto2 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /memory_save 失败/.test(e.msg),
+    "auto memory 拒绝日志",
+  );
+  const memDenyAuto = findToolLog(entriesAuto2, /memory_save 失败/);
+  check(
+    !!memDenyAuto && /declined/.test(memDenyAuto.data ?? "{}"), "auto:拒绝后 declined(CONFIRM_DENIED 语义)回给模型",
+    JSON.stringify(memDenyAuto?.data ?? null).slice(0, 200),
+  );
+  const memRowsAuto = await idbGetAll(sidepanel, "memories");
+  check(
+    memRowsAuto.length === 2, "auto:拒绝 → 记忆未新增",
+    JSON.stringify(memRowsAuto.map((r) => r.text)),
+  );
+
+  // ---- 场景 6:设置页安全分节渲染(三档 Segmented) ----
   scene = "安全分节";
   console.log("\n── 安全分节 ──");
   await sidepanel.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();
   const securityRow = sidepanel
     .locator('label, span, div')
-    .filter({ hasText: zh.security.confirmActions })
+    .filter({ hasText: zh.security.confirmLevel })
     .first();
   await securityRow.waitFor({ timeout: 10000 });
   check(
-    (await securityRow.count()) > 0, "设置页出现「安全」分节与确认开关", 
+    (await securityRow.count()) > 0, "设置页出现「安全」分节与确认档位",
   );
+  for (const label of [
+    zh.security.confirmLevelStrict,
+    zh.security.confirmLevelAuto,
+    zh.security.confirmLevelOff,
+  ]) {
+    check(
+      (await sidepanel.getByRole("radio", { name: label }).count()) === 1, `档位段在场(${label})`,
+    );
+  }
 } catch (err) {
   // 场景名 + 完整堆栈:失败要能定位到哪个场景哪一行,而不是折成一个匿名红点
   check(false, `场景「${scene ?? "初始化"}」执行异常`, err.stack ?? String(err));
