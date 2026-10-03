@@ -380,7 +380,9 @@ export function normalizeSearch(v: unknown): SearchConfig {
 }
 
 /** 偏好局部保存(storage key 与字段同名,直接落盘)。
- *  各控件按字段调用,providers 整包写入(内含各供应商的 key) */
+ *  各控件按字段调用,providers 整包写入(内含各供应商的 key)。
+ *  确认档位不走这里 —— savePrefs 只写新键不写 legacy 键,会让回滚
+ *  兼容的双写静默失效;档位一律走 saveConfirmLevel(双写 legacy 键) */
 export async function savePrefs(
   prefs: Partial<
     Pick<
@@ -394,7 +396,6 @@ export async function savePrefs(
       | "webSearch"
       | "memory"
       | "skills"
-      | "confirmLevel"
       | "notifyDone"
       | "search"
       | "historyRetention"

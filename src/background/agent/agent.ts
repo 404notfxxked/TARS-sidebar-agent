@@ -139,7 +139,6 @@ export async function runAgentLoop(
       port,
       signal,
       sessionId: payload.sessionId,
-      fetchAllowlist,
       confirmGate,
       callChat,
       dispatchToolCall,

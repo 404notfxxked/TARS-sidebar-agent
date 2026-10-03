@@ -156,9 +156,9 @@ mock.setRoutes([
     },
   },
 ]);
-console.log("✅ LLM mock 就绪(mode 驱动:fill/memory/webfetch)");
+console.log("✅ LLM mock 就绪(按本轮用户消息文本自描述路由)");
 
-// 面板 + 假配置(confirmActions 键缺席 = 默认开启,即被测默认态)
+// 面板 + 假配置(confirmLevel 键缺席 = strict,安全默认)
 const sidepanel = await openPanel(browser, extId, { configure: injectTestConfig });
 
 const sendBtn = `button[aria-label="${zh.chat.send}"]`;

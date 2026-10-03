@@ -43,7 +43,6 @@ function makeDeps(reply: ChatResult, events: AgentEvent[]): TurnDeps {
     cfg,
     port,
     sessionId: undefined, // 不落盘:本用例只验循环收口口径
-    fetchAllowlist: new Set<string>(),
     confirmGate: () => false, // 本用例无工具调用,门不参与
     callChat: async () => reply,
     dispatchToolCall: async () => ({}),

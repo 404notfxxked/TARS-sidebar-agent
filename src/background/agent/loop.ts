@@ -55,10 +55,10 @@ export interface TurnDeps {
   signal?: AbortSignal;
   /** 本轮用户提问所属会话(定稿落盘/日志用;面板首问时为 undefined) */
   sessionId: string | undefined;
-  fetchAllowlist: Set<string>;
   /** 共享确认门闭包(run 装配处建一次):批次屏障与 toolDispatch 的门判定
    *  必须调用同一实例 —— 两处各自展开成 needsConfirmation(...) 会漂移,
-   *  屏障漏判会让同批并发派发确认请求,打破确认卡单槽约束 */
+   *  屏障漏判会让同批并发派发确认请求,打破确认卡单槽约束。白名单不经过
+   *  loop:消费者(toolDispatch 的 add、confirmGate)都在闭包里持有引用 */
   confirmGate: ConfirmGate;
   callChat: CallChat;
   dispatchToolCall: DispatchToolCall;
