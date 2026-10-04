@@ -69,6 +69,7 @@
   --color-on-error: var(--md-sys-color-on-error);
   --color-error-container: var(--md-sys-color-error-container);
   --color-on-error-container: var(--md-sys-color-on-error-container);
+  --color-warning: var(--md-sys-color-warning);
   --color-surface: var(--md-sys-color-surface);
   --color-surface-dim: var(--md-sys-color-surface-dim);
   --color-surface-container-lowest: var(--md-sys-color-surface-container-lowest);
