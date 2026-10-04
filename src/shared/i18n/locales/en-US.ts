@@ -261,19 +261,11 @@ export const enUS = {
     hostAccessGrant: "Grant page & network access",
     hostAccessRevoke: "Revoke",
     hostAccessOn: "Granted",
-    confirmLevel: "Confirmation level",
+    // The confirmation level moved to the composer pill; Strict/Auto/Off
+    // remain as the pill's aria long labels (short labels: chat.confirmPill*)
     confirmLevelStrict: "Confirm every action",
     confirmLevelAuto: "Auto-approve page actions",
     confirmLevelOff: "Auto-approve everything",
-    confirmLevelHint:
-      "A change does not affect a task that is in progress. It applies from your next message.",
-    confirmLevelScope:
-      "Page actions run without asking on every site that you authorized, not only on the current page.",
-    confirmLevelSubmit:
-      "Submit actions are also auto-approved. These actions include pressing Enter and clicking a submit button.",
-    confirmLevelOffWarning:
-      "This level auto-approves page actions, memory writes and deletes, tool calls to MCP servers, and reads of private addresses or unseen links. Use this level only when you can watch the task.",
-    confirmLevelArm: "Click again to auto-approve everything",
     notifyDone: "Task completion notifications",
     notifyDoneHint:
       "When the panel is not visible, a system notification is posted when a task finishes or fails; click it to return.",

@@ -137,10 +137,10 @@ export default function SettingsView({
             />
 
             {/* ── 安全:页面/网络授权是读页/搜索/读网页的总闸(onboarding
-                第 2 步),确认门决定 agent 自治程度 —— 曾排第 7,新用户
-                按快速开始走要滚过 5 张卡才找到授权入口 ── */}
+                第 2 步)—— 曾排第 7,新用户按快速开始走要滚过 5 张卡
+                才找到授权入口;确认档位已迁 composer pill(见
+                SecuritySection 头注) ── */}
             <SecuritySection
-              initialConfirmLevel={config.confirmLevel}
               initialNotifyDone={config.notifyDone}
               run={run}
             />
