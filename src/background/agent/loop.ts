@@ -13,7 +13,7 @@ import {
 import { stripScreenshot, takeScreenshot } from "../../shared/toolTypes";
 import { createLogger } from "../../shared/logger";
 import { coveredLibraryRows, enforceToolResultBudget } from "./tokenBudget";
-import { needsConfirmation } from "./confirmations";
+import type { ConfirmGate } from "./confirmations";
 import { partitionToolBatches } from "./toolBatch";
 import { redactToolArgsForLog } from "./toolLog";
 import { stringifyResult } from "./format";
@@ -48,14 +48,18 @@ function assertAnswerText(content: string, when: string): void {
   );
 }
 
-/** 主循环的运行期依赖:只读配置与两个工厂产物(它们闭包了 provider/白名单)。 */
+/** 主循环的运行期依赖:只读配置与工厂产物(它们闭包了 provider/白名单)。 */
 export interface TurnDeps {
   cfg: RunCfg;
   port: AgentPort;
   signal?: AbortSignal;
   /** 本轮用户提问所属会话(定稿落盘/日志用;面板首问时为 undefined) */
   sessionId: string | undefined;
-  fetchAllowlist: Set<string>;
+  /** 共享确认门闭包(run 装配处建一次):批次屏障与 toolDispatch 的门判定
+   *  必须调用同一实例 —— 两处各自展开成 needsConfirmation(...) 会漂移,
+   *  屏障漏判会让同批并发派发确认请求,打破确认卡单槽约束。白名单不经过
+   *  loop:消费者(toolDispatch 的 add、confirmGate)都在闭包里持有引用 */
+  confirmGate: ConfirmGate;
   callChat: CallChat;
   dispatchToolCall: DispatchToolCall;
 }
@@ -64,7 +68,7 @@ export async function runTurns(
   loop: RunLoopState,
   deps: TurnDeps,
 ): Promise<void> {
-  const { cfg, port, signal, sessionId, fetchAllowlist, callChat, dispatchToolCall } = deps;
+  const { cfg, port, signal, sessionId, callChat, dispatchToolCall, confirmGate } = deps;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     loop.turnNo = turn + 1;
     log.debug("agent", `turn ${turn + 1}/${MAX_TURNS}`);
@@ -108,9 +112,13 @@ export async function runTurns(
       // 批次执行:相邻只读工具批内并行,写工具/MCP 工具自成单批串行。
       // 需过确认门的调用(含 web_fetch 的私网/白名单未命中判定)是批次屏障:
       // 确认卡在面板是单槽,同批并发派发会让先到的确认请求不可见。
+      // 谓词与 dispatch 的门判定共用同一个 confirmGate 闭包(契约点 1);
+      // 注意公式同源 ≠ 时刻同源:fetchAllowlist 在派发期会学习(toolDispatch
+      // 批准后 add),屏障在分区期取值 —— 同轮两个同域白名单外 fetch 会
+      // 先各成单批,是既有正确行为(toolBatch.ts 头注)
       // 「调用中」事件先整批发(面板过程卡同时亮起),结果按原始顺序回填
       for (const batch of partitionToolBatches(result.toolCalls, (tc) =>
-        cfg.confirmActions && needsConfirmation(tc.name, tc.args, fetchAllowlist),
+        confirmGate(tc.name, tc.args),
       )) {
         for (const tc of batch) {
           port.postMessage({

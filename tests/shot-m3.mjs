@@ -105,8 +105,9 @@ async function runHints(browser, extId) {
   }
   const mores = hpage.locator(".hint-more-btn");
   // DOM 序 = 分区序(Model/Appearance 无 HintMore):联网/MCP/记忆 +
-  // 安全区确认门告知(confirmActions 默认开,2026-09-15 加入)。这里只锁
-  // 「至少三处机制说明」;probe-hints 时代硬编码 ===3 曾被安全区新增打破
+  // 安全区授权撤销提示(授权态无 HintMore;确认档位说明走 field-hint 常驻,
+  // 2026-10 三档化后不再贡献 HintMore)。这里只锁「至少三处机制说明」;
+  // probe-hints 时代硬编码 ===3 曾被安全区新增打破
   ok(
     (await mores.count()) >= 3,
     "联网/MCP/记忆的「了解详情」齐全",

@@ -143,12 +143,14 @@ export interface AppConfig {
   /** 技能总开关:关 = / 调用不生效(菜单与技能页管理不受影响);
    *  缺省 = 开。技能是用户手动安装的本地指令文本,无网络无外传,空库零成本 */
   skills: boolean;
-  /** 写操作确认门(总开关:关 = 四类全放行):click_element / fill_input 等页面写
-   *  动作、memory_save / memory_delete 持久写、全部 mcp_* 工具、web_fetch 出站
-   *  (私网或来源域白名单未命中)—— 执行前弹面板确认卡;超时未答复按拒绝处理。
-   *  权威清单见 agent/confirmations.ts 的 CONFIRM_TOOLS 与 needsConfirmation;
-   *  缺省 = 开(安全默认, 宁可多点一次) */
-  confirmActions: boolean;
+  /** 写操作确认门档位(ConfirmLevel 真源在同文件下方):strict = 一切写动作
+   *  逐次过确认卡(缺省,安全默认);auto = 页面写动作免门,记忆写/MCP/
+   *  可疑出站仍过门;off = 全部免审(用户自担,UI 明示)。过门范围见
+   *  agent/confirmations.ts 的 TOOL_CATEGORY 与 needsConfirmation(level);
+   *  读时迁移:legacy confirmActions 布尔按 false→off / 其余→strict 映射,
+   *  非法档位值回落 legacy 再回落 strict;写入走 saveConfirmLevel(双写
+   *  legacy 键,保旧版回滚时读到一致语义) */
+  confirmLevel: ConfirmLevel;
   /** 任务完成通知:开 = run 结束且面板不可见时发系统通知;缺省 = 开 */
   notifyDone: boolean;
   /** 搜索服务配置;选了服务商但 apiKey 为空时 web_search 退回免 Key 标签页通道 */
@@ -192,6 +194,13 @@ export interface SearchConfig {
 export type CompactLevel = "early" | "standard" | "late";
 export const COMPACT_LEVELS: CompactLevel[] = ["early", "standard", "late"];
 
+/** 写操作确认门档位(confirmLevel 的真源,消费在 agent/confirmations.ts):
+ *  strict = 一切写动作逐次过确认卡(缺省,安全默认);auto = 页面写动作
+ *  (click/fill,含提交型)免门,记忆写/MCP/可疑出站仍过门;off = 全部免审
+ *  (用户自担)。语义与迁移见 permission-levels-plan */
+export type ConfirmLevel = "strict" | "auto" | "off";
+export const CONFIRM_LEVELS: ConfirmLevel[] = ["strict", "auto", "off"];
+
 export async function loadConfig(): Promise<AppConfig> {
   // 历史兼容:旧版曾支持「仅本次会话」的 key,现无写入方(见文件头注)
   const s = await chrome.storage.session.get("apiKey");
@@ -210,6 +219,7 @@ export async function loadConfig(): Promise<AppConfig> {
     "memory",
     "skills",
     "confirmActions",
+    "confirmLevel",
     "notifyDone",
     "search",
     "historyRetention",
@@ -253,8 +263,14 @@ export async function loadConfig(): Promise<AppConfig> {
     memory: l.memory !== false,
     // 技能缺省开启(纯本地文本,空库零成本;关 = / 调用不生效)
     skills: l.skills !== false,
-    // 写操作确认缺省开启:浏览器 agent 的写动作(点按/填写)默认逐次过目
-    confirmActions: l.confirmActions !== false,
+    // 写操作确认档位:合法值直读;非法/缺席回落 legacy 布尔(false→off,
+    // 其余→strict)——旧版只写过 strict/off 两态,auto 只能来自新 UI;
+    // 写入走 saveConfirmLevel(双写 legacy 键,回滚到旧版语义一致)
+    confirmLevel: CONFIRM_LEVELS.includes(l.confirmLevel as ConfirmLevel)
+      ? (l.confirmLevel as ConfirmLevel)
+      : l.confirmActions === false
+        ? "off"
+        : "strict",
     // 任务完成通知缺省开启(仅面板不可见时才发,不打扰正在看面板的用户)
     notifyDone: l.notifyDone !== false,
     search: normalizeSearch(l.search),
@@ -364,7 +380,9 @@ export function normalizeSearch(v: unknown): SearchConfig {
 }
 
 /** 偏好局部保存(storage key 与字段同名,直接落盘)。
- *  各控件按字段调用,providers 整包写入(内含各供应商的 key) */
+ *  各控件按字段调用,providers 整包写入(内含各供应商的 key)。
+ *  确认档位不走这里 —— savePrefs 只写新键不写 legacy 键,会让回滚
+ *  兼容的双写静默失效;档位一律走 saveConfirmLevel(双写 legacy 键) */
 export async function savePrefs(
   prefs: Partial<
     Pick<
@@ -378,7 +396,6 @@ export async function savePrefs(
       | "webSearch"
       | "memory"
       | "skills"
-      | "confirmActions"
       | "notifyDone"
       | "search"
       | "historyRetention"
@@ -390,6 +407,18 @@ export async function savePrefs(
   >,
 ): Promise<void> {
   await chrome.storage.local.set(prefs);
+}
+
+/** 档位写入唯一入口(savePrefs 不收 confirmActions——它已不在 AppConfig 上)。
+ *  双写 legacy confirmActions 布尔:用户升级后回滚/侧载旧版 build 时,旧版
+ *  loadConfig 读的是 confirmActions —— 不双写会让选过 auto 的用户在旧版里
+ *  被读成「全免审」,比其所选档更松(回滚方向安全,一行代价)。legacy 双写
+ *  保留至下个次版本,届时随读侧迁移一并清除 */
+export async function saveConfirmLevel(level: ConfirmLevel): Promise<void> {
+  await chrome.storage.local.set({
+    confirmLevel: level,
+    confirmActions: level !== "off",
+  });
 }
 
 /** 运行时观测回写(能力判定第 3 层):该模型真吐过推理内容而条目尚未标记

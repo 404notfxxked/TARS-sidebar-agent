@@ -11,6 +11,7 @@ import { createCallChat } from "./chatCall";
 import { createDispatchToolCall } from "./toolDispatch";
 import { assemblePrompt, resolveRunConfig } from "./runSetup";
 import { runTurns } from "./loop";
+import { needsConfirmation, type ConfirmGate } from "./confirmations";
 import {
   clearToolExecutionContext,
   type ToolExecutionContext,
@@ -119,8 +120,12 @@ export async function runAgentLoop(
     // execute(工具对 ctx 的读取都发生在自己执行体的同步开头,窗口内读不到别人的)。
     // 执行后不清理:并行批次下兄弟工具可能仍在读全局 ctx,清理由 run 收口的
     // finally 统一做
+    // 共享确认门闭包:批次屏障(loop)与 dispatch 的门判定必须同源(契约点 1)
+    // —— 在这里建一次,两处以同一实例消费,不许各自展开成 needsConfirmation(...)
+    const confirmGate: ConfirmGate = (name, args) =>
+      needsConfirmation(name, args, cfg.confirmLevel, fetchAllowlist);
     const dispatchToolCall = createDispatchToolCall(
-      cfg,
+      confirmGate,
       toolCtx,
       port,
       signal,
@@ -134,7 +139,7 @@ export async function runAgentLoop(
       port,
       signal,
       sessionId: payload.sessionId,
-      fetchAllowlist,
+      confirmGate,
       callChat,
       dispatchToolCall,
     });

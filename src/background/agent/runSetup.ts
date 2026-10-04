@@ -14,6 +14,7 @@ import {
 import {
   inferMaxTokensField,
   loadConfig,
+  type ConfirmLevel,
 } from "../../shared/configStore";
 import type { AppConfig, ModelEntry, ProviderEntry } from "../../shared/configStore";
 import {
@@ -62,8 +63,9 @@ const log = createLogger({ ctx: "bg" });
 export interface RunCfg {
   /** 原始设置(读 model 等) */
   config: AppConfig;
-  /** 写操作确认门开关(工具分发用) */
-  confirmActions: boolean;
+  /** 写操作确认门档位(语义见 shared/configStore.ts 的 ConfirmLevel;
+   *  消费经 agent.ts 的 confirmGate 共享闭包 —— dispatch 与批次屏障同源) */
+  confirmLevel: ConfirmLevel;
   /** 命中的供应商与模型条目 */
   cur: ProviderEntry;
   modelEntry: ModelEntry | undefined;
@@ -256,7 +258,8 @@ export async function resolveRunConfig(
     .filter((t) => memoryEnabled || !t.name.startsWith("memory_"))
     .filter((t) => visionOk || t.name !== "page_screenshot"), ...mcpSchemas];
   // 执行上下文档案:模型与开关状态(index.ts 的 run started 已记用户原文,
-  // 这里补齐判断搜索质量时需要的模型身份)
+  // 这里补齐判断搜索质量时需要的模型身份)。confirmLevel 随档位入库:
+  // 历史 run 可回算档位使用率(日志聚合面板尚不存在,欠账见方案 T6)
   log.info("agent", "run config", {
     session: payload.sessionId ?? "",
     provider: cur.name,
@@ -264,10 +267,11 @@ export async function resolveRunConfig(
     web: webEnabled,
     memory: memoryEnabled,
     mcpTools: mcpSchemas.length,
+    confirmLevel: config.confirmLevel,
   });
   return {
     config,
-    confirmActions: config.confirmActions,
+    confirmLevel: config.confirmLevel,
     cur,
     modelEntry,
     provider,

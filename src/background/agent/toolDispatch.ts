@@ -8,18 +8,20 @@ import { getTool } from "../tools/tools";
 import { setToolExecutionContext, type ToolExecutionContext } from "../tools/toolContext";
 import {
   CONFIRM_DENIED_MSG,
-  needsConfirmation,
+  type ConfirmGate,
   requestConfirmation,
 } from "./confirmations";
 import type { AgentPort } from "./agent";
 
 export type DispatchToolCall = (name: string, args: unknown) => Promise<unknown>;
 
-/** 工具分发工厂:闭包本次 run 的确认开关/白名单/执行上下文。
+/** 工具分发工厂:闭包本次 run 的确认门/白名单/执行上下文。
+ *  confirmGate 是 run 装配处建好的共享门闭包(与 loop 的批次屏障同一个
+ *  实例,契约点 1 —— 两处判定必须同源)。
  *  注:本函数不读写 run 可变状态(messages/落盘锚点都在 loop 里),故不收 loop;
  *  run 内会变的只有确认白名单集合,按引用传入(确认门里 add)。 */
 export function createDispatchToolCall(
-  cfg: { confirmActions: boolean },
+  confirmGate: ConfirmGate,
   toolCtx: ToolExecutionContext,
   port: AgentPort,
   signal: AbortSignal | undefined,
@@ -30,9 +32,10 @@ export function createDispatchToolCall(
     if (!tool) throw new Error(`unknown tool: ${name}`);
     // 写操作确认门:页面动作(点按/填写)、记忆写入/删除、MCP 动态工具
     // (语义未知不假设只读),以及 web_fetch 的出口判定(私网目标 /
-    // 白名单未命中)默认逐次经面板确认(设置可关)。拒绝/超时的文案作为
-    // 工具错误回给模型 —— 让它改道而不是硬重试
-    if (cfg.confirmActions && needsConfirmation(name, args, fetchAllowlist)) {
+    // 白名单未命中)。档位语义(strict/auto/off)在 needsConfirmation 内,
+    // 档位由 confirmGate 闭包持有。拒绝/超时的文案作为工具错误回给模型
+    // —— 让它改道而不是硬重试
+    if (confirmGate(name, args)) {
       const approved = await requestConfirmation(
         port,
         { name, displayName: tool.displayName, args },

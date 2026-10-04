@@ -140,7 +140,7 @@ export default function SettingsView({
                 第 2 步),确认门决定 agent 自治程度 —— 曾排第 7,新用户
                 按快速开始走要滚过 5 张卡才找到授权入口 ── */}
             <SecuritySection
-              initialConfirmActions={config.confirmActions}
+              initialConfirmLevel={config.confirmLevel}
               initialNotifyDone={config.notifyDone}
               run={run}
             />
