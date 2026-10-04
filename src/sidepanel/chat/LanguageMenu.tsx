@@ -63,7 +63,10 @@ export default function LanguageMenu() {
             className="fixed inset-0 z-10"
             onClick={() => setOpen(false)}
           />
-          <div className="combo-pop combo-pop--down z-20" role="menu">
+          <div
+            className="combo-pop combo-pop--down combo-pop--list z-20"
+            role="menu"
+          >
             {OPTIONS.map(({ id, labelKey }) => {
               const label = t(labelKey);
               const current = locale === id;

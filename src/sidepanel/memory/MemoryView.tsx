@@ -230,7 +230,10 @@ export default function MemoryView({
                   setConfirmClear(false);
                 }}
               />
-              <div className="combo-pop combo-pop--down z-20" role="menu">
+              <div
+                className="combo-pop combo-pop--down combo-pop--list z-20"
+                role="menu"
+              >
                 <button
                   type="button"
                   role="menuitem"

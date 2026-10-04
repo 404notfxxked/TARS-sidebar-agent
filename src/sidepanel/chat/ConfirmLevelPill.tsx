@@ -3,9 +3,9 @@
 // 结构属性 —— 业界主流是审批模式就在输入区单键切换,不做重复二次确认);
 // off 的知情由菜单 desc 一行承载(范围写全:记忆读写、MCP、私网与陌生
 // 链接),危险态以固定琥珀 warning 色常驻标示(error 留给失败/破坏性语义)。
-// 真话边界:pill 显示存储档,在途 run 用 run 开始时的快照,中途切档时
-// pill 领先于本轮行为几秒(run 结束即对齐);off 的无人审风险由用户知情
-// 拍板接受,pill 的 warning 色是唯一常驻警示。
+// 真话边界:pill 显示存储档(点选等落库完成才换文案,见 useConfirmLevel);
+// 在途 run 用 run 开始时的快照,已起的那一轮仍按旧档走完。off 的无人审
+// 风险由用户知情拍板接受,pill 的 warning 色是唯一常驻警示。
 // 结构照 ThinkingPicker/ModelPicker:pill 触发钮 + 向上 combo-pop,
 // 点外/Esc 关闭,↑↓ 循环移动高亮,Enter/Tab 选中(焦点保持在触发钮,
 // 高亮项经 aria-activedescendant 桥给读屏)。
@@ -46,6 +46,8 @@ export default function ConfirmLevelPill({
   pick,
 }: {
   level: ConfirmLevel;
+  /** 落库完成后才 resolve(契约同 ComposerConfirm.pick);组件侧不消费返回值,
+   *  fire-and-forget —— 菜单选项与键盘选中路径都只负责发起落档 */
   pick: (level: ConfirmLevel) => void;
 }) {
   const t = useT();
@@ -146,7 +148,7 @@ export default function ConfirmLevelPill({
           aria-label={t(LEVEL_LONG[level])}
           aria-activedescendant={`cl-opt-${activeIdx}`}
           tabIndex={0}
-          className="combo-pop combo-pop--up"
+          className="combo-pop combo-pop--up combo-pop--list"
           style={shiftX !== 0 ? { left: shiftX } : undefined}
         >
           {MENU_LEVELS.map((l, idx) => {

@@ -545,6 +545,38 @@ try {
       .filter({ hasText: zh.chat.confirmPillOff })
       .count()) === 1, "off 项在场且带 desc(T6 撤销「到不了 off」结构属性)",
   );
+  // 菜单几何(间距修法的硬防线):三行带说明在 180px 上限内不滚不裁,
+  // 且首行高亮贴菜单上沿(基座垂直内边距已由 combo-pop--list 撤掉)。
+  // 元素缺席时回同形状的判别结果(ok/why),别让 getBoundingClientRect
+  // 抛裸 TypeError(前置 strictOption.waitFor 已保证在场,这里是防御性判空)
+  const menuFit = await sidepanel.evaluate(() => {
+    const pop = document.querySelector('[role="listbox"]');
+    const first = document.querySelector('[role="option"]');
+    if (!pop) {
+      return { ok: false, why: "listbox 不在场(菜单没开?)", padTop: -1, gapFirst: -1, overflows: true };
+    }
+    if (!first) {
+      return { ok: false, why: "菜单内无 option", padTop: -1, gapFirst: -1, overflows: true };
+    }
+    const cs = getComputedStyle(pop);
+    return {
+      ok: true,
+      why: "",
+      padTop: Number.parseFloat(cs.paddingTop),
+      gapFirst: first.getBoundingClientRect().top - pop.getBoundingClientRect().top,
+      overflows: pop.scrollHeight > pop.clientHeight,
+    };
+  });
+  check(
+    menuFit.ok && menuFit.padTop === 0 && menuFit.gapFirst === 0,
+    "pill 菜单首行高亮贴面上沿(无容器内边距空带)",
+    JSON.stringify(menuFit),
+  );
+  check(
+    menuFit.ok && !menuFit.overflows,
+    "pill 菜单三行不溢出(末行说明不被裁,无需滚动)",
+    JSON.stringify(menuFit),
+  );
   await strictOption.click();
   const pillStrict = sidepanel.getByRole("button", {
     name: zh.chat.confirmPillAria.replace(
@@ -592,16 +624,26 @@ try {
   );
 
   await sendOnly("点一下提交按钮");
-  const entriesPill3 = await waitForRunLog(
+  // 切窗风险:run 窗口以「最后一次 run started」为界,而上一轮(strict 拒绝)
+  // 的日志在新 run 落地前仍在窗口内 —— 只等 click 日志会抓到上一轮的
+  // declined。分两步过窗:先等本轮 run config 记下 confirmLevel=off,
+  // 再等 click 工具日志,并取最后一条(取首条仍可能够到上一轮的残影)
+  await waitForRunLog(
     sidepanel,
     (e) =>
-      `${e.ctx}/${e.tag}` === "bg/tool" &&
-      /click_element (失败|完成)/.test(e.msg),
+      `${e.ctx}/${e.tag}` === "bg/agent" &&
+      /^run config/.test(e.msg) &&
+      /"confirmLevel":"off"/.test(e.data ?? ""),
+    "pill off 轮 run config(confirmLevel=off)",
+  );
+  const clickLogged = (e) =>
+    `${e.ctx}/${e.tag}` === "bg/tool" && /click_element (失败|完成)/.test(e.msg);
+  const entriesPill3 = await waitForRunLog(
+    sidepanel,
+    clickLogged,
     "pill off 轮 click 工具日志",
   );
-  const clickPillOff = entriesPill3.find(
-    (e) => `${e.ctx}/${e.tag}` === "bg/tool" && /click_element (失败|完成)/.test(e.msg),
-  );
+  const clickPillOff = entriesPill3.filter(clickLogged).pop();
   check(
     !!clickPillOff && !/declined/.test(clickPillOff.data ?? "{}"), "off:pill 菜单单击切 off → click 免门真实分发",
     JSON.stringify(clickPillOff?.data ?? null).slice(0, 200),

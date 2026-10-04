@@ -53,10 +53,10 @@ export interface ComposerModels {
   onPickThinking: (effort: string | undefined) => void;
 }
 
-/** 确认档位依赖(useConfirmLevel 的产出) */
+/** 确认档位依赖(useConfirmLevel 的产出):pick 落库完成后才 resolve */
 export interface ComposerConfirm {
   level: ConfirmLevel;
-  pick: (level: ConfirmLevel) => void;
+  pick: (level: ConfirmLevel) => void | Promise<void>;
 }
 
 export default function ComposerBar({
