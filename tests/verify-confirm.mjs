@@ -491,6 +491,85 @@ try {
     JSON.stringify(memRowsAuto.map((r) => r.text)),
   );
 
+  // ---- 场景 9:composer 档位 pill ----
+  scene = "composer 档位 pill";
+  console.log("\n── composer 档位 pill ──");
+  // 直写 storage 切 auto:run 快照对下一轮生效,pill 文案经 storage 订阅跟随
+  await sidepanel.evaluate(() =>
+    chrome.storage.local.set({ confirmLevel: "auto" }),
+  );
+  const pillAuto = sidepanel.getByRole("button", {
+    name: zh.chat.confirmPillAria.replace(
+      "{level}",
+      zh.security.confirmLevelAuto,
+    ),
+  });
+  await pillAuto.waitFor({ timeout: 5000 });
+  check(
+    (await pillAuto.textContent())?.includes(zh.chat.confirmPillAuto) === true,
+    "pill 文案跟随存储档位(auto 短标)",
+  );
+
+  await sendOnly("点一下提交按钮");
+  const entriesPill1 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /click_element (失败|完成)/.test(e.msg),
+    "pill auto 轮 click 工具日志",
+  );
+  const clickPill = entriesPill1.find(
+    (e) => `${e.ctx}/${e.tag}` === "bg/tool" && /click_element (失败|完成)/.test(e.msg),
+  );
+  check(
+    !!clickPill && !/declined/.test(clickPill.data ?? "{}"), "auto:pill 档下 click 免门真实分发",
+    JSON.stringify(clickPill?.data ?? null).slice(0, 200),
+  );
+  check((await sidepanel.locator(card).count()) === 0, "auto:pill 档下 click 无确认卡");
+
+  // 从 pill 菜单点「每步确认」:composer 侧切换真的落档(下一轮 strict 弹卡)
+  await pillAuto.click();
+  const strictOption = sidepanel.getByRole("option", {
+    name: new RegExp(zh.chat.confirmPillStrict),
+  });
+  await strictOption.waitFor({ timeout: 5000 });
+  check(
+    (await sidepanel
+      .locator('[role="option"]')
+      .filter({ hasText: zh.chat.confirmPillOff })
+      .count()) === 0, "pill 菜单里 off 项数量为 0(结构属性)",
+  );
+  await strictOption.click();
+  const pillStrict = sidepanel.getByRole("button", {
+    name: zh.chat.confirmPillAria.replace(
+      "{level}",
+      zh.security.confirmLevelStrict,
+    ),
+  });
+  await pillStrict.waitFor({ timeout: 5000 });
+
+  await sendOnly("点一下提交按钮");
+  await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(denyBtn).click();
+  const entriesPill2 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /click_element 失败/.test(e.msg),
+    "pill strict 轮拒绝日志",
+  );
+  const clickDeny = entriesPill2.find(
+    (e) => `${e.ctx}/${e.tag}` === "bg/tool" && /click_element 失败/.test(e.msg),
+  );
+  check(
+    !!clickDeny && /declined/.test(clickDeny.data ?? "{}"), "pill 菜单切 strict → click 弹卡,拒绝后 declined 回给模型",
+    JSON.stringify(clickDeny?.data ?? null).slice(0, 200),
+  );
+  // 回到 auto:场景 6 之后无残留高敏档,后续套件不受影响
+  await sidepanel.evaluate(() =>
+    chrome.storage.local.set({ confirmLevel: "auto" }),
+  );
+
   // ---- 场景 6:设置页安全分节渲染(三档 Segmented) ----
   scene = "安全分节";
   console.log("\n── 安全分节 ──");
