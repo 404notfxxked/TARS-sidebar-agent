@@ -456,6 +456,15 @@
     right: 0;
     width: max-content;
   }
+  /* 选项列表变体(模型/思考/档位/语言/记忆菜单):去掉基座的垂直内边距。
+     基座的 6px 是给「带边距的内容」留的呼吸,而这些菜单的第一行是自带上
+     下 padding 的全出血行,再叠一层就出现「首行高亮上浮一条空带」的观感;
+     同时省下的 12px 让三行带说明的档位菜单(190px 内容)落回 180px 内,
+     不再滚动裁掉末行说明。行内边距由 combo-option / skill-option 自持 */
+  .combo-pop--list {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
   /* / 技能菜单:输入条上方全宽弹出(锚 = 输入表单容器),双行选项 */
   .skill-pop {
     bottom: calc(100% + 6px);

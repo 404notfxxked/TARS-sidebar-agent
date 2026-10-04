@@ -36,6 +36,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-accent="ocean"] {
@@ -67,6 +68,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-accent="teal"] {
@@ -98,6 +100,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-accent="indigo"] {
@@ -129,6 +132,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-accent="lilac"] {
@@ -160,6 +164,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-accent="coral"] {
@@ -191,6 +196,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-accent="rose"] {
@@ -222,6 +228,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-accent="graphite"] {
@@ -253,6 +260,7 @@
   --md-sys-color-surface-container: #eeeeee;
   --md-sys-color-surface-container-high: #e8e8e8;
   --md-sys-color-surface-container-highest: #e2e2e2;
+  --md-sys-color-warning: #825500;
 }
 
 [data-theme="dark"] {
@@ -284,6 +292,7 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }
 
 [data-theme="dark"][data-accent="ocean"] {
@@ -315,6 +324,7 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }
 
 [data-theme="dark"][data-accent="teal"] {
@@ -346,6 +356,7 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }
 
 [data-theme="dark"][data-accent="indigo"] {
@@ -377,6 +388,7 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }
 
 [data-theme="dark"][data-accent="lilac"] {
@@ -408,6 +420,7 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }
 
 [data-theme="dark"][data-accent="coral"] {
@@ -439,6 +452,7 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }
 
 [data-theme="dark"][data-accent="rose"] {
@@ -470,6 +484,7 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }
 
 [data-theme="dark"][data-accent="graphite"] {
@@ -501,4 +516,5 @@
   --md-sys-color-surface-container: #282828;
   --md-sys-color-surface-container-high: #323232;
   --md-sys-color-surface-container-highest: #3e3e3e;
+  --md-sys-color-warning: #ffb94e;
 }

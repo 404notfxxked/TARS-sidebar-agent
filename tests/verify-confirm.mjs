@@ -13,7 +13,9 @@
 //   场景 7(OFF):confirmLevel=off → click/fill/memory 全程无卡真实分发
 //   场景 8(AUTO):confirmLevel=auto → click 免门;memory_save 仍过门,
 //       拒绝后 declined 回给模型
-//   场景 6:设置页安全分节渲染(三档 Segmented)
+//   场景 9(PILL):composer 档位 pill —— 存储跟随/菜单切 strict 弹卡
+//       declined/菜单三项含 off(三档同权)/点 off 下一轮全程无卡
+//   场景 6:设置页安全分节渲染(站点授权在场;档位已迁 pill,反向断言)
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -385,12 +387,12 @@ try {
     JSON.stringify(fetchFails.map((e) => e.data)).slice(0, 300), 
   );
 
-  // ---- 场景 7:off 档全部免问 ----
+  // ---- 场景 7:off 档全部放行 ----
   // 切档照场景 4 的 storage.set 先例;run 开始快照 → 对后续新 run 生效。
   // 断言口径:工具日志在场(失败也行)且无 declined + 场上无确认卡 ——
   // 别只断言卡不在(免门后工具必须真的分发了)
-  scene = "OFF 全部免问";
-  console.log("\n── OFF 全部免问 ──");
+  scene = "OFF 全部放行";
+  console.log("\n── OFF 全部放行 ──");
   await sidepanel.evaluate(() =>
     chrome.storage.local.set({ confirmLevel: "off" }),
   );
@@ -444,9 +446,9 @@ try {
   );
   check((await sidepanel.locator(card).count()) === 0, "off:全程无确认卡");
 
-  // ---- 场景 8:auto 档仅页面操作免问 ----
-  scene = "AUTO 仅页面操作免问";
-  console.log("\n── AUTO 仅页面操作免问 ──");
+  // ---- 场景 8:auto 档仅页面操作放行 ----
+  scene = "AUTO 仅页面操作放行";
+  console.log("\n── AUTO 仅页面操作放行 ──");
   await sidepanel.evaluate(() =>
     chrome.storage.local.set({ confirmLevel: "auto" }),
   );
@@ -491,25 +493,188 @@ try {
     JSON.stringify(memRowsAuto.map((r) => r.text)),
   );
 
-  // ---- 场景 6:设置页安全分节渲染(三档 Segmented) ----
+  // ---- 场景 9:composer 档位 pill ----
+  scene = "composer 档位 pill";
+  console.log("\n── composer 档位 pill ──");
+  // 直写 storage 切 auto:run 快照对下一轮生效,pill 文案经 storage 订阅跟随
+  await sidepanel.evaluate(() =>
+    chrome.storage.local.set({ confirmLevel: "auto" }),
+  );
+  const pillAuto = sidepanel.getByRole("button", {
+    name: zh.chat.confirmPillAria.replace(
+      "{level}",
+      zh.security.confirmLevelAuto,
+    ),
+  });
+  await pillAuto.waitFor({ timeout: 5000 });
+  check(
+    (await pillAuto.textContent())?.includes(zh.chat.confirmPillAuto) === true,
+    "pill 文案跟随存储档位(auto 短标)",
+  );
+
+  await sendOnly("点一下提交按钮");
+  const entriesPill1 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /click_element (失败|完成)/.test(e.msg),
+    "pill auto 轮 click 工具日志",
+  );
+  const clickPill = entriesPill1.find(
+    (e) => `${e.ctx}/${e.tag}` === "bg/tool" && /click_element (失败|完成)/.test(e.msg),
+  );
+  check(
+    !!clickPill && !/declined/.test(clickPill.data ?? "{}"), "auto:pill 档下 click 免门真实分发",
+    JSON.stringify(clickPill?.data ?? null).slice(0, 200),
+  );
+  check((await sidepanel.locator(card).count()) === 0, "auto:pill 档下 click 无确认卡");
+
+  // 从 pill 菜单点「每步确认」:composer 侧切换真的落档(下一轮 strict 弹卡)
+  await pillAuto.click();
+  const strictOption = sidepanel.getByRole("option", {
+    name: new RegExp(zh.chat.confirmPillStrict),
+  });
+  await strictOption.waitFor({ timeout: 5000 });
+  check(
+    (await sidepanel.locator('[role="option"]').count()) === 3,
+    "pill 菜单三项(strict/auto/off,三档同权)",
+  );
+  check(
+    (await sidepanel
+      .locator('[role="option"]')
+      .filter({ hasText: zh.chat.confirmPillOff })
+      .count()) === 1, "off 项在场且带 desc(T6 撤销「到不了 off」结构属性)",
+  );
+  // 菜单几何(间距修法的硬防线):三行带说明在 180px 上限内不滚不裁,
+  // 且首行高亮贴菜单上沿(基座垂直内边距已由 combo-pop--list 撤掉)。
+  // 元素缺席时回同形状的判别结果(ok/why),别让 getBoundingClientRect
+  // 抛裸 TypeError(前置 strictOption.waitFor 已保证在场,这里是防御性判空)
+  const menuFit = await sidepanel.evaluate(() => {
+    const pop = document.querySelector('[role="listbox"]');
+    const first = document.querySelector('[role="option"]');
+    if (!pop) {
+      return { ok: false, why: "listbox 不在场(菜单没开?)", padTop: -1, gapFirst: -1, overflows: true };
+    }
+    if (!first) {
+      return { ok: false, why: "菜单内无 option", padTop: -1, gapFirst: -1, overflows: true };
+    }
+    const cs = getComputedStyle(pop);
+    return {
+      ok: true,
+      why: "",
+      padTop: Number.parseFloat(cs.paddingTop),
+      gapFirst: first.getBoundingClientRect().top - pop.getBoundingClientRect().top,
+      overflows: pop.scrollHeight > pop.clientHeight,
+    };
+  });
+  check(
+    menuFit.ok && menuFit.padTop === 0 && menuFit.gapFirst === 0,
+    "pill 菜单首行高亮贴面上沿(无容器内边距空带)",
+    JSON.stringify(menuFit),
+  );
+  check(
+    menuFit.ok && !menuFit.overflows,
+    "pill 菜单三行不溢出(末行说明不被裁,无需滚动)",
+    JSON.stringify(menuFit),
+  );
+  await strictOption.click();
+  const pillStrict = sidepanel.getByRole("button", {
+    name: zh.chat.confirmPillAria.replace(
+      "{level}",
+      zh.security.confirmLevelStrict,
+    ),
+  });
+  await pillStrict.waitFor({ timeout: 5000 });
+
+  await sendOnly("点一下提交按钮");
+  await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(denyBtn).click();
+  const entriesPill2 = await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /click_element 失败/.test(e.msg),
+    "pill strict 轮拒绝日志",
+  );
+  const clickDeny = entriesPill2.find(
+    (e) => `${e.ctx}/${e.tag}` === "bg/tool" && /click_element 失败/.test(e.msg),
+  );
+  check(
+    !!clickDeny && /declined/.test(clickDeny.data ?? "{}"), "pill 菜单切 strict → click 弹卡,拒绝后 declined 回给模型",
+    JSON.stringify(clickDeny?.data ?? null).slice(0, 200),
+  );
+
+  // 从 pill 菜单点「全部放行」:三档同权单击落档(T6),下一轮全程无卡
+  await pillStrict.click();
+  const offOption = sidepanel.getByRole("option", {
+    name: new RegExp(zh.chat.confirmPillOff),
+  });
+  await offOption.waitFor({ timeout: 5000 });
+  await offOption.click();
+  const pillOff = sidepanel.getByRole("button", {
+    name: zh.chat.confirmPillAria.replace(
+      "{level}",
+      zh.security.confirmLevelOff,
+    ),
+  });
+  await pillOff.waitFor({ timeout: 5000 });
+  check(
+    (await pillOff.getAttribute("class"))?.includes("text-warning") === true,
+    "off 态 pill 带 warning 色常驻标示",
+  );
+
+  await sendOnly("点一下提交按钮");
+  // 切窗风险:run 窗口以「最后一次 run started」为界,而上一轮(strict 拒绝)
+  // 的日志在新 run 落地前仍在窗口内 —— 只等 click 日志会抓到上一轮的
+  // declined。分两步过窗:先等本轮 run config 记下 confirmLevel=off,
+  // 再等 click 工具日志,并取最后一条(取首条仍可能够到上一轮的残影)
+  await waitForRunLog(
+    sidepanel,
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/agent" &&
+      /^run config/.test(e.msg) &&
+      /"confirmLevel":"off"/.test(e.data ?? ""),
+    "pill off 轮 run config(confirmLevel=off)",
+  );
+  const clickLogged = (e) =>
+    `${e.ctx}/${e.tag}` === "bg/tool" && /click_element (失败|完成)/.test(e.msg);
+  const entriesPill3 = await waitForRunLog(
+    sidepanel,
+    clickLogged,
+    "pill off 轮 click 工具日志",
+  );
+  const clickPillOff = entriesPill3.filter(clickLogged).pop();
+  check(
+    !!clickPillOff && !/declined/.test(clickPillOff.data ?? "{}"), "off:pill 菜单单击切 off → click 免门真实分发",
+    JSON.stringify(clickPillOff?.data ?? null).slice(0, 200),
+  );
+  check((await sidepanel.locator(card).count()) === 0, "off:pill 档下 click 无确认卡");
+  // 回到 auto:场景 6 之后无残留高敏档,后续套件不受影响
+  await sidepanel.evaluate(() =>
+    chrome.storage.local.set({ confirmLevel: "auto" }),
+  );
+
+  // ---- 场景 6:设置页安全分节(档位已迁 pill,反向断言) ----
   scene = "安全分节";
   console.log("\n── 安全分节 ──");
   await sidepanel.locator(`button[aria-label="${zh.chat.openSettings}"]`).click();
-  const securityRow = sidepanel
+  // 分节仍在:站点授权是读页/搜索/读网页的总闸
+  const hostRow = sidepanel
     .locator('label, span, div')
-    .filter({ hasText: zh.security.confirmLevel })
+    .filter({ hasText: zh.security.hostAccess })
     .first();
-  await securityRow.waitFor({ timeout: 10000 });
+  await hostRow.waitFor({ timeout: 10000 });
   check(
-    (await securityRow.count()) > 0, "设置页出现「安全」分节与确认档位",
+    (await hostRow.count()) > 0, "设置页「安全」分节在场(站点授权行)",
   );
+  // 档位已迁 composer pill(T7):分节内不应再出现档位单选
   for (const label of [
     zh.security.confirmLevelStrict,
     zh.security.confirmLevelAuto,
     zh.security.confirmLevelOff,
   ]) {
     check(
-      (await sidepanel.getByRole("radio", { name: label }).count()) === 1, `档位段在场(${label})`,
+      (await sidepanel.getByRole("radio", { name: label }).count()) === 0, `档位单选不在设置页(${label})`,
     );
   }
 } catch (err) {

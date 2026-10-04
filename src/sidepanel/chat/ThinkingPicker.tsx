@@ -63,7 +63,7 @@ export default function ThinkingPicker({
   }, [open]);
 
   return (
-    <div ref={popRef} className="relative">
+    <div ref={popRef} className="relative min-w-0">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -94,7 +94,7 @@ export default function ThinkingPicker({
         <div
           role="listbox"
           aria-label={t("chat.thinkingLevel")}
-          className="combo-pop combo-pop--up"
+          className="combo-pop combo-pop--up combo-pop--list"
         >
           {options.map((token) => {
             const selected = value === token;

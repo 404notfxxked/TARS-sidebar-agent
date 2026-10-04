@@ -24,7 +24,15 @@ import { beforeEach } from "vitest";
   },
 };
 
-function makeStorageArea() {
+function makeStorageArea(
+  area: string,
+  listeners: Set<
+    (
+      changes: Record<string, { oldValue?: unknown; newValue: unknown }>,
+      areaName: string,
+    ) => void
+  >,
+) {
   const data = new Map<string, unknown>();
   const dump = (keys: unknown) => {
     const out: Record<string, unknown> = {};
@@ -43,7 +51,18 @@ function makeStorageArea() {
   return {
     get: (keys: unknown = null) => Promise.resolve(dump(keys)),
     set: (obj: Record<string, unknown>) => {
-      for (const [k, v] of Object.entries(obj)) data.set(k, structuredClone(v));
+      const changes: Record<string, { oldValue?: unknown; newValue: unknown }> =
+        {};
+      for (const [k, v] of Object.entries(obj)) {
+        changes[k] = {
+          oldValue: data.has(k) ? structuredClone(data.get(k)) : undefined,
+          newValue: structuredClone(v),
+        };
+        data.set(k, structuredClone(v));
+      }
+      // 同步派发(生产是异步事件,测试内 act 同步 flush 更稳);
+      // useChatModels / useConfirmLevel 的订阅路径靠它覆盖
+      for (const l of listeners) l(changes, area);
       return Promise.resolve();
     },
     remove: (keys: string | string[]) => {
@@ -59,7 +78,29 @@ function makeStorageArea() {
 
 beforeEach(() => {
   (globalThis as Record<string, unknown>).chrome = {
-    storage: { local: makeStorageArea(), session: makeStorageArea() },
+    storage: (() => {
+      // onChanged 在 Chrome 的 storage 命名空间层(跨 area),不在 area 内;
+      // local/session 共享同一组监听器,set 时以 area 名派发
+      const storageListeners = new Set<
+        (
+          changes: Record<
+            string,
+            { oldValue?: unknown; newValue?: unknown }
+          >,
+          areaName: string,
+        ) => void
+      >();
+      return {
+        local: makeStorageArea("local", storageListeners),
+        session: makeStorageArea("session", storageListeners),
+        onChanged: {
+          addListener: (l: (typeof storageListeners) extends Set<infer T> ? T : never) =>
+            storageListeners.add(l),
+          removeListener: (l: (typeof storageListeners) extends Set<infer T> ? T : never) =>
+            storageListeners.delete(l),
+        },
+      };
+    })(),
     runtime: {
       lastError: null,
       // docBridge 的 capture_doc 中继 / tabs 生命周期监听(SW 启动时序)

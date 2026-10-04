@@ -4,8 +4,9 @@
 import { useLayoutEffect } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { SkillInfo } from "../../shared/messages";
-import type { ProviderEntry } from "../../shared/configStore";
+import type { ConfirmLevel, ProviderEntry } from "../../shared/configStore";
 import type { PendingImage } from "./images";
+import ConfirmLevelPill from "./ConfirmLevelPill";
 import ModelPicker from "./ModelPicker";
 import ThinkingPicker from "./ThinkingPicker";
 import SkillMenu from "./SkillMenu";
@@ -52,6 +53,12 @@ export interface ComposerModels {
   onPickThinking: (effort: string | undefined) => void;
 }
 
+/** 确认档位依赖(useConfirmLevel 的产出):pick 落库完成后才 resolve */
+export interface ComposerConfirm {
+  level: ConfirmLevel;
+  pick: (level: ConfirmLevel) => void | Promise<void>;
+}
+
 export default function ComposerBar({
   input,
   setInput,
@@ -62,6 +69,7 @@ export default function ComposerBar({
   attachments,
   skills,
   models,
+  confirm,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -72,6 +80,7 @@ export default function ComposerBar({
   attachments: ComposerAttachments;
   skills: ComposerSkills;
   models: ComposerModels;
+  confirm: ComposerConfirm;
 }) {
   // 按域解构成原名:下面的 JSX 与键盘处理保持逐字不变
   const {
@@ -105,6 +114,7 @@ export default function ComposerBar({
     reasoningEffort,
     onPickThinking: setThinkingEffort,
   } = models;
+  const { level: confirmLevel, pick: pickConfirmLevel } = confirm;
   const t = useT();
 
   // ---- textarea 随内容自增高(封顶约 5 行,超出内部滚动) ----
@@ -264,6 +274,7 @@ export default function ComposerBar({
             onPick={setThinkingEffort}
           />
         )}
+        <ConfirmLevelPill level={confirmLevel} pick={pickConfirmLevel} />
         {/* 发送/停止是同一个按钮:状态切换不换元素,焦点不掉(键盘用户
             停止后 space 仍是同一颗键)。36px 与 settings-btn 同高 —— M3
             Expressive 的研究实测更大的主动作键命中更快;箭头用 SVG 不用

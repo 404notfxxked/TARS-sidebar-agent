@@ -140,7 +140,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 | `cancel` | `verify-cancel.mjs` | 停止按钮链路(LLM 流中取消;与 web-search 的 H 场景互补) |
 | `llm-errors` | `verify-llm-errors.mjs` | LLM 端点异常路径:401 鉴权失败(明确错误不重试)/流中途错误帧(服务端文案透传)/网络层断连(Fetch.failRequest,重试耗尽)/finish_reason=length(截断上屏不报错) |
 | `interact` | `verify-interact.mjs` | 页面交互工具(独立 harness:esbuild 注入,不加载扩展;esbuild 为显式 devDep) |
-| `confirm` | `verify-confirm.mjs` | 写操作确认门(安全 V1 + 三档 confirmLevel):确认卡内容(目标页/写入/回车/定位;记忆族/外链族标题与内容)/拒绝 declined 回给模型/允许放行到内容层/web_fetch 出口判定(私网必卡/白名单命中直抓/白名单外逐个出卡 + 批准后同域复用)/三档矩阵(off:click/fill/memory 全程无卡真实分发;auto:click 免门、memory 仍过门拒绝 declined)/设置页安全分节三档 Segmented;断言用 readRunLogs(run 窗口),mock 环境整轮 <100ms 时间窗会串 |
+| `confirm` | `verify-confirm.mjs` | 写操作确认门(安全 V1 + 三档 confirmLevel):确认卡内容(目标页/写入/回车/定位;记忆族/外链族标题与内容)/拒绝 declined 回给模型/允许放行到内容层/web_fetch 出口判定(私网必卡/白名单命中直抓/白名单外逐个出卡 + 批准后同域复用)/三档矩阵(off:click/fill/memory 全程无卡真实分发;auto:click 免门、memory 仍过门拒绝 declined)/composer 档位 pill(场景 9:存储跟随/菜单切 strict 后弹卡 declined/菜单三项含 off 三档同权/单击切 off 下一轮全程无卡)/设置页安全分节(站点授权在场,档位反向断言);断言用 readRunLogs(run 窗口),mock 环境整轮 <100ms 时间窗会串 |
 | `host-access` | `verify-host-access.mjs` | 权限拒绝路径与生产注入路径(zero/dynamic flavor):未授权工具给可行动指引且 run 正常收口(find_elements / web_fetch)/授权态无静态 content script 时按需注入真实执行(sendMessage 失败 → executeScript → 重试) |
 | `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),悬浮层硬规则的自动化防线 |
 | `locale` | `probe-locale.mjs` | 语言切换:整树刷新/回首页/重载持久化 |

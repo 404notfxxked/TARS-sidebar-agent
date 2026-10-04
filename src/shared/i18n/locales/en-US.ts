@@ -75,6 +75,15 @@ export const enUS = {
     thinkMax: "Max",
     askInput: "Ask",
     modelOptions: "Available models",
+    confirmPillStrict: "Confirm",
+    confirmPillAuto: "Page auto",
+    confirmPillOff: "All auto",
+    confirmPillStrictDesc: "TARS asks before each write action.",
+    confirmPillAutoDesc:
+      "Page actions run without asking. Memory writes, tool calls to MCP servers and reads of unseen links still ask.",
+    confirmPillOffDesc:
+      "Everything runs without asking: page actions, memory writes, MCP tool calls and reads of unseen links.",
+    confirmPillAria: "Confirmation level: {level}",
     compactionNote: "Context compacted",
     addImage: "Add image",
     removeImage: "Remove image",
@@ -252,18 +261,11 @@ export const enUS = {
     hostAccessGrant: "Grant page & network access",
     hostAccessRevoke: "Revoke",
     hostAccessOn: "Granted",
-    confirmLevel: "Confirmation level",
+    // The confirmation level moved to the composer pill; Strict/Auto/Off
+    // remain as the pill's aria long labels (short labels: chat.confirmPill*)
     confirmLevelStrict: "Confirm every action",
     confirmLevelAuto: "Auto-approve page actions",
-    confirmLevelOff: "Skip all confirmations",
-    confirmLevelHint: "Changing the level does not affect a task in progress; it applies from your next message.",
-    confirmLevelScope:
-      "Approved page actions run without asking on any site you have authorized, not just the current page.",
-    confirmLevelSubmit:
-      "Submit-style actions (pressing Enter, clicking submit buttons) are also auto-approved.",
-    confirmLevelOffWarning:
-      "With all confirmations skipped, page actions, memory save and delete, MCP server tool calls, and reads of private-network addresses or unseen links all run without asking. Use only in scenarios you can supervise.",
-    confirmLevelArm: "Click again to skip all confirmations",
+    confirmLevelOff: "Auto-approve everything",
     notifyDone: "Task completion notifications",
     notifyDoneHint:
       "When the panel is not visible, a system notification is posted when a task finishes or fails; click it to return.",

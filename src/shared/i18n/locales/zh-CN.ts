@@ -71,6 +71,15 @@ export const zhCN = {
     thinkMax: "最大",
     askInput: "提问",
     modelOptions: "可选模型",
+    confirmPillStrict: "每步确认",
+    confirmPillAuto: "页面放行",
+    confirmPillOff: "全部放行",
+    confirmPillStrictDesc: "每个写操作都先问一声",
+    confirmPillAutoDesc:
+      "点击、填写不再询问。记忆写入、MCP 调用、私网与陌生链接仍会问。",
+    confirmPillOffDesc:
+      "一切自动执行：页面操作、记忆读写、MCP 调用与陌生链接都不再询问。",
+    confirmPillAria: "确认档位：{level}",
     compactionNote: "上下文已压缩",
     addImage: "添加图片",
     removeImage: "移除图片",
@@ -242,16 +251,12 @@ export const zhCN = {
     hostAccessGrant: "授权页面与网络访问",
     hostAccessRevoke: "撤销授权",
     hostAccessOn: "已授权",
-    confirmLevel: "确认档位",
+    // 确认档位的呈现已迁 composer pill;Strict/Auto/Off 三键是 pill 的
+    // aria 长标(短标在 chat.confirmPill*),其余档位文案键随设置页
+    // 档位字段一并移除
     confirmLevelStrict: "每步确认",
-    confirmLevelAuto: "仅页面操作免问",
-    confirmLevelOff: "全部免问",
-    confirmLevelHint: "切换对进行中的任务不生效，下一条消息起生效。",
-    confirmLevelScope: "免问的页面操作适用于任何已授权页面，不限于当前页。",
-    confirmLevelSubmit: "提交类动作（回车提交、点击提交按钮）同样免问。",
-    confirmLevelOffWarning:
-      "全部免问后，AI 的页面操作、长期记忆的写入与删除、MCP 服务器工具调用、以及读取私网地址和会话未见过的链接，都不再弹卡询问，请仅在你能监督的场景下使用。",
-    confirmLevelArm: "再点一次确认全部免问",
+    confirmLevelAuto: "仅页面操作放行",
+    confirmLevelOff: "全部放行",
     notifyDone: "任务完成通知",
     notifyDoneHint: "面板切走时，任务结束或失败会发系统通知，点按回到窗口。",
   },

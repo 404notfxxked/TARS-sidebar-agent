@@ -101,6 +101,12 @@ const SURFACE_TONES = {
  *  暖相画布与绿/蓝系重点色打架,色相倾向归零 */
 const surfaceNeutral = TonalPalette.fromHueAndChroma(0, 0);
 
+/** 语义警示色:固定琥珀调色板,不随重点色/石墨主题漂移 —— 与 error 同
+ *  判据(语义不是审美)。给「危险相邻但非错误」的状态(确认档位 off 的
+ *  常驻标示);error 留给真正的失败/破坏性语义。只出 text 用一档 */
+const warningPalette = TonalPalette.fromHueAndChroma(75, 48);
+const WARNING_TONES = { light: 40, dark: 80 };
+
 // ---- 生成 ----
 const themes = ACCENTS.map((a) => ({
   ...a,
@@ -159,6 +165,10 @@ function linesFor(theme, mode, mono) {
     // surface 用全局固定暖色画布,不取各主题自己的 neutral(画布不随重点色漂移)
     lines.push(`  --md-sys-color-${name}: ${hexFromArgb(surfaceNeutral.tone(tone))};`);
   }
+  // warning:固定琥珀语义色(亮 40 / 暗 80),全主题一致
+  lines.push(
+    `  --md-sys-color-warning: ${hexFromArgb(warningPalette.tone(WARNING_TONES[mode]))};`,
+  );
   return lines.join("\n");
 }
 
