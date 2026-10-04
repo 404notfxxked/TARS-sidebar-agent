@@ -1,12 +1,14 @@
-// composer 底行的档位指示 pill:显示当前档,点开快捷菜单可切 strict/auto。
-// 菜单刻意不放 off —— 放宽容易、放弃人审麻烦,「从 composer 到不了 off」
-// 是结构属性(工单 §0);off 只在设置页(常驻警示 + 两步确认)。
+// composer 底行的档位指示 pill:显示当前档,点开快捷菜单可切 strict/auto/off。
+// 三档同权、单击落档(2026-10-04 产品决策:撤销「composer 到不了 off」的
+// 结构属性 —— 业界主流是审批模式就在输入区单键切换,不做重复二次确认);
+// off 的知情由菜单 desc 一行承载(范围写全:记忆读写、MCP、私网与陌生
+// 链接),危险态以固定琥珀 warning 色常驻标示(error 留给失败/破坏性语义)。
 // 真话边界:pill 显示存储档,在途 run 用 run 开始时的快照,中途切档时
-// pill 领先于本轮行为几秒 —— 菜单底部常驻一行生效时点提示承接(复用
-// security.confirmLevelHint,不新抄一句)。
+// pill 领先于本轮行为几秒(run 结束即对齐);off 的无人审风险由用户知情
+// 拍板接受,pill 的 warning 色是唯一常驻警示。
 // 结构照 ThinkingPicker/ModelPicker:pill 触发钮 + 向上 combo-pop,
-// 点外/Esc 关闭,↑↓/Home/End 键盘导航,Enter/Tab 选中(焦点保持在
-// 触发钮,高亮项经 aria-activedescendant 桥给读屏)。
+// 点外/Esc 关闭,↑↓ 循环移动高亮,Enter/Tab 选中(焦点保持在触发钮,
+// 高亮项经 aria-activedescendant 桥给读屏)。
 
 import { useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
@@ -20,7 +22,7 @@ const LEVEL_SHORT: Record<ConfirmLevel, string> = {
   auto: "chat.confirmPillAuto",
   off: "chat.confirmPillOff",
 };
-/** aria 与 off 提示用设置页长标:短标是像素预算下的省略,完整陈述由 aria 承载 */
+/** aria 长标用设置页措辞:短标是像素预算下的省略,完整陈述由 aria 承载 */
 const LEVEL_LONG: Record<ConfirmLevel, string> = {
   strict: "security.confirmLevelStrict",
   auto: "security.confirmLevelAuto",
@@ -31,11 +33,12 @@ const LEVEL_ICON: Record<ConfirmLevel, ComponentType> = {
   auto: PencilIcon,
   off: WarnIcon,
 };
-/** 菜单只有 strict 与 auto;off 不进快捷菜单(见头注) */
-const MENU_LEVELS: ConfirmLevel[] = ["strict", "auto"];
-const LEVEL_DESC: Record<"strict" | "auto", string> = {
+/** 菜单三档同权(off 排尾,见头注);off 的知情由 desc 全量承载 */
+const MENU_LEVELS: ConfirmLevel[] = ["strict", "auto", "off"];
+const LEVEL_DESC: Record<ConfirmLevel, string> = {
   strict: "chat.confirmPillStrictDesc",
   auto: "chat.confirmPillAutoDesc",
+  off: "chat.confirmPillOffDesc",
 };
 
 export default function ConfirmLevelPill({
@@ -86,7 +89,7 @@ export default function ConfirmLevelPill({
         setActiveIdx(s.activeIdx);
         return;
       }
-      if ((e.key === "Enter" || e.key === "Tab") && MENU_LEVELS.length > 0) {
+      if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
         const next = MENU_LEVELS[s.activeIdx];
         setOpen(false);
@@ -113,7 +116,7 @@ export default function ConfirmLevelPill({
         aria-label={t("chat.confirmPillAria", { level: t(LEVEL_LONG[level]) })}
         className={`flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium transition-colors duration-150 hover:bg-on-surface/8 ${
           level === "off"
-            ? "text-error"
+            ? "text-warning"
             : "text-on-surface-variant hover:text-on-surface"
         }`}
       >
@@ -146,11 +149,6 @@ export default function ConfirmLevelPill({
           className="combo-pop combo-pop--up"
           style={shiftX !== 0 ? { left: shiftX } : undefined}
         >
-          {level === "off" && (
-            <p className="whitespace-normal px-3 pb-1 pt-2 font-sans text-[11.5px] text-error">
-              {t("chat.confirmPillOffCurrent")}
-            </p>
-          )}
           {MENU_LEVELS.map((l, idx) => {
             const OptionIcon = LEVEL_ICON[l];
             const selected = level === l;
@@ -169,25 +167,22 @@ export default function ConfirmLevelPill({
                   pick(l);
                 }}
               >
-                <span className="flex items-center gap-1.5 font-sans">
+                <span
+                  className={`flex items-center gap-1.5 font-sans ${
+                    l === "off" ? "text-warning" : ""
+                  }`}
+                >
                   <span className="flex items-center [&>svg]:my-0">
                     <OptionIcon />
                   </span>
                   {t(LEVEL_SHORT[l]) + (selected ? " ✓" : "")}
                 </span>
                 <span className="block whitespace-normal font-sans text-[11px] leading-4 text-on-surface-variant">
-                  {/* l 来自 MENU_LEVELS(不含 off),收窄为 desc 表的键 */}
-                  {t(LEVEL_DESC[l as "strict" | "auto"])}
+                  {t(LEVEL_DESC[l])}
                 </span>
               </button>
             );
           })}
-          <p className="whitespace-normal px-3 pb-1 pt-1.5 font-sans text-[11px] leading-4 text-on-surface-variant/80">
-            {t("chat.confirmPillOffGoto")}
-          </p>
-          <p className="whitespace-normal px-3 pb-2 pt-0.5 font-sans text-[11px] leading-4 text-on-surface-variant/80">
-            {t("security.confirmLevelHint")}
-          </p>
         </div>
       )}
     </div>

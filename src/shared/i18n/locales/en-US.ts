@@ -81,8 +81,8 @@ export const enUS = {
     confirmPillStrictDesc: "TARS asks before each write action.",
     confirmPillAutoDesc:
       "Page actions run without asking. Memory writes, tool calls to MCP servers and reads of unseen links still ask.",
-    confirmPillOffCurrent: "Current level: All auto. To change it, open Settings.",
-    confirmPillOffGoto: "All auto: change it in Settings (asks twice).",
+    confirmPillOffDesc:
+      "Everything runs without asking: page actions, memory writes, MCP tool calls and reads of unseen links.",
     confirmPillAria: "Confirmation level: {level}",
     compactionNote: "Context compacted",
     addImage: "Add image",

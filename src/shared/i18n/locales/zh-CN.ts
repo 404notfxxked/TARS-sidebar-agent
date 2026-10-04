@@ -77,8 +77,8 @@ export const zhCN = {
     confirmPillStrictDesc: "每个写操作都先问一声",
     confirmPillAutoDesc:
       "点击、填写不再询问。记忆写入、MCP 调用、私网与陌生链接仍会问。",
-    confirmPillOffCurrent: "当前：全部放行，在设置里修改",
-    confirmPillOffGoto: "全部放行：在设置里修改（需二次确认）",
+    confirmPillOffDesc:
+      "一切自动执行：页面操作、记忆读写、MCP 调用与陌生链接都不再询问。",
     confirmPillAria: "确认档位：{level}",
     compactionNote: "上下文已压缩",
     addImage: "添加图片",
