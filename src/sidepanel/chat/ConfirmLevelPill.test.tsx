@@ -55,12 +55,16 @@ describe("确认档位 pill", () => {
     expect(btn).toHaveTextContent(zhCN.chat.confirmPillStrict);
   });
 
-  it("菜单只有 strict 与 auto 两项;反向断言:菜单里不存在 off", async () => {
+  it("菜单只有 strict 与 auto 两项;反向断言:不存在名为 off 的可选档", async () => {
     await openMenu(zhCN.security.confirmLevelStrict);
     expect(screen.getAllByRole("option")).toHaveLength(2);
     expect(screen.getByText(zhCN.chat.confirmPillStrict)).toBeInTheDocument();
     expect(screen.getByText(zhCN.chat.confirmPillAuto)).toBeInTheDocument();
-    expect(screen.queryByText(zhCN.chat.confirmPillOff)).not.toBeInTheDocument();
+    // off 只以指路行出现,不是可选项 —— 「composer 到不了 off」的边界
+    expect(
+      screen.queryByRole("option", { name: new RegExp(zhCN.chat.confirmPillOff) }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(zhCN.chat.confirmPillOffGoto)).toBeInTheDocument();
   });
 
   it("点选 auto 调 saveConfirmLevel(auto)", async () => {

@@ -82,6 +82,7 @@ export const enUS = {
     confirmPillAutoDesc:
       "Page actions run without asking. Memory writes, tool calls to MCP servers and reads of unseen links still ask.",
     confirmPillOffCurrent: "Current level: All auto. To change it, open Settings.",
+    confirmPillOffGoto: "All auto: change it in Settings (asks twice).",
     confirmPillAria: "Confirmation level: {level}",
     compactionNote: "Context compacted",
     addImage: "Add image",

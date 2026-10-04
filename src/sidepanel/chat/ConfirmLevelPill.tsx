@@ -50,6 +50,11 @@ export default function ConfirmLevelPill({
   /** 键盘高亮项(扁平序);打开时落在当前选中档上 */
   const [activeIdx, setActiveIdx] = useState(0);
   const popRef = useRef<HTMLDivElement | null>(null);
+  /** 菜单水平收偏:combo-pop--up 锚定锚点左缘向右伸(max-content 封顶
+   *  280px),而底行 pill 离面板左缘远(附件钮/模型 chip/思考 picker 都在
+   *  左边),窄侧栏下右侧放不下 —— 打开时量锚点位置,把菜单向左收,
+   *  右缘贴视口(留 8px),左缘不低于 8px。0 = 不收(空间充足时维持左对齐) */
+  const [shiftX, setShiftX] = useState(0);
 
   // document 级监听读最新状态走 ref(含键盘高亮项),监听器只随开关注册
   // (照 ModelPicker:Enter 读取的是重渲染后同步的最新高亮)
@@ -59,6 +64,11 @@ export default function ConfirmLevelPill({
   useEffect(() => {
     if (!open) return;
     setActiveIdx(Math.max(MENU_LEVELS.indexOf(stateRef.current.level), 0));
+    const anchor = popRef.current?.querySelector("button");
+    const vw = window.innerWidth;
+    const left = anchor?.getBoundingClientRect().left ?? 0;
+    const overflow = left + 280 + 8 - vw; // 右伸会超出的量(280 = combo-pop--up 的宽度封顶)
+    setShiftX(Math.max(8 - left, Math.min(0, -overflow)));
     const onDown = (e: MouseEvent) => {
       if (!popRef.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -134,6 +144,7 @@ export default function ConfirmLevelPill({
           aria-activedescendant={`cl-opt-${activeIdx}`}
           tabIndex={0}
           className="combo-pop combo-pop--up"
+          style={shiftX !== 0 ? { left: shiftX } : undefined}
         >
           {level === "off" && (
             <p className="whitespace-normal px-3 pb-1 pt-2 font-sans text-[11.5px] text-error">
@@ -171,7 +182,10 @@ export default function ConfirmLevelPill({
               </button>
             );
           })}
-          <p className="whitespace-normal px-3 pb-2 pt-1.5 font-sans text-[11px] leading-4 text-on-surface-variant/80">
+          <p className="whitespace-normal px-3 pb-1 pt-1.5 font-sans text-[11px] leading-4 text-on-surface-variant/80">
+            {t("chat.confirmPillOffGoto")}
+          </p>
+          <p className="whitespace-normal px-3 pb-2 pt-0.5 font-sans text-[11px] leading-4 text-on-surface-variant/80">
             {t("security.confirmLevelHint")}
           </p>
         </div>
