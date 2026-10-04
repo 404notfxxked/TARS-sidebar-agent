@@ -17,6 +17,7 @@ import { useSkillMenu } from "./useSkillMenu";
 import ChatHeader from "./ChatHeader";
 import MessageList from "./MessageList";
 import ComposerBar from "./ComposerBar";
+import { useConfirmLevel } from "./useConfirmLevel";
 import { useT } from "../ui/hooks";
 
 const log = createLogger({ ctx: "panel" });
@@ -47,6 +48,8 @@ export default function ChatView({
 }) {
   const t = useT();
   const chat = useAgentChannel({ resumeSessionId, onResumeDone });
+  // 确认档位:composer pill 的状态源(storage 订阅,设置页改动实时跟随)
+  const confirmLevel = useConfirmLevel();
   const {
     messages,
     compaction,
@@ -223,6 +226,7 @@ export default function ChatView({
         onCancel={chat.cancel}
         status={status}
         chatInputRef={chatInputRef}
+        confirm={confirmLevel}
         attachments={{
           pendingImages,
           attachHint,

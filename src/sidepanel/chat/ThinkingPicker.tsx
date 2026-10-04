@@ -63,7 +63,7 @@ export default function ThinkingPicker({
   }, [open]);
 
   return (
-    <div ref={popRef} className="relative">
+    <div ref={popRef} className="relative min-w-0">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
