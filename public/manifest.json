@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TARS — 侧栏智能助手",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "住在浏览器侧栏的 AI agent：读你正在看的页面，替你联网查、点按填写，可跨会话记住偏好。BYOK 接自己的模型，数据不出本机。",
   "permissions": [
     "sidePanel",
