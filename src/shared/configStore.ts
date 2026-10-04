@@ -145,11 +145,11 @@ export interface AppConfig {
   skills: boolean;
   /** 写操作确认门档位(ConfirmLevel 真源在同文件下方):strict = 一切写动作
    *  逐次过确认卡(缺省,安全默认);auto = 页面写动作免门,记忆写/MCP/
-   *  可疑出站仍过门;off = 全部免审(用户自担,UI 明示)。过门范围见
-   *  agent/confirmations.ts 的 TOOL_CATEGORY 与 needsConfirmation(level);
-   *  读时迁移:legacy confirmActions 布尔按 false→off / 其余→strict 映射,
-   *  非法档位值回落 legacy 再回落 strict;写入走 saveConfirmLevel(双写
-   *  legacy 键,保旧版回滚时读到一致语义) */
+   *  可疑出站仍过门;off = 全部免审(用户自担,pill 以 warning 色常驻
+   *  标示)。过门范围见 agent/confirmations.ts 的 TOOL_CATEGORY 与
+   *  needsConfirmation(level);读时迁移:legacy confirmActions 布尔按
+   *  false→off / 其余→strict 映射,非法档位值回落 legacy 再回落 strict;
+   *  写入走 saveConfirmLevel(双写 legacy 键,保旧版回滚时读到一致语义) */
   confirmLevel: ConfirmLevel;
   /** 任务完成通知:开 = run 结束且面板不可见时发系统通知;缺省 = 开 */
   notifyDone: boolean;

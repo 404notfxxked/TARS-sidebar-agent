@@ -38,19 +38,20 @@ const coverageThresholds = {
   // 2026-09 候选回退探测重写时随新测试钉上(未盖为 TS 防御分支),白名单直打后抬升
   "src/background/provider/models.ts": { statements: 98, branches: 96, functions: 100, lines: 100 },
   "src/background/provider/sse.ts": { statements: 100, branches: 85, functions: 85, lines: 100 },
-  // 2026-10-02 确认档位三档化随组件测试钉上(branches 未满为 Segmented 内
-  // 键盘环绕分支的未走边,实测 94.44)
+  // 2026-10-02 确认档位三档化钉上;2026-10-04 档位字段迁出 composer pill 后
+  // 组件只剩授权行 + 通知开关,alive 守卫卸载路径补测后满盖
   "src/sidepanel/settings/SecuritySection.tsx": {
     statements: 100,
-    branches: 94,
+    branches: 100,
     functions: 100,
     lines: 100,
   },
-  // 2026-10-03 composer 档位 pill 随组件/hook 测试钉上(Pill 的 branches
-  // 未盖为 Tab 与 Enter 分支的未走边,hook 的 functions 未盖为 catch 兜底)
+  // 2026-10-03 composer 档位 pill 钉上;2026-10-04 off 入菜单(三档同权)
+  // 随键盘环回/Tab/外点关闭/off 态开菜单测试抬升(branches 未满为 jsdom
+  // 量不到的 shiftX 溢出收偏与锚点缺席兜底)
   "src/sidepanel/chat/ConfirmLevelPill.tsx": {
-    statements: 98,
-    branches: 84,
+    statements: 100,
+    branches: 92,
     functions: 100,
     lines: 100,
   },

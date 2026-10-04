@@ -124,4 +124,47 @@ describe("确认档位 pill", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
   });
+
+  it("键盘:↑ 从 strict 环绕到 off,Enter 落 off(环回 + 三档选中)", async () => {
+    const user = await openMenu(zhCN.security.confirmLevelStrict);
+    const menu = screen.getByRole("listbox");
+    await user.keyboard("{ArrowUp}");
+    expect(menu.getAttribute("aria-activedescendant")).toMatch(/cl-opt-2$/);
+    await user.keyboard("{Enter}");
+    expect(h.saved).toEqual(["off"]);
+  });
+
+  it("键盘:Tab 同 Enter 选中当前高亮项", async () => {
+    const user = await openMenu(zhCN.security.confirmLevelStrict);
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{Tab}");
+    expect(h.saved).toEqual(["auto"]);
+  });
+
+  it("鼠标:点菜单外关闭,不落档", async () => {
+    const user = await openMenu(zhCN.security.confirmLevelStrict);
+    await user.pointer([
+      // mousedown 落在菜单外(document 级监听关菜单),click 本身无处可落
+      { keys: "[MouseLeft>]", target: document.body },
+      { keys: "[/MouseLeft]" },
+    ]);
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(h.saved).toEqual([]);
+  });
+
+  it("off 态开菜单:高亮落在 off 自身(三档在列),off 项选中打勾", async () => {
+    await act(async () => {
+      await chrome.storage.local.set({ confirmLevel: "off" });
+    });
+    await openMenu(zhCN.security.confirmLevelOff);
+    const menu = screen.getByRole("listbox");
+    expect(menu.getAttribute("aria-activedescendant")).toMatch(/cl-opt-2$/);
+    expect(
+      screen.getByRole("option", { name: new RegExp(zhCN.chat.confirmPillOff) }),
+    ).toHaveAttribute("aria-selected", "true");
+    // 选中态以 ✓ 呈现(视觉信号,复选标记跟在短标后)
+    expect(
+      screen.getByText(new RegExp(`^${zhCN.chat.confirmPillOff} ✓$`)),
+    ).toBeInTheDocument();
+  });
 });

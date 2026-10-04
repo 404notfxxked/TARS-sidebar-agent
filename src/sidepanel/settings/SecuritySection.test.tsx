@@ -99,4 +99,11 @@ describe("站点授权行(读页/搜索/读网页的总闸)", () => {
       }),
     ).not.toBeInTheDocument();
   });
+
+  it("授权回包前卸载:alive 守卫拦住迟到回包,不落状态", async () => {
+    const { unmount } = render(<SecuritySection initialNotifyDone={false} run={() => {}} />);
+    unmount(); // hasPageAccess 微任务回包前卸载
+    await act(async () => {}); // 回包落定:alive=false 分支
+    // 卸载后无渲染可断状态,本条盖的是「不抛错、不写已卸载组件」的路径
+  });
 });
