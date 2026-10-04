@@ -46,6 +46,20 @@ const coverageThresholds = {
     functions: 100,
     lines: 100,
   },
+  // 2026-10-03 composer 档位 pill 随组件/hook 测试钉上(Pill 的 branches
+  // 未盖为 Tab 与 Enter 分支的未走边,hook 的 functions 未盖为 catch 兜底)
+  "src/sidepanel/chat/ConfirmLevelPill.tsx": {
+    statements: 98,
+    branches: 84,
+    functions: 100,
+    lines: 100,
+  },
+  "src/sidepanel/chat/useConfirmLevel.ts": {
+    statements: 100,
+    branches: 100,
+    functions: 85,
+    lines: 100,
+  },
 } as const;
 const configRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 for (const key of Object.keys(coverageThresholds)) {
