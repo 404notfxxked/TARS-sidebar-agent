@@ -385,12 +385,12 @@ try {
     JSON.stringify(fetchFails.map((e) => e.data)).slice(0, 300), 
   );
 
-  // ---- 场景 7:off 档全部免问 ----
+  // ---- 场景 7:off 档全部放行 ----
   // 切档照场景 4 的 storage.set 先例;run 开始快照 → 对后续新 run 生效。
   // 断言口径:工具日志在场(失败也行)且无 declined + 场上无确认卡 ——
   // 别只断言卡不在(免门后工具必须真的分发了)
-  scene = "OFF 全部免问";
-  console.log("\n── OFF 全部免问 ──");
+  scene = "OFF 全部放行";
+  console.log("\n── OFF 全部放行 ──");
   await sidepanel.evaluate(() =>
     chrome.storage.local.set({ confirmLevel: "off" }),
   );
@@ -444,9 +444,9 @@ try {
   );
   check((await sidepanel.locator(card).count()) === 0, "off:全程无确认卡");
 
-  // ---- 场景 8:auto 档仅页面操作免问 ----
-  scene = "AUTO 仅页面操作免问";
-  console.log("\n── AUTO 仅页面操作免问 ──");
+  // ---- 场景 8:auto 档仅页面操作放行 ----
+  scene = "AUTO 仅页面操作放行";
+  console.log("\n── AUTO 仅页面操作放行 ──");
   await sidepanel.evaluate(() =>
     chrome.storage.local.set({ confirmLevel: "auto" }),
   );

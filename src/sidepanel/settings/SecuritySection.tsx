@@ -4,8 +4,8 @@
 // 确认档位(strict/auto/off)决定写操作确认门的松紧 —— 结构照
 // CompactionSection(settings-field + Segmented,硬规则 14 不私造样式);
 // off 档切换走两步确认(第一击 arm 只改提示行,不落 prefs 不改选中段;
-// 8s 超窗自动复位)。auto 档的说明必须让用户知情:免问范围是任何已授权
-// 页面、提交类动作同样免问(方案 Q1/P0-2)。
+// 8s 超窗自动复位)。auto 档的说明必须让用户知情:放行范围是任何已授权
+// 页面、提交类动作同样放行(方案 Q1/P0-2)。
 
 import { useEffect, useState } from "react";
 import {
@@ -63,7 +63,7 @@ export default function SecuritySection({
 
   const pick = (v: ConfirmLevel) => {
     if (v === "off" && armed !== "off") {
-      arm("off"); // 第一击:只显示「再点一次确认全部免问」,不落 prefs
+      arm("off"); // 第一击:只显示「再点一次确认全部放行」,不落 prefs
       return;
     }
     // 选任何非 off 档都先 reset:防陈旧 arm 让下一次 off 一击落档
@@ -111,8 +111,8 @@ export default function SecuritySection({
         <HintMore detail={t("security.hostAccessDetail")} />
       )}
 
-      {/* 确认档位:strict = 一切写动作过卡;auto = 页面操作免问(记忆写/
-          MCP/可疑出站仍问);off = 全部免问(两步确认) */}
+      {/* 确认档位:strict = 一切写动作过卡;auto = 页面操作放行(记忆写/
+          MCP/可疑出站仍问);off = 全部放行(两步确认) */}
       <div className="settings-field">
         <span className="field-label">{t("security.confirmLevel")}</span>
         <Segmented

@@ -120,7 +120,7 @@ describe("确认档位 Segmented(三档)", () => {
 });
 
 describe("档位说明文案(常驻)", () => {
-  it("auto 档明示范围口径与提交类免问", async () => {
+  it("auto 档明示范围口径与提交类放行", async () => {
     await renderSection("auto");
     expect(
       screen.getByText(zhCN.security.confirmLevelScope),

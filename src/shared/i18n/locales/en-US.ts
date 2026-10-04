@@ -255,15 +255,16 @@ export const enUS = {
     confirmLevel: "Confirmation level",
     confirmLevelStrict: "Confirm every action",
     confirmLevelAuto: "Auto-approve page actions",
-    confirmLevelOff: "Skip all confirmations",
-    confirmLevelHint: "Changing the level does not affect a task in progress; it applies from your next message.",
+    confirmLevelOff: "Auto-approve everything",
+    confirmLevelHint:
+      "A change does not affect a task that is in progress. It applies from your next message.",
     confirmLevelScope:
-      "Approved page actions run without asking on any site you have authorized, not just the current page.",
+      "Page actions run without asking on every site that you authorized, not only on the current page.",
     confirmLevelSubmit:
-      "Submit-style actions (pressing Enter, clicking submit buttons) are also auto-approved.",
+      "Submit actions are also auto-approved. These actions include pressing Enter and clicking a submit button.",
     confirmLevelOffWarning:
-      "With all confirmations skipped, page actions, memory save and delete, MCP server tool calls, and reads of private-network addresses or unseen links all run without asking. Use only in scenarios you can supervise.",
-    confirmLevelArm: "Click again to skip all confirmations",
+      "This level auto-approves page actions, memory writes and deletes, tool calls to MCP servers, and reads of private addresses or unseen links. Use this level only when you can watch the task.",
+    confirmLevelArm: "Click again to auto-approve everything",
     notifyDone: "Task completion notifications",
     notifyDoneHint:
       "When the panel is not visible, a system notification is posted when a task finishes or fails; click it to return.",
