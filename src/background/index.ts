@@ -15,6 +15,7 @@ import {
   installGlobalErrorHook,
 } from "../shared/logger";
 import { runAgentLoop, type AgentPort } from "./agent/agent";
+import { shouldNotifyRunEnd, taskLabel } from "./notify";
 import { zhCN } from "../shared/i18n/locales/zh-CN";
 import { enUS } from "../shared/i18n/locales/en-US";
 import { loadConfig } from "../shared/configStore";
@@ -93,12 +94,6 @@ function sessionBusy(sessionId: string): boolean {
 // 「这个 run 的主人是否正看着」。面板不可见 = 收到通知才有意义
 const panels = new Map<chrome.runtime.Port, PanelState>();
 
-/** 通知正文里的任务名:用户首条消息截断 */
-function taskLabel(text: string): string {
-  const line = text.trim().split("\n")[0] ?? "";
-  return line.length > 48 ? `${line.slice(0, 48)}…` : line;
-}
-
 /**
  * run 结束通知:开关开着 + 面板不可见(或浏览器窗口失焦)才发;
  * 用户取消的 run 不打扰。文案按面板语言现取,点按通知拉回浏览器窗口。
@@ -111,14 +106,18 @@ async function maybeNotifyRunEnd(opts: {
   hidden: boolean;
 }): Promise<void> {
   try {
-    if (opts.aborted) return;
     const config = await loadConfig();
-    if (!config.notifyDone) return;
-    if (!opts.hidden) {
-      // 面板自报可见,再核对窗口焦点:面板文档在窗口失焦时仍算 visible
-      const win = await chrome.windows.getLastFocused().catch(() => null);
-      if (win?.focused) return;
-    }
+    // 焦点判定留 IO 口;面板自报可见才查窗口焦点(隐藏时无须查询)
+    const win = opts.hidden
+      ? null
+      : await chrome.windows.getLastFocused().catch(() => null);
+    const should = shouldNotifyRunEnd({
+      aborted: opts.aborted,
+      notifyDone: config.notifyDone,
+      hidden: opts.hidden,
+      focused: win?.focused ?? false,
+    });
+    if (!should) return;
     const dict = config.locale === "en-US" ? enUS : zhCN;
     const title = opts.error ? dict.notify.failTitle : dict.notify.doneTitle;
     const label = taskLabel(opts.text) || "…";
@@ -227,21 +226,32 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   // 每条消息运行时都是任意形状(Chrome 类型里是 any),
   // 所以先 as 断言到协议类型,再由各域 handler 用 switch 收窄
   port.onMessage.addListener(async (raw: unknown) => {
-    const msg = raw as SideToBg;
-    // 面板可见性:port 生命周期的事,留在入口(任务完成通知的「是否打扰」判据,
-    // 按面板实例记账),不属任何域
-    if (msg.type === MSG.PANEL_VISIBILITY) {
-      const panel = panels.get(port);
-      if (panel) panel.hidden = msg.hidden;
-      return;
+    try {
+      const msg = raw as SideToBg;
+      // 面板可见性:port 生命周期的事,留在入口(任务完成通知的「是否打扰」判据,
+      // 按面板实例记账),不属任何域
+      if (msg.type === MSG.PANEL_VISIBILITY) {
+        const panel = panels.get(port);
+        if (panel) panel.hidden = msg.hidden;
+        return;
+      }
+      const ctx: PortCtx = { port, activeRuns, panels, preparingSessions, sessionBusy, launchRun };
+      if (await handleRunMessage(msg, ctx)) return;
+      if (await handleSessionMessage(msg, ctx)) return;
+      if (await handleMemoryMessage(msg, ctx)) return;
+      if (await handleSkillMessage(msg, ctx)) return;
+      if (await handleMcpMessage(msg, ctx)) return;
+      // 未知类型:原 switch 无 default(静默忽略),保持现状 —— 不要加日志
+    } catch (e) {
+      // 分发层兜底:各域 handler 自带 try/catch 兜底回包,这里只接它们漏出的
+      // 意外抛错 —— async 监听器的 rejection 无人接就是 unhandled rejection,
+      // 面板侧只能干等 portRequest 超时,连一条诊断日志都没有。错误回包由
+      // 各域 handler 自己负责(只有它们知道各消息的回包形状),这里只留痕
+      log.error("port", "message dispatch failed", {
+        type: (raw as { type?: string })?.type,
+        error: errText(e),
+      });
     }
-    const ctx: PortCtx = { port, activeRuns, panels, preparingSessions, sessionBusy, launchRun };
-    if (await handleRunMessage(msg, ctx)) return;
-    if (await handleSessionMessage(msg, ctx)) return;
-    if (await handleMemoryMessage(msg, ctx)) return;
-    if (await handleSkillMessage(msg, ctx)) return;
-    if (await handleMcpMessage(msg, ctx)) return;
-    // 未知类型:原 switch 无 default(静默忽略),保持现状 —— 不要加日志
   });
 });
 
