@@ -60,6 +60,9 @@ const DOC_MAX_CHARS = 160_000;
 /** page_read 默认窗口(字符) */
 const READ_WINDOW_DEFAULT = 6000;
 const READ_WINDOW_MAX = 20000;
+/** 单节(标题节/前置节)正文的字符上限:病态大节到此为止,截断必须上报
+ *  (REQ-P0-1:静默截断 = 模型拿半节正文当全文下结论) */
+const SECTION_MAX_CHARS = 4000;
 /** 大纲条数不超过该值时全量返回 */
 const OUTLINE_FULL_MAX = 60;
 /** 折叠模式下最多返回的大纲条数 */
@@ -83,6 +86,20 @@ const SUSPECT_HINT =
   "页面提取结果可疑(HTML 体量大但正文异常少,或正文有大量私有区乱码," +
   "疑似字体反爬):page_find/page_read 拿到的内容大概率不完整,建议改用 " +
   "web_search 查信息,并如实告知用户该页无法正常读取";
+/** 单节/采样截断的逃生指引:快照里没有的内容在本工具体系内无法找回
+ *  (refresh 重建对单节上限与采样截断都无效),唯一正道是 web_fetch。
+ *  指引有意不提 refresh —— 指了就是让模型空耗一个 turn 拿回同一份截断快照 */
+function truncationHint(doc: VirtualDoc): string | null {
+  if (!doc.truncatedSections && !doc.sourceTruncated) return null;
+  const cause = doc.truncatedSections
+    ? "部分小节超出单节长度上限被裁"
+    : "页面 HTML 采样被截断";
+  return (
+    `读到的快照不是该页的完整内容(${cause}):快照里没有的内容用 ` +
+    "page_find / 重新提取都找不回,需要完整正文时改用 web_fetch 抓取该页 URL," +
+    "并如实告知用户当前只读到部分内容"
+  );
+}
 
 /**
  * 管线自报 hint(page_screenshot 定调的「可疑信号」机制,先于截图通道落地):
@@ -120,6 +137,10 @@ export interface VirtualDoc {
   htmlBytes: number;
   /** 正文超出 DOC_MAX_CHARS 被截(信息流类页面会遇到) */
   truncatedTotal: boolean;
+  /** 任一标题节/前置节超出单节上限被截:节内其余内容不在快照里 */
+  truncatedSections: boolean;
+  /** 采样 HTML 本身被截(content 侧 CAPTURE_HTML_MAX_CHARS):快照尾部整体缺失 */
+  sourceTruncated: boolean;
 }
 
 /** content script capture_doc 的采样结果 */
@@ -130,6 +151,9 @@ export interface CaptureMeta {
   title: string;
   /** 采样根标签(main/article/body);诊断用,解析侧自行重新选取、不消费此字段 */
   root?: string;
+  /** 采样 HTML 被 CAPTURE_HTML_MAX_CHARS 截断时由 content 侧上报;
+   *  必须被消费透出(REQ-P0-1:不许保留「上报了但没人看」的字段) */
+  truncated?: boolean;
 }
 
 // ---- 提取解析 ----
@@ -153,6 +177,7 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
   const parts: string[] = [];
   let total = 0;
   let truncatedTotal = false;
+  let truncatedSections = false;
   // total > 0 保证至少放下一节
   const pushPart = (unit: string): boolean => {
     if (total > 0 && total + unit.length > DOC_MAX_CHARS) {
@@ -163,6 +188,11 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
     total += unit.length;
     return true;
   };
+  // 单节上限兜底:截断必须记账(透出为 sections_truncated),不许静默
+  const capSection = (full: string): string => {
+    if (full.length > SECTION_MAX_CHARS) truncatedSections = true;
+    return truncateMarkdown(full, SECTION_MAX_CHARS);
+  };
 
   if (heads.length === 0) {
     const full = turndown.turndown(root);
@@ -172,12 +202,12 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
     // 前置节:首个标题之前的内容不属于任何标题节,单独补一段,
     // 否则页面头部信息(常是标题/价格/核心区)静默丢失
     const preamble = preambleText(parsed, root, heads[0]);
-    if (preamble.trim() !== "") pushPart(preamble);
+    if (preamble.trim() !== "") pushPart(capSection(preamble));
     for (let i = 0; i < heads.length; i++) {
       const h = heads[i];
       const unit =
         `${"#".repeat(headingLevel(h))} ${headingTitle(h)}\n` +
-        sectionText(parsed, root, h, heads[i + 1] ?? null);
+        capSection(sectionText(parsed, root, h, heads[i + 1] ?? null));
       if (!pushPart(unit)) break;
     }
   }
@@ -194,6 +224,8 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
     totalChars: md.length,
     htmlBytes: new TextEncoder().encode(meta.html).length,
     truncatedTotal,
+    truncatedSections,
+    sourceTruncated: meta.truncated === true,
   };
 }
 
@@ -259,34 +291,32 @@ function headingTitle(el: HTMLElement): string {
 }
 
 /**
- * 前置节:根起点到首个标题之前的内容。
- * maxChars 默认 4000 兜底,与标题节同规。
+ * 前置节:根起点到首个标题之前的内容。不做上限截断——单节上限由
+ * buildVirtualDoc 的 capSection 统一施加并记账(截断要透出,不能静默)。
  */
 function preambleText(
   doc: Document,
   root: HTMLElement,
   firstHeading: HTMLElement,
-  maxChars = 4000,
 ): string {
   const range = doc.createRange();
   range.setStart(root, 0);
   range.setEnd(firstHeading, 0);
   const container = doc.createElement("div");
   container.appendChild(range.cloneContents());
-  return truncateMarkdown(turndown.turndown(container), maxChars);
+  return turndown.turndown(container);
 }
 
 /**
  * 某一标题节的内容:标题末尾到下一标题开头;最后一节延伸到根末尾
  * (不是标题自己的父容器——它可能只是个深层包装)。
- * maxChars 默认 4000 兜底单节,避免病态大节撑爆快照。
+ * 同前置节:不在此截断,上限与记账在 capSection。
  */
 function sectionText(
   doc: Document,
   root: HTMLElement,
   el: HTMLElement,
   nextEl: HTMLElement | null,
-  maxChars = 4000,
 ): string {
   const range = doc.createRange();
   range.setStartAfter(el);
@@ -294,7 +324,7 @@ function sectionText(
   else range.setEndAfter(root);
   const container = doc.createElement("div");
   container.appendChild(range.cloneContents());
-  return truncateMarkdown(turndown.turndown(container), maxChars);
+  return turndown.turndown(container);
 }
 
 /** 截断到 maxChars,尽量在行边界断开 */
@@ -339,6 +369,14 @@ function headingChainAt(doc: VirtualDoc, pos: number): { level: number; title: s
   return chain.map(({ level, title }) => ({ level, title }));
 }
 
+/** 截断标记统一透出:两种截断都意味着「快照 ≠ 整页」,进 read/outline 契约 */
+function truncationFlags(doc: VirtualDoc) {
+  return {
+    ...(doc.truncatedSections ? { sections_truncated: true } : {}),
+    ...(doc.sourceTruncated ? { source_truncated: true } : {}),
+  };
+}
+
 // ---- page_read ----
 
 /**
@@ -370,7 +408,7 @@ export function runPageRead(doc: VirtualDoc, offset: unknown, chars: unknown) {
   const size = Math.min(Math.max(typeof chars === "number" ? chars : READ_WINDOW_DEFAULT, 500), READ_WINDOW_MAX);
   const end = Math.min(off + size, doc.totalChars);
   const done = end >= doc.totalChars;
-  const hint = selfReportHint(doc);
+  const hint = selfReportHint(doc) ?? truncationHint(doc);
   return {
     title: doc.title,
     url: doc.url,
@@ -380,6 +418,7 @@ export function runPageRead(doc: VirtualDoc, offset: unknown, chars: unknown) {
     next_offset: done ? null : end,
     done,
     ...(doc.truncatedTotal ? { truncated_total: true } : {}),
+    ...truncationFlags(doc),
     ...(hint ? { hint } : {}),
     headings: headingChainAt(doc, off),
     text: doc.md.slice(off, end),
@@ -573,6 +612,7 @@ export function runPageOutline(doc: VirtualDoc) {
     total_chars: doc.totalChars,
     total_headings: doc.headings.length,
     ...(doc.truncatedTotal ? { truncated_total: true } : {}),
+    ...truncationFlags(doc),
   });
 
   if (doc.headings.length === 0) {
@@ -586,7 +626,7 @@ export function runPageOutline(doc: VirtualDoc) {
     };
   }
 
-  const hint = selfReportHint(doc);
+  const hint = selfReportHint(doc) ?? truncationHint(doc);
   const hintField = hint ? { hint } : {};
 
   if (doc.headings.length <= OUTLINE_FULL_MAX) {

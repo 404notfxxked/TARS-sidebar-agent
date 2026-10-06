@@ -14,8 +14,8 @@ import {
   type VirtualDoc,
 } from "./pipeline";
 import { fetchBuild, fetchRead } from "./fetchDoc";
-import { lruEvict } from "./lru";
 import { parseSearchResults } from "./searchParse";
+import { SnapshotPool } from "./snapshotPool";
 import { createLogger, installGlobalErrorHook } from "../shared/logger";
 import { errText } from "../shared/errors";
 
@@ -24,14 +24,6 @@ installGlobalErrorHook(log);
 
 /** 快照缓存份数上限,超出淘汰最久未使用的 */
 const DOC_CACHE_MAX = 6;
-
-interface CacheEntry {
-  doc: VirtualDoc;
-  capturedAt: number;
-}
-
-const snapshots = new Map<number, CacheEntry>();
-const inflight = new Map<number, Promise<VirtualDoc>>();
 
 /**
  * 经 SW 中继抓取页面快照(docBridge 转发给目标 tab 的 capture_doc;
@@ -68,59 +60,48 @@ function requestCaptureDoc(tabId: number): Promise<unknown> {
   });
 }
 
-async function ensureSnapshot(tabId: number, refresh?: boolean): Promise<VirtualDoc> {
-  if (!refresh) {
-    const hit = snapshots.get(tabId);
-    if (hit) {
-      hit.capturedAt = Date.now();
-      log.debug("doc", `snapshot cache hit(tab ${tabId})`);
-      return hit.doc;
-    }
+// 缓存/单飞合并/LRU 全在 SnapshotPool(并发语义可单测);这里只负责采集
+// 动作本身:向 content 索取 HTML → 构建虚拟文档 → 记录重建诊断
+const pool = new SnapshotPool<VirtualDoc>(async (tabId, refresh) => {
+  const startedAt = Date.now();
+  const meta = await requestCaptureDoc(tabId);
+  const cap = meta as Partial<CaptureMeta>;
+  if (!cap || typeof cap.html !== "string" || !cap.html) {
+    throw new Error("capture_doc 返回内容异常");
   }
-  // 并发请求同一 tab 时合并为一次提取
-  const building = inflight.get(tabId);
-  if (building) return building;
+  const doc = buildVirtualDoc({
+    html: cap.html,
+    baseURI: cap.baseURI ?? "",
+    url: cap.url ?? "",
+    title: cap.title ?? "",
+    // content 侧的采样截断上报必须消费(REQ-P0-1):透出为 source_truncated
+    truncated: cap.truncated === true,
+  });
+  // 快照重建是 page_* 工具最常见的第一跳,耗时与输入/输出体量记下来:
+  // htmlBytes 大而 mdChars 异常小 = 采集到了但解析/分节丢内容,排查入口
+  log.info("doc", `快照已重建(tab ${tabId})`, {
+    ms: Date.now() - startedAt,
+    htmlBytes: cap.html.length,
+    url: cap.url || undefined,
+    refresh,
+    mdChars: doc.totalChars,
+    headings: doc.headings.length,
+    ...(doc.truncatedTotal ? { truncatedTotal: true } : {}),
+    ...(doc.sourceTruncated ? { sourceTruncated: true } : {}),
+  });
+  return doc;
+}, DOC_CACHE_MAX);
 
-  const p = (async (): Promise<VirtualDoc> => {
-    try {
-      const startedAt = Date.now();
-      const meta = await requestCaptureDoc(tabId);
-      const cap = meta as Partial<CaptureMeta>;
-      if (!cap || typeof cap.html !== "string" || !cap.html) {
-        throw new Error("capture_doc 返回内容异常");
-      }
-      const doc = buildVirtualDoc({
-        html: cap.html,
-        baseURI: cap.baseURI ?? "",
-        url: cap.url ?? "",
-        title: cap.title ?? "",
-      });
-      snapshots.set(tabId, { doc, capturedAt: Date.now() });
-      lruEvict(snapshots, DOC_CACHE_MAX, (e) => e.capturedAt);
-      // 快照重建是 page_* 工具最常见的第一跳,耗时与输入/输出体量记下来:
-      // htmlBytes 大而 mdChars 异常小 = 采集到了但解析/分节丢内容,排查入口
-      log.info("doc", `快照已重建(tab ${tabId})`, {
-        ms: Date.now() - startedAt,
-        htmlBytes: cap.html.length,
-        url: cap.url || undefined,
-        refresh: refresh === true,
-        mdChars: doc.totalChars,
-        headings: doc.headings.length,
-        ...(doc.truncatedTotal ? { truncatedTotal: true } : {}),
-      });
-      return doc;
-    } catch (e) {
-      const msg = errText(e);
-      throw new Error(
-        `无法读取目标页面(tab ${tabId}):${msg}。可能是受限页(chrome://、PDF、商店页)、` +
-          `已关闭的 tab 或页面尚未加载完成;请先确认目标再重试`,
-      );
-    } finally {
-      inflight.delete(tabId);
-    }
-  })();
-  inflight.set(tabId, p);
-  return p;
+async function ensureSnapshot(tabId: number, refresh?: boolean): Promise<VirtualDoc> {
+  try {
+    return await pool.get(tabId, refresh);
+  } catch (e) {
+    const msg = errText(e);
+    throw new Error(
+      `无法读取目标页面(tab ${tabId}):${msg}。可能是受限页(chrome://、PDF、商店页)、` +
+        `已关闭的 tab 或页面尚未加载完成;请先确认目标再重试`,
+    );
+  }
 }
 
 async function handleDocTool(name: string, args: unknown, targetTabId: number, refresh: boolean): Promise<unknown> {
@@ -230,7 +211,7 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     return true; // 异步响应
   }
   if (msg?.type === "DOC_TOOL_INVALIDATE") {
-    if (typeof msg.tabId === "number") snapshots.delete(msg.tabId);
+    if (typeof msg.tabId === "number") pool.invalidate(msg.tabId);
     return false;
   }
   return false;

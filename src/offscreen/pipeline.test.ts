@@ -156,6 +156,59 @@ describe("空壳页 hint(管线自报,京东/淘宝壳页案)", () => {
   });
 });
 
+describe("单节/采样截断不再静默(REQ-P0-1)", () => {
+  it("单节超 4000 上限被截:read/outline 带 sections_truncated 与 web_fetch 指引", () => {
+    const html =
+      `<body><h1>第一节</h1><p>${"长".repeat(6000)}</p>` +
+      `<h2>第二节</h2><p>短正文</p></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    expect(doc.truncatedSections).toBe(true);
+    const read = runPageRead(doc, 0, 6000);
+    expect(read.sections_truncated).toBe(true);
+    expect(read.hint).toContain("web_fetch");
+    const outline = runPageOutline(doc);
+    expect(outline.sections_truncated).toBe(true);
+    expect(outline.hint).toContain("web_fetch");
+  });
+
+  it("指引不指向 refresh:重建快照对单节上限无效,指了就是让模型空耗 turn", () => {
+    const html = `<body><h1>大节</h1><p>${"长".repeat(6000)}</p></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    expect(runPageRead(doc, 0, 6000).hint).not.toContain("refresh");
+  });
+
+  it("采样 HTML 被截(content truncated):source_truncated 透出并进指引", () => {
+    // 页体量要过壳页阈值,否则壳页 hint 按优先级先出,轮不到截断指引
+    const doc = buildVirtualDoc({
+      ...capture(`<body><p>${"正文内容".repeat(60)}</p></body>`),
+      truncated: true,
+    });
+    const read = runPageRead(doc, 0, 6000);
+    expect(read.source_truncated).toBe(true);
+    expect(read.hint).toContain("web_fetch");
+    expect(runPageOutline(doc).source_truncated).toBe(true);
+  });
+
+  it("正常小节零误报:不带截断标记与 hint", () => {
+    const html = `<body><h1>标题</h1><p>${"正文内容".repeat(60)}</p></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    const read = runPageRead(doc, 0, 6000);
+    expect(read.sections_truncated).toBeUndefined();
+    expect(read.source_truncated).toBeUndefined();
+    expect(read.hint).toBeUndefined();
+    expect(runPageOutline(doc).sections_truncated).toBeUndefined();
+  });
+
+  it("管线自报 hint 优先:可疑信号与截断并存时 hint 不被截断指引顶掉", () => {
+    const html =
+      `<body><h1>详情</h1><p>${"正常描述文字".repeat(40)}${"\uE0A0".repeat(8)}</p>` +
+      `<h2>规格</h2><p>${"长".repeat(6000)}</p></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    expect(doc.truncatedSections).toBe(true);
+    expect(runPageRead(doc, 0, 6000).hint).toContain("字体反爬");
+  });
+});
+
 describe("标题层级与定位的边界(2026-09 审计)", () => {
   it("aria-level 烂值不炸整页解析:钳回 1-6 档", () => {
     // 旧实现直接 Number(aria-level) 后 "#".repeat(-1) 抛 RangeError,
