@@ -13,8 +13,10 @@ import {
   memoryFooterText,
   memoryInjectionLines,
   memoryLine,
+  memoryShortId,
   memoryUsedTokens,
   planMemoryInjection,
+  resolveMemoryRef,
 } from "./memory";
 
 const item = (text: string, pinned = false, updatedAt = 0) => ({
@@ -90,6 +92,37 @@ describe("planMemoryInjection", () => {
     expect(kept.map((r) => r.text)).toEqual(["small"]);
     expect(dropped.map((r) => r.text)).toEqual([huge.text]);
   });
+
+  it("段头成本计入预留:整块(头注+段头+条目+尾注)不破注入预算", () => {
+    // 120 条等行价(每行 ≈6 token)的交错卡片/简条把装箱逼到边界:
+    // 若段头成本没计入预留,装箱会多塞 ~5 token,本断言必红 —— 有牙。
+    // 行价对齐:卡片「・[ccccNNNN] kN: x」与简条「・[nnnnNNNN] xxxxx」同 17 字符
+    const rows = Array.from({ length: 120 }, (_, i) =>
+      i % 2 === 0
+        ? {
+            id: `cccc${String(i).padStart(4, "0")}-1111`,
+            text: "x",
+            key: `k${i}`,
+            pinned: false,
+            updatedAt: i,
+          }
+        : {
+            id: `nnnn${String(i).padStart(4, "0")}-1111`,
+            text: "xxxxx",
+            pinned: false,
+            updatedAt: i,
+          },
+    );
+    const { kept } = planMemoryInjection(rows);
+    const lines = memoryInjectionLines(kept);
+    expect(lines).toContain("[profile]");
+    expect(lines).toContain("[notes]");
+    const total =
+      estimateTokens(MEMORY_PREAMBLE) +
+      lines.reduce((s, l) => s + estimateTokens(l), 0) +
+      estimateTokens(memoryFooterText(999));
+    expect(total).toBeLessThanOrEqual(memoryBudgetTokens());
+  });
 });
 
 describe("卡片态:优先级 / 行渲染 / 两段式", () => {
@@ -125,6 +158,17 @@ describe("卡片态:优先级 / 行渲染 / 两段式", () => {
     );
   });
 
+  it("注入行带短 id 前缀:模型看得见的引用锚(replaceOf/delete 按 id)", () => {
+    const row = { id: "a1b2c3d4-1111-2222-3333-444444444444" };
+    expect(
+      memoryLine({ ...row, text: "不吃香菜", key: "diet", pinned: false, updatedAt: 0 }),
+    ).toBe("・[a1b2c3d4] diet: 不吃香菜");
+    expect(
+      memoryLine({ ...row, text: "喜欢简洁回答", pinned: false, updatedAt: 0 }),
+    ).toBe("・[a1b2c3d4] 喜欢简洁回答");
+    expect(memoryShortId(row.id)).toBe("a1b2c3d4");
+  });
+
   it("排序:置顶 > 卡片 > 简条(同级再按最近更新)", () => {
     const { kept } = planMemoryInjection([
       item("新简条", false, 300),
@@ -155,6 +199,33 @@ describe("卡片态:优先级 / 行渲染 / 两段式", () => {
         { text: "只有卡片", key: "diet", pinned: false, updatedAt: 0 },
       ]),
     ).toEqual(["・diet: 只有卡片"]);
+  });
+});
+
+describe("resolveMemoryRef:模型引用 → 库内条目(replaceOf/delete 按 id 共用)", () => {
+  const rows = [
+    { id: "aaaaaaaa-1111", text: "甲" },
+    { id: "aaaaaaaa-2222", text: "乙" },
+    { id: "bbbbbbbb-3333", text: "丙" },
+  ];
+
+  it("完整 id 精确命中", () => {
+    expect(resolveMemoryRef(rows, "aaaaaaaa-2222")?.text).toBe("乙");
+  });
+
+  it("唯一短前缀命中(注入行里只露 8 位)", () => {
+    expect(resolveMemoryRef(rows, "bbbbbbbb")?.text).toBe("丙");
+  });
+
+  it("前缀歧义不猜测:报出候选数,让模型换更长的前缀", () => {
+    expect(() => resolveMemoryRef(rows, "aaaaaaaa")).toThrow(
+      /2 entries|匹配到 2 条/,
+    );
+  });
+
+  it("未命中返回 null(调用方决定报错文案)", () => {
+    expect(resolveMemoryRef(rows, "cccccccc")).toBeNull();
+    expect(resolveMemoryRef(rows, "")).toBeNull();
   });
 });
 

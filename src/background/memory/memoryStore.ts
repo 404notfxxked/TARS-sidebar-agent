@@ -18,6 +18,7 @@ import {
   memoryFooterText,
   memoryInjectionLines,
   planMemoryInjection,
+  resolveMemoryRef,
 } from "../../shared/memory";
 import type { InternalMsg } from "../provider/types";
 import type { MemoryRow } from "../sessions/sessionDb";
@@ -82,7 +83,8 @@ function normalizeForDedup(text: string): string {
 }
 
 /** 新增一条(模型工具/面板手填共用):
- *  - replaceOf → 替换指定条目文本;
+ *  - replaceOf → 替换指定条目文本:接受完整 id 或注入行里的 8 位短前缀,
+ *    解析经 shared/memory 的 resolveMemoryRef(歧义抛错,未命中报错);
  *  - key → 卡片态,按 (subject,key) upsert,值变化记冲突日志(冲突计数是
  *    二期温层蒸馏的触发信号之一);
  *  - 其余 → 简条,规范化去重后新增 */
@@ -96,7 +98,7 @@ export async function addMemory(
   const all = await listMemoryRows();
 
   if (opts.replaceOf) {
-    const prev = all.find((r) => r.id === opts.replaceOf);
+    const prev = resolveMemoryRef(all, opts.replaceOf);
     if (!prev) throw new Error("Memory to replace not found or already deleted");
     const row: MemoryRow = { ...prev, text: clean, updatedAt: now };
     await putMemoryRow(row);
@@ -217,6 +219,18 @@ export async function deleteMemoriesByMatch(
   for (const r of hits) await deleteMemoryRow(r.id);
   log.info("memory", "记忆按匹配删除", { count: hits.length });
   return { count: hits.length, deleted: hits.map((r) => r.text) };
+}
+
+/** 按 id 引用删除单条(模型工具入口):接受完整 id 或注入行的 8 位短前缀,
+ *  解析经 resolveMemoryRef(歧义抛错/未命中抛错,文案回给模型)。
+ *  与按子串删除并存的理由:子串是破坏性模糊删除,id 是精确删除 —— 读写
+ *  对称性要求模型「能看见的锚」就能精确操作 */
+export async function deleteMemoryRef(ref: string): Promise<{ text: string }> {
+  const row = resolveMemoryRef(await loadMemories(), ref);
+  if (!row) throw new Error("No memory matched that id; copy the [bracketed] short id from <user-memory>");
+  await deleteMemoryRow(row.id);
+  log.info("memory", "记忆按 id 删除", { id: row.id });
+  return { text: row.text };
 }
 
 export async function clearMemories(): Promise<void> {
