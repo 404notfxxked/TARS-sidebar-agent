@@ -58,6 +58,9 @@ export const enUS = {
     newChat: "New chat",
     regenerate: "Regenerate",
     retry: "Retry",
+    notDelivered: "Not delivered",
+    sendFailedDetail:
+      "Message not delivered: the connection to the background was lost (the extension may have just been updated). Nothing in the chat was changed; retry once the connection is restored.",
     openSettings: "Open settings",
     switchLanguage: "Switch language",
     busySessionsHint: "You can view chat history once the current reply finishes",

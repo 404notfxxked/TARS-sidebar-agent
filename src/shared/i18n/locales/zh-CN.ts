@@ -54,6 +54,9 @@ export const zhCN = {
     newChat: "开始新对话",
     regenerate: "重新生成",
     retry: "重试",
+    notDelivered: "未送达",
+    sendFailedDetail:
+      "消息未送达:与后台的连接已断开(扩展可能刚被更新),会话未被改动;待连接恢复后可重试。",
     openSettings: "打开设置",
     switchLanguage: "切换语言",
     busySessionsHint: "当前回复结束后可查看历史会话",

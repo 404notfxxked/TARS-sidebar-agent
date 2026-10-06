@@ -252,12 +252,21 @@ export type AgentEvent =
        *  快速切会话时迟到的旧回包不得盖上新会话的 id */
       sessionId: string;
       messages: ChatRecord[];
+      /** 历史读取失败原因(存储抛错等):面板落错误气泡而非伪装成空会话
+       *  (兜底回包纪律,同 SESSIONS.error;resync 失败面板静默忽略) */
+      error?: string;
       /** 该会话存在压缩时带上:面板在压缩点渲染分隔条 */
       compaction?: CompactionMark | null;
       /** 回显 LOAD_HISTORY.resync:面板据此走「按库替换」而非「本地空才填」 */
       resync?: boolean;
     }
-  | { type: typeof MSG.SESSIONS; sessions: SessionMeta[] }
+  | {
+      type: typeof MSG.SESSIONS;
+      sessions: SessionMeta[];
+      /** 列表读取失败原因(存储抛错等):面板走错误态而非空态(REQ-P0-3,
+       *  同 MEMORIES.error / SKILLS.error 的兜底回包纪律) */
+      error?: string;
+    }
   | {
       type: typeof MSG.MEMORIES;
       memories: MemoryItem[];

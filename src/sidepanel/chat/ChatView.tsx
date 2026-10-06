@@ -162,14 +162,34 @@ export default function ChatView({
     });
     // 本地回显:预览 url 先入气泡缓存,渲染无需再向后台取字节
     for (const p of pendingImages) cacheImgUrl(p.id, p.url);
-    chat.submitUserMessage({
+    // 送达回执决定草稿去留(REQ-P0-2):发送失败时输入框与待发附件原样
+    // 保留,消息流里以「未送达 + 重试」呈现;成功才清空(原行为)
+    const delivered = chat.submitUserMessage({
       sessionId,
       tabId,
       text,
       ...(pendingImages.length ? { images: pendingImages } : {}),
     });
-    setInput("");
-    clearAttachments();
+    if (delivered) {
+      setInput("");
+      clearAttachments();
+    }
+  };
+
+  // 重试未送达的提交(评审修正):成功后只有「草稿仍等于原文本 ∧ 待发附件
+  // 与原附件一致」才清空输入区 —— 重发的内容已在对话里,留着会诱导二次
+  // 发送;但用户失败后可能已改写草稿,不能吞掉新内容
+  const retrySend = (args: Parameters<typeof chat.retrySubmit>[0]) => {
+    if (!chat.retrySubmit(args)) return;
+    const sentImageIds = new Set((args.images ?? []).map((a) => a.id));
+    const sameText = input.trim() === args.text;
+    const sameImages =
+      pendingImages.length === sentImageIds.size &&
+      pendingImages.every((p) => sentImageIds.has(p.id));
+    if (sameText && sameImages) {
+      setInput("");
+      clearAttachments();
+    }
   };
 
   // 新对话:重置会话游标 + 清输入草稿 + 清待发附件,上一屏气泡 URL 一并回收
@@ -206,6 +226,8 @@ export default function ChatView({
         regenerate={chat.regenerate}
         memorySaved={memorySaved}
         onOpenMemory={onOpenMemory}
+        onRetrySend={retrySend}
+        onRetryLoadHistory={chat.retryLoadHistory}
         onPickEmpty={(text) => {
           setInput(text);
           chatInputRef.current?.focus();
