@@ -1,5 +1,5 @@
 // 工具注册表单测:write 标记 × 确认门 WRITE_TOOLS 的双向不变式。
-// 这是 AGENTS.md 硬规则 15②(「新增写工具先入集合再上线」)的机械保障:
+// 这是 AGENTS.md 写工具确认门(「新增写工具先入集合再上线」)的机械保障:
 // - 往注册表加写工具忘了入 TOOL_CATEGORY(经 WRITE_TOOLS 派生)→ 第一条红;
 // - 入了 WRITE_TOOLS 但没在工具上标 write → 第二条红。
 // 两个方向都红,注册表与确认门就不可能漂移。
@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { listTools } from "./tools";
 import { WRITE_TOOLS } from "../agent/confirmations";
 
-describe("write 标记 × WRITE_TOOLS 双向一致(硬规则 15②)", () => {
+describe("write 标记 × WRITE_TOOLS 双向一致(写工具确认门)", () => {
   const tools = listTools();
   const writeTools = tools.filter((t) => t.write === true).map((t) => t.name);
 

@@ -51,7 +51,7 @@ export default function MemoryView({
   // 右上溢出菜单:清空全部记忆(菜单内两段确认,关菜单即复位)
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-  // 列表回填序号守卫(硬规则 10,同 useAgentChannel 的 actionSeq):写动作
+  // 列表回填序号守卫(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):写动作
   // 回包是全量快照,两个在途请求的回包乱序时,迟到的旧快照若仍整体替换,
   // 置顶/删除/新增会互相回滚。每次请求取递增序号,回包过期即丢弃;
   // 乐观本地变更(删除/清空)取新序号,天然作废此前在途请求。渲染期不写 ref
@@ -365,7 +365,7 @@ export default function MemoryView({
 
 // ---- 行 ----
 
-/** tag 徽标文案:渲染时现取 t()(模块级求值会停在默认语言,AGENTS.md 硬规则 13) */
+/** tag 徽标文案:渲染时现取 t()(模块级求值会停在默认语言,AGENTS.md「面板状态」) */
 function memoryTagLabel(
   t: TFn,
   tag: MemoryTag,

@@ -24,7 +24,7 @@ export interface Tool<P = unknown, R = unknown> extends ToolSchema {
   displayName?: string;
   /** 声明该工具会改动页面或持久状态(写工具);读/观察工具不标。
    *  只做注册表侧元数据,不进 wire。测试锁它与确认门 WRITE_TOOLS 的
-   *  双向一致(硬规则 15②:新增写工具先入集合再上线)—— 见 tools.test.ts */
+   *  双向一致(写工具确认门:新增写工具先入集合再上线)—— 见 tools.test.ts */
   write?: boolean;
   execute: (args: P) => Promise<R>;
 }

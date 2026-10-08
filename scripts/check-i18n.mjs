@@ -5,7 +5,7 @@
 // 2. 发现动态拼键 t(`a.b.${x}`) 与字面量拼接 t("a.b." + x) 直接 FAIL
 //    —— 动态拼键绕过本检查(compactEarly 漏键即此形态),键映射一律写字面量
 // 扫描面不含 src/content(经典脚本,文案不走 shared 字典)与
-// src/background(SW 侧文案不经字典属 AGENTS.md 硬规则 1 已知债务,
+// src/background(SW 侧文案不经字典属 AGENTS.md「文案」节的已知债务,
 // 纳入先立设计决定)。命名空间白名单从字典顶层键派生,不手抄 ——
 // 手抄名单会腐化:新增命名空间的键既不被收集、也不被报缺键,typo 直接上屏。
 // 用法: 随 build 自动跑,或 node scripts/check-i18n.mjs

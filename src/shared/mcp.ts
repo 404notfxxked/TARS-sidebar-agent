@@ -160,7 +160,7 @@ export interface McpConnectionError {
   error: string;
 }
 
-/** 单台错误文本上限:errText 可能带响应片段,块总量必须有界(硬规则 8) */
+/** 单台错误文本上限:errText 可能带响应片段,块总量必须有界(拼接输入硬预算) */
 const MCP_STATUS_ERROR_MAX_CHARS = 200;
 /** 状态块列出的服务器上限,超出折叠计数(配置再大块也有界) */
 const MCP_STATUS_MAX_SERVERS = 10;

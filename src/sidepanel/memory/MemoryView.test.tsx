@@ -2,7 +2,7 @@
 // MemoryView 列表新鲜度守卫回归(审计 §1.4):MEM_* 写动作的回包是
 // 「全量列表快照」,两个在途写请求的回包乱序时,迟到的旧快照若仍整体
 // 替换列表,会让置顶/删除/新增互相回滚(已删的行复活、新加的行消失)。
-// 守卫语义(硬规则 10,同 useAgentChannel 的 actionSeq):每次请求取
+// 守卫语义(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):每次请求取
 // 递增序号,回包时序号过期即丢弃;乐观本地变更同样递增作废在途请求。
 
 import { afterEach, describe, expect, it, vi } from "vitest";

@@ -1,4 +1,4 @@
-// 固定等待计数棘轮(AGENTS.md 硬规则 3「e2e 等待一律事件驱动/轮询」的配套):
+// 固定等待计数棘轮(e2e 等待一律事件驱动/轮询的配套):
 // 统计每个测试脚本里两种固定等待形态的出现次数,与下方基线表逐一比较——
 //   形态 1:await sleep(<数字>)
 //   形态 2:await new Promise((r) => setTimeout(r, <数字>))
@@ -77,7 +77,7 @@ for (const f of readdirSync(__dirname).filter(
   if (measured > baseline) {
     failed = true;
     console.log(
-      `❌ ${f}: 固定等待 ${measured} 处 > 基线 ${baseline} —— 新增加固定等待前先读 AGENTS.md 硬规则 3(等待一律事件驱动/轮询);确属必须(如等外部 TTL)则同步抬高基线,并在改动说明里给理由`,
+      `❌ ${f}: 固定等待 ${measured} 处 > 基线 ${baseline} —— 新增加固定等待前先读 tests/README 棘轮节(等待一律事件驱动/轮询);确属必须(如等外部 TTL)则同步抬高基线,并在改动说明里给理由`,
     );
   }
 }
@@ -85,6 +85,6 @@ for (const f of readdirSync(__dirname).filter(
 console.log(
   failed
     ? "固定等待计数棘轮检查失败"
-    : "✅ 固定等待计数未超基线(硬规则 3 棘轮;只防增量,不防等量替换)",
+    : "✅ 固定等待计数未超基线(棘轮只防增量,不防等量替换)",
 );
 process.exit(failed ? 1 : 0);

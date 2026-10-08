@@ -1,6 +1,6 @@
 // Anthropic Messages 协议适配器:api.anthropic.com 及一切兼容端点(中转/网关)
 // 只做「内部格式 ⇄ anthropic-messages wire 格式」的双向转换;SSE 流式解析在共享层 sse.ts
-// 与 chatCompletions.ts 的结构对称:同样只发 stream:true,流中无重试(硬规则 9)
+// 与 chatCompletions.ts 的结构对称:同样只发 stream:true,流中无重试(AGENTS.md「喂给模型的数据」)
 
 import { apiFetch } from "./client";
 import { safeParse } from "./json";
@@ -190,12 +190,12 @@ export class AnthropicMessagesAdapter implements ChatProvider {
     // 回传口径按端点类别一次判定(见 isNativeAnthropicEndpoint):官方端点原样
     // 回传签名思考块与服务端工具块;兼容端点降形状。不做「先送、撞 400、再剥」
     // 的补救 —— 那条路每轮都要重付一次必然失败的请求,且报错文案是「thinking
-    // 未回传」,会把归因指向错误的方向(2026-09 修正;硬规则 9 也禁止已开始的流
+    // 未回传」,会把归因指向错误的方向(2026-09 修正;AGENTS.md 也禁止已开始的流
     // 重放,这里连补救的余地都不留)
     const policy: ReplayPolicy = {
       native: isNativeAnthropicEndpoint(this.cfg.baseUrl),
     };
-    // 回传材料形状入日志:只记块类型与签名长度,不记正文(硬规则 12)——
+    // 回传材料形状入日志:只记块类型与签名长度,不记正文(日志隐私判据)——
     // 验证端点行为时导出诊断即可看到实际送出去的块
     const shape = assistantEchoShape(req.messages, policy);
     if (shape) {
@@ -224,7 +224,7 @@ export class AnthropicMessagesAdapter implements ChatProvider {
     let content = "";
     const blocks = new Map<number, OpenBlock>();
     /** 本响应里出现过的、本端没有解析路径的内容块类型(去重):只记类型名,
-     *  不记正文(硬规则 12)。见下方的告警与「整轮什么都没产出」的抛错 */
+     *  不记正文(日志隐私判据)。见下方的告警与「整轮什么都没产出」的抛错 */
     const unknownBlocks: string[] = [];
     let stopReason: string | undefined;
     let inputTokens: number | undefined;
@@ -425,7 +425,7 @@ export class AnthropicMessagesAdapter implements ChatProvider {
     }
 
     // 未知内容块:丢是唯一的处理(没有解析路径),但绝不静默 —— 先记一条只含
-    // 块类型的告警供诊断导出查证(硬规则 12:不记正文);若整轮既没正文也没
+    // 块类型的告警供诊断导出查证(日志隐私判据:不记正文);若整轮既没正文也没
     // 客户端工具调用,则这一轮对用户就是「什么都没发生」,直接抛带块名的可行动
     // 错误,而不是让它落成一次空回答(静默是这条链路最大的坑)
     if (unknownBlocks.length > 0) {
@@ -731,7 +731,7 @@ function mapStopReason(reason: string | undefined): ChatResult["finishReason"] {
 
 /** 请求里 assistant 回传块的形状摘要:`thinking(sig=24)|server_tool_use|…`。
  *  按 composeAssistantBlocks 的**实际回传形状**统计(含桥接侧合成的无签名思考
- *  块),仅类型与签名长度、无正文/思考原文(硬规则 12)—— 诊断导出可判「这个
+ *  块),仅类型与签名长度、无正文/思考原文(日志隐私判据)—— 诊断导出可判「这个
  *  端点收到什么块、什么顺序、思考是原样还是合成」 */
 function assistantEchoShape(msgs: InternalMsg[], policy: ReplayPolicy): string {
   const parts: string[] = [];

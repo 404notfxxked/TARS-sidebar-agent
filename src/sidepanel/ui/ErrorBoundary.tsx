@@ -2,8 +2,8 @@
 // (此前一次 render 抛错 = 整块白屏,用户只能重开面板)。
 // class 组件是 React 错误边界的唯一形态(hooks 无对应能力,有意不引第三方薄封装);
 // 兜底文案拆成函数子组件经 useT() 现取 —— class 里调不了 hook,模块级 t() 又会被
-// React Compiler 当零依赖永久缓存(硬规则 13)。诊断日志只记错误信息与组件栈
-// (logger 侧自动截断),不记任何 props/原文(硬规则 12)。
+// React Compiler 当零依赖永久缓存(AGENTS.md「面板状态」)。诊断日志只记错误信息与组件栈
+// (logger 侧自动截断),不记任何 props/原文(日志隐私判据)。
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { errText } from "../../shared/errors";

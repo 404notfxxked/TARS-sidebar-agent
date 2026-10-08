@@ -94,7 +94,7 @@ if (guard.status !== 0) {
   process.exit(2);
 }
 
-// ---- 固定等待计数棘轮(硬规则 3;规范与豁免见 check-fixed-waits.mjs 头注)----
+// ---- 固定等待计数棘轮(规范与豁免见 check-fixed-waits.mjs 头注)----
 const fixedWaits = spawnSync("node", [join(__dirname, "check-fixed-waits.mjs")], {
   stdio: "inherit",
 });

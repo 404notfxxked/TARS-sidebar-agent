@@ -21,7 +21,7 @@
 // 「一键修正」——聊天请求同样受约定影响;白名单/origin 根候选命中则不给
 // (列表在别处,聊天仍走 {base}/v1/messages,base 不能动)。
 // Anthropic 官方列表默认 limit=20 且分页(has_more/after_id),这里 limit=1000
-// 起拉、按 has_more 翻页,总页数封顶(硬规则 8:拼接输入必须有硬预算);
+// 起拉、按 has_more 翻页,总页数封顶(拼接输入必须有硬预算);
 // 分页参数只发给 Anthropic 形状的候选(白名单/origin 根是 OpenAI 形状,不带)。
 // 认证:OpenAI 系 Bearer;Anthropic 系 x-api-key + anthropic-version 外加
 // Authorization: Bearer **双头** —— 官方认 x-api-key,AUTH_TOKEN 系网关与
@@ -81,7 +81,7 @@ function classifyStatus(status: number): ModelsErrorCode | null {
 
 const ANTHROPIC_VERSION = "2023-06-01";
 const PAGE_LIMIT = 1000; // Anthropic list models 的上限;OpenAI 系忽略该参数不带
-const MAX_PAGES = 4; // 首页 + 3 次翻页:响应驱动的硬上界(硬规则 8)
+const MAX_PAGES = 4; // 首页 + 3 次翻页:响应驱动的硬上界(拼接输入硬预算)
 
 interface Page {
   ids: string[];

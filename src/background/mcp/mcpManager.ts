@@ -16,7 +16,7 @@
 // - MRTR(InputRequiredResult,服务器要采样/追问):V1 明确不支持,直接
 //   报错让模型换路;不静默吞 —— 模型需要知道这条路走不通
 // - **tools/list 按 cursor 分页拉全 + 单服务器工具数硬上限**:spec 允许
-//   分页,只取第一页会静默丢工具;上限是硬预算护栏(硬规则 8 —— schema
+//   分页,只取第一页会静默丢工具;上限是硬预算护栏(拼接输入硬预算 —— schema
 //   是喂给模型的拼接输入),超限截断并留日志注记体量
 
 import type { ToolSchema } from "../../shared/toolTypes";
@@ -153,7 +153,7 @@ interface RawTool {
 }
 
 /** 单服务器工具数硬上限:分页拉全的前提下的预算护栏 —— 全部 schema 进每轮
- *  请求(硬规则 8:喂给模型的拼接输入必须有上界),超限截断留日志注记体量 */
+ *  请求(喂给模型的拼接输入必须有上界),超限截断留日志注记体量 */
 const MAX_TOOLS_PER_SERVER = 200;
 /** 分页页数上限:防空 cursor / 空页挂 cursor 挂死连接 */
 const MAX_TOOL_PAGES = 100;
@@ -433,7 +433,7 @@ export async function testServer(
 ): Promise<{ ok: boolean; toolCount?: number; era?: McpEra; error?: string }> {
   try {
     const entry = await refreshServer(server);
-    // era 传机器值,展示文案由 UI 按字典键映射(硬规则 1);eraLabel 只进日志
+    // era 传机器值,展示文案由 UI 按字典键映射(AGENTS.md「文案」);eraLabel 只进日志
     return { ok: true, toolCount: entry.tools.length, era: entry.client.era };
   } catch (err) {
     return { ok: false, error: errText(err) };

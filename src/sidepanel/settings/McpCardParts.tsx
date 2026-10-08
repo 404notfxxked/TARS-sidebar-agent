@@ -57,7 +57,7 @@ export function McpTestRow({
       r.ok
         ? t("settings.testOk", {
             n: r.toolCount ?? 0,
-            // era 是机器值,展示文案按键映射(硬规则 1);未知/缺省不显示空段
+            // era 是机器值,展示文案按键映射(AGENTS.md「文案」);未知/缺省不显示空段
             era:
               r.era === "modern"
                 ? t("settings.eraModern")

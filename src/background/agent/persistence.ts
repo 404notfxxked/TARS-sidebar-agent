@@ -44,7 +44,7 @@ export async function persistNewMessages(
 /**
  * 失败轮错误行:比 persistNewMessages 多追加一条 error 行,锚点语义一致
  * (fromIdx = savedUpTo,连同此前未落盘的尾巴一起写)。文本与实况错误
- * 气泡同文同源(后台错误串,不经字典 —— 既有债务,硬规则 1)
+ * 气泡同文同源(后台错误串,不经字典 —— 既有债务,AGENTS.md「文案」)
  */
 export async function persistFailure(
   loop: RunLoopState,
