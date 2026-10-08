@@ -1,150 +1,128 @@
-# AGENTS.md — AI 助手开发约定
+# AGENTS.md — TARS 开发约定
 
-> 目的:让任何新会话(AI 助手或新人)在动手前就知道这个仓库的硬约定,
-> 不靠口口相传。**本文件只写"必然影响正确性的约定 + 指针",细节以被指
-> 文件为准**——这里是路标,不是地图副本(副本必然腐化)。协作约定管
-> 「怎么一起干活」,硬规则管「什么会弄坏产品」;本文件只引用仓库内
-> 文件,公开仓库可直接复用。
+> 只收跨域的规矩和指针,细节以被指文件为准,不在本文复制。
+> 规则会演化:被证伪或事故根源已消失的条目要删或降级,不可只增不减。
 
-## 改代码前必读
+## 项目定位
 
-- **这是什么**:TARS,Chrome MV3 侧栏 ReAct agent 扩展(BYOK,无后端)。
-  四个运行域:`src/sidepanel`(React 面板,只渲染)、`src/background`
-  (SW:agent 循环/工具/网络,无 DOM、随时休眠)、`src/offscreen`(DOM
-  解析)、`src/content`(页面操作,按需注入);跨域共享在 `src/shared`。
-  全景见 README「架构」
-- **测试分层契约**:[tests/README.md](tests/README.md) —— 纯逻辑归
-  vitest 单测(`pnpm test`,与被测模块同目录 `*.test.ts(x)`),交互链路
-  归 e2e(`pnpm build && node tests/run.mjs <域>`),改哪块跑哪块
+TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
+(BYOK),没有后端。四个运行域,各有一条不能破的边界:
 
-## 协作约定(行为层,与技术硬规则同效力)
+- `src/sidepanel` — React 面板,只负责渲染,不含业务逻辑
+- `src/background` — Service Worker:agent 循环、工具、网络;没有
+  DOM,随时可能被浏览器休眠
+- `src/offscreen` — DOM 解析(读页、解析 HTML)
+- `src/content` — 页面操作,按需注入,保持经典脚本(见「边界」)
+- `src/shared` — 跨域共享的代码与契约
 
-1. **先调研规划,经确认再动工**:非平凡任务先读相关代码,给出计划
-   (改动面/取舍/怎么验证),用户认可后再实施;用户在提问或讨论时,
-   交付的是分析结论,不是代码改动
-2. **commit 必须用户明确要求**:未经明示不 commit、不 push;
-   merge / rebase / tag / reset 等一切动 git 历史的动作同此规矩;
-   「收尾」「完成」「继续」等任务泛指不构成授权——要动 git 须
-   当轮点名。提交按「提交与验证」的风格与门禁执行,完成后回报
-   hash 与改动范围
-3. **只做任务要求的事**:顺手发现相邻问题就报告并记账(不动手);
-   批量重构、删文件、改公共接口一律先经确认
-4. **如实汇报验证**:交付前按「改哪块跑哪块」跑对应门禁,红绿照实
-   说;没跑的验证明说没跑,不用「应该没问题」替代
-5. **模块文件头注写清职责与设计取舍**:每个非测试源文件头部说明它管
-   什么、关键取舍为何(新文件照此,既有惯例见各文件头)。SW↔offscreen
-   的协议常量单点声明(两侧都是 ESM,不受 content 经典脚本限制);
-   确有跨注入边界必须镜像的(如 content 侧本地声明的选择器常量),
-   镜像处写明同步义务
-6. **分支纪律**:多提交的功能轮次新开
-   `feat/*` 等分支开发,合回 main 用 `--no-ff`——main 保持「随时可讲、
-   随时可 tag」的形态;单提交的修复/文档可直提 main。分支落后 main
-   较多时先 merge main 进分支再合回;「文本无冲突」≠「语义无冲突」,
-   合流点人工核对语义(SUITES、上下文预算、actionSeq 等契约点逐一验);
-   push 与合回仍按约定 2 由用户当轮点名
+全景见 README「架构」。
 
-## 硬规则(违反即返工)
+## 命令
 
-> 句末〔〕是执行机制标注:**门禁** = CI/build 自动拦截;**准门禁** =
-> 有测试准绳但非自动拦截;**review** = 靠人;**纪律** = 流程约定。
+- 包管理器锁定 pnpm,版本只在 package.json `packageManager` 声明
+- 日常门禁:`pnpm lint && pnpm typecheck && pnpm test && pnpm build`
+- 覆盖率:`pnpm test:coverage`
+- e2e:`pnpm build && node tests/run.mjs <域>`,域清单见
+  [tests/README.md](tests/README.md)
+- **改哪块跑哪块**:改纯逻辑跑对应单测,改交互链路跑对应域的 e2e
 
-1. **用户可见文案一律走 i18n 字典键**:源码用 `t("key")`,测试断言经
-   `tests/lib-i18n.mjs` 取键;插值文案用键值 `replace("{n}", 实参)`,或
-   `split("{")[0]` 派生子串,禁止手抄文案。`tests/check-test-strings.mjs`
-   在每次 e2e 入口强制(逐字/子串/占位符前缀三类漂移都抓),确属协议
-   常量/测试种子的行内标 `// i18n-ok`。源码侧同纪律:`t()` 只写字面量
-   键,动态拼键被 check-i18n 拦 build(`scripts/check-i18n.mjs`,键映射
-   一律写字面量);SW 侧错误/状态文案当前不经字典(中英混杂透传),属
-   已知债务——动它先立设计决定,别把字典键穿进 background
-   〔门禁:check-i18n + check-test-strings〕
-2. **e2e 断言不做恒真打卡**:`check(true, ...)` 是零信息断言;waitFor
-   成功后必须对捕获值断言。环境敏感分支(剪贴板等)只对"环境拒绝"
-   降级,内容不匹配照常 FAIL〔review(存量已清)〕
-3. **e2e 等待一律事件驱动/轮询**:新增固定 `sleep(N)` 等待状态会引入
-   单点 flake(启动等待、按钮翻转、异步回填都有事件式写法可抄,见
-   `lib-cdp-mock.mjs` 的 waitForEvent/waitForRunLog 与套件内轮询先例)
-   〔门禁:check-fixed-waits(按文件计数棘轮,只防增量)〕
-4. **e2e mock 必须走 CDP 拦截**(`lib-cdp-mock.mjs`),裸 http server 的
-   SSE 会挂死;网络注入用 `ctx.fulfill`(HTTP 形态)或 `ctx.failNetwork`
-   (断连形态)。flavor 的临时目录路径必须确定性(按 extDir+flavor 哈希,
-   不能每次随机)——路径一变扩展 ID 就变,跨重启对比存储的套件
-   (如 verify-persist)会全丢数据〔review〕
-5. **测试文案选择器从 `lib-i18n.mjs` 取键拼模板串**;新链路照
-   verify-*.mjs 模式加套件并在 `tests/run.mjs` SUITES 登记
-   〔门禁:run.mjs 未登记套件自检〕
-6. **单元测试环境**:默认 node;碰 DOM 的文件头加
-   `// @vitest-environment jsdom`。组件测试(vitest 未开 globals)必须
-   手动 `afterEach(cleanup)`,期望串从 `zhCN` 字典键派生(组件拼装用
-   全角标点,手写期望必错)〔准门禁:check-test-strings 已扫 src 测试〕
-7. **覆盖率口径是 all:true 全量**(`pnpm test:coverage`),thresholds 只
-   钉已强区域防倒退;新增测试落在哪,就把那个区域的棘轮抬上去
-   〔门禁:test:coverage(checks.yml + release.yml)〕
-8. **喂给模型的拼接输入必须有硬预算**:转写/注入/检索回填一律设上界,
-   放不下即打桩(保留最新、桩里声明体量),禁止无上界拼接;摘要/压缩类
-   子请求的输入同样受预算约束,否则主链路的兜底会静默失效(先例:压缩
-   转写 120k 打桩,compaction.ts `toTranscript`)〔review〕
-9. **已开始的流式请求不得自动重试**:delta 已发出,UI 与落库都在消费,
-   重放必重复——只能 abort 报错交给人,「重新生成」是唯一兜底;流必须
-   挂 inactivity watchdog(30s 超时只护响应头);SSE 解析的脏形态
-   (CRLF/多行 data/坏帧)以 `chatCompletions.test.ts`「readSSE 兼容端点脏形态」
-   一组用例为准绳,改流式解析必须保持全绿〔准门禁:脏形态准绳用例〕
-10. **面板异步回填必须比新鲜度**:后到的异步数据替换本地视图前,必须
-    带动作计数快照比对(actionSeq 模式,见 useAgentChannel),期间有
-    本地动作即作废——不比新鲜度的补全会覆盖刚提交的用户输入〔review〕
-11. **并行化破坏「串行化/单例」假设时,实现与头注必须同步改**:给共享
-    单例加并发路径前,先审它全部注释里的串行假设(先例:
-    `toolContext.ts` 头注的并发安全修订);多持有者的清理用条件清除
-    (`current === mine` 才置空),不越权〔review〕
-12. **诊断日志不记超出功能必需的原文**:content 工具不记 args;联网
-    工具 query 只留 40 字符;新工具日志按同一判据——「导出诊断时是否
-    带走超出功能必需的原文」〔review〕
-13. **React Compiler 下渲染期禁读模块可变态**:构建开了
-    babel-plugin-react-compiler(vite.config.js),它把「非 props/state/
-    hook 返回值」当永久缓存。面板组件文案一律 `const t = useT()`
-    (ui/hooks.ts),禁用模块级 `t()`;render 期辅助函数第一参收 `TFn`
-    (shared/i18n);手写 memo 判据「删了语义变不变,变才留」。语言切换
-    文案冻结这类问题,排查终点是编译产物而不是源码推理〔review〕
-14. **面板 UI 不私造样式,生成物禁手改**:新 UI 只用 `styles/` 下既有
-    接口类(`.settings-card` / `.settings-field` / `.settings-btn` /
-    `.switch` / `.combo-pop` 等见 settings.css,chat 浮层见 chat.css;
-    `.settings-card` 直接子块不自垫上下 padding,节奏由选择器统一管);
-    `styles/m3.css` 是 `pnpm tokens:m3` 的生成物,源色真源在
-    `scripts/generate-m3.mjs` 的 `ACCENTS`,而设置页 `AppearanceSection.tsx`
-    另有一份色块预览用的 hex 副本——改源色必须同步两侧并重新生成
-    〔review(shot-m3 目检,不入 CI)〕
-15. **架构不变式(违反即架构回退)**:①虚拟上下文——裁剪/压缩只改发给
-    模型的 prompt,落盘永远全量(历史回放/记忆摘除/重新生成的地基)
-    〔review + e2e compaction/persist〕;②页面写动作必须过确认门
-    (`confirmations.ts` CONFIRM_TOOLS),新增写工具先入集合再上线
-    〔门禁:tools.test.ts 双向不变式〕;③联网/MCP 类能力默认关闭、开启时界面明示,
-    新联网/读页链路动作前经 `shared/hostAccess.ts` 查权限,无权限回
-    可行动指引而非裸错误〔review〕;④SW 随时休眠——状态即时落盘,
-    落盘失败不打断 run、留边界等下个收口点重写〔review〕
-16. **日志 msg 文案是测试契约**:verify-* 套件以 msg 子串断言链路
-    事件(启动/完成/失败),改日志措辞先 grep tests/;后台日志面向
-    模型与诊断、不经字典——与 UI 文案同文不同源,断言侧标
-    `// i18n-ok`(规范见 tests/README「UI 文案断言规范」);不记
-    超出功能必需的原文的隐私判据见硬规则 12〔纪律:改措辞前 grep tests/〕
-17. **`src/content/*` 保持经典脚本**:不得运行时 import `src/shared/*` ——
-    `vite.config.js` 的 `guard-content-classic-script` 在 `dist/content.js`
-    出现顶层 `import/export` 时直接 build 失败;content 侧只允许
-    `import type` 与 `src/content/` 内部模块,跨域常量在本地声明
-    〔门禁:guard-content-classic-script〕
+## 工作流
 
-## 提交与验证
+1. 非平凡任务先读相关代码,给出计划(改哪里/取舍/怎么验证),
+   经确认再动工;你在提问或讨论时,交付的是分析,不是代码改动
+2. 操作 git(commit、push、merge、rebase、tag、reset)必须用户当轮
+   明确要求,「收尾」「继续」这类泛指不算授权
+3. 只做任务要求的事。顺手发现的相邻问题只报告不动手;值得记的
+   必须带触发点(下次改到哪处会再看它),修完删条,给不出触发点的
+   当场询问用户是否处理
+4. 如实汇报验证:已跑的门禁红绿照实说;未跑的明说未跑,不得用
+   「应该没问题」搪塞
+5. 分支:多提交的功能轮次开 `feat/*` 分支,合回 main 用 `--no-ff`,
+   让历史按功能成段、每个落点都完整可发版;单提交的修复/文档可
+   直提 main。合流时人工核对语义——「文本无冲突」不等于「语义无
+   冲突」,测试登记、输入预算、动作计数这些契约点逐一核验
 
-- 常规门禁:`pnpm lint && pnpm typecheck && pnpm test && pnpm build`
-  (build 串 tsc --noEmit、check-version、check-i18n、vite 产物与
-  postbuild-offscreen);e2e 用 `node tests/run.mjs <域>`;
-  有意为之的偏离用 `biome-ignore` 注明理由
-- CI:push/PR 到 main 自动跑上述四件套(checks.yml);e2e 手动按域 +
-  nightly 全量、失败自动开 issue(e2e.yml)。pnpm 版本只在 package.json
-  `packageManager` 声明(CI 自动跟随,同一事实只写一处);本地门禁
-  先行,push 是重放不是首验
-- 发版:三步 manifest/package.json bump → CHANGELOG `[Unreleased]` 定版
-  并开新段 → 推 `v*` tag;release.yml 随 tag 自动跑单测 + 构建门禁 +
-  tag 三方校验 + 全量 e2e,全绿才打包 zip 并发布(notes 取 CHANGELOG
-  对应段,缺段即拦)。用户可感知的变化随手进 `[Unreleased]`
-  (Keep a Changelog + 语义化版本,政策见 CHANGELOG 头)
-- commit 风格:conventional commits + 中文主题(见 `git log`),测试
-  改动用 `test(...)` scope
+## 代码与架构铁律
+
+> 违规的发现方式在条末标注:〔CI:检查名〕= 构建或测试自动拦截,
+> 〔测试:锚点〕= 有测试锚定但不自动拦截;未标注的规则只靠人审。
+
+### 文案与日志
+
+- 用户可见文案一律走 i18n 字典:`t()` 只写字面量键,禁动态拼键;
+  插值用键值 `replace("{n}", 实参)` 派生,禁止手抄文案
+  〔CI:check-i18n〕;测试断言从 `tests/lib-i18n.mjs` 取键
+  〔CI:check-test-strings〕
+- Service Worker 的错误与状态文案目前不经字典(中英混杂透传,
+  已知债务):调整前先立设计决定,不得将字典键引入 background
+- 后台日志面向模型与诊断,措辞是测试契约——verify-* 套件按日志
+  子串断言链路,改措辞前先 grep tests/
+- 诊断日志只记功能必需的最少原文(工具参数不记,查询词仅截取
+  开头)。判据:导出诊断时是否会携带超出功能必需的原文
+
+### 模型输入与输出
+
+- 拼接后发给模型的文本必须有显式长度上限——读页转写、记忆
+  注入、搜索回填,每个拼接点都要有;超限时保留最新内容,并在
+  删除处留注记写明省略量。压缩、摘要这类二次请求的输入同样
+  受上限约束,否则主链路的预算会被静默绕过
+- 已开始的流式请求不自动重试:内容已在输出,重放必然重复;
+  只能报错,由用户以「重新生成」兜底
+- 流式响应必须挂不活动看门狗:HTTP 连接超时只护到响应头,流
+  中途停滞需由看门狗发现并中断
+- SSE 解析须容忍真实端点的脏形态(CRLF、多行 data、坏帧)
+  〔测试:chatCompletions.test.ts 脏形态回归,改解析必须全绿〕
+
+### 前端界面
+
+- 后到的异步数据先核对新鲜度再替换视图:结果返回时先确认期间
+  没有新的用户操作,否则丢弃本次结果,避免旧数据覆盖新状态
+  (既有模式:动作计数快照)
+- 构建启用了 React Compiler,不来自 props/state 的值会被它当
+  永久缓存:组件文案每次渲染现取(`const t = useT()`),渲染期
+  辅助函数第一参传入 t。切换语言后文案不变这类问题,查编译
+  产物排查,仅凭源码推不出来
+- 新 UI 只用 `styles/` 既有接口类(settings.css、chat.css),不
+  私造样式;`m3.css` 是生成物禁手改,改源色需同步
+  `scripts/generate-m3.mjs` 与设置页的色块副本并重新生成
+
+### 架构不变式
+
+- 共享单例大多默认「同一时刻只有一件事在发生」:增加并发路径
+  前,先逐条审过注释里的串行假设,注释与代码同步改;清理公共
+  状态只清自己那份(先比对再清空)
+- 虚拟上下文:裁剪、压缩只改发给模型的 prompt,落盘永远全量
+  ——这是历史回放、记忆摘除、重新生成的地基
+  〔测试:e2e compaction/persist〕
+- 页面写动作必须过确认门(CONFIRM_TOOLS 集合),新增写工具
+  先入集合再上线〔CI:tools.test.ts 双向不变式〕
+- 联网、MCP 能力默认关闭,开启时界面明示;动作前查 hostAccess
+  权限,无权限返回可行动指引,不抛裸错误
+- Service Worker 随时休眠:状态即时落盘,落盘失败不打断运行,
+  留边界等下个收口点重写
+
+### 边界
+
+- `src/content/*` 保持经典脚本:不得运行时 import `src/shared/*`,
+  跨域常量在本地声明〔CI:guard-content-classic-script〕
+- 每个非测试源文件的头部注释写清职责与关键取舍;Service Worker
+  与 offscreen 间的协议常量单点声明,确需镜像的(如 content 侧
+  选择器常量)在镜像处写明同步义务
+
+## 测试
+
+分层契约、断言规范、等待写法、mock 方式、覆盖率口径,细则都在
+[tests/README.md](tests/README.md),改测试前先读它。
+
+## 提交与发版
+
+- commit 风格:conventional commits + 中文主题,测试改动用
+  `test(...)` scope
+- push/PR 到 main 自动跑四件套;e2e 手动按域跑,nightly 全量
+- 入库文档固定四份:README、CHANGELOG、AGENTS.md、tests/README,
+  新增 `*.md` 须经用户当轮确认
+- 发版三步:manifest 与 package.json 升版本 → CHANGELOG 的
+  `[Unreleased]` 定版并开新段 → 推 `v*` tag;release 流程从
+  CHANGELOG 取对应段发 notes,缺段即拦。用户可感知的变化及时记入
+  `[Unreleased]`
+- 有意偏离 lint 时用 `biome-ignore` 注明理由
