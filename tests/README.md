@@ -13,6 +13,13 @@ SSE 会让 Playwright 挂死。
 e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 断言套件 PASS/FAIL 对应退出码。
 
+## 断言纪律(所有套件通用)
+
+- `check(true, ...)` 是零信息断言,禁止——waitFor 成功只代表等到了,
+  必须对捕获到的值再断言(等到了 ≠ 内容对)
+- 环境敏感的分支(剪贴板之类)只对「环境拒绝」降级跳过;内容不
+  匹配照常 FAIL,不许借环境之名放过
+
 ## 运行环境
 
 - 本地:`node tests/run.mjs <域...> | --all`;视觉截图产物统一在
@@ -50,7 +57,8 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   (useRunSegments 段状态机 / ConfirmCard 内容组装与出口 / ModelPicker
   键盘导航;`@testing-library/react` + jsdom + 每文件
   `// @vitest-environment jsdom` 先例。注意 vitest 未开 globals:RTL
-  自动 cleanup 不生效,组件测试文件需手动 `afterEach(cleanup)`)
+  自动 cleanup 不生效,组件测试文件需手动 `afterEach(cleanup)`;组件
+  拼装用全角标点,期望串从 zhCN 字典键派生,手抄必错)
 - 只测「不碰 DOM/IDB/网络的模块」;交互与链路归 e2e
 
 ## UI 文案断言规范(强制,run.mjs 入口自动检查)
@@ -88,7 +96,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   `run.mjs` 每次入口先跑它;写新测试先 import lib-i18n;拿不准键名
   查 `src/shared/i18n/locales/zh-CN.ts`。
 
-## 固定等待计数棘轮(硬规则 3,run.mjs 入口自动检查)
+## 固定等待计数棘轮(run.mjs 入口自动检查)
 
 - 等待一律事件驱动/轮询(waitFor / waitForRunLog / 轮询循环),**禁止新增**
   `await sleep(<数字>)` 与 `await new Promise((r) => setTimeout(r, <数字>))`。
@@ -113,7 +121,9 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   **manifest flavor**(`launchWithCdp({ flavor })`,缺省 `granted`):
   `granted` = 静态全站授权 + 静态 content script(既有套件);`zero` = 只授权
   模型端点域,页面全部未授权(拒绝路径);`dynamic` = 全站授权但无静态
-  content script(生产按需注入路径)
+  content script(生产按需注入路径)。flavor 的用户数据目录必须按
+  扩展目录+flavor 哈希确定性生成——路径一变扩展 ID 就变,
+  verify-persist 这类跨重启对比存储的套件会全丢数据
 - `fixtures/` — 搜索结果页/读页 HTML(verify-web-search 专用)
 
 ### e2e 不覆盖什么(避免误读「全绿」)
