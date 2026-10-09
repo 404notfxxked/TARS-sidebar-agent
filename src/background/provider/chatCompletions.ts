@@ -18,7 +18,7 @@ import type {
 } from "./types";
 
 // SSE 解析在共享层(与 MCP 响应同一套准绳);此处按原路径再导出,
-// chatCompletions.test.ts 的脏形态回归(硬规则 9 准绳)继续从这里取
+// chatCompletions.test.ts 的脏形态回归基准继续从这里取
 export { readSSE } from "./sse";
 
 /** Base URL 缺省时的官方地址(设置页与 agent 预检共用同一兜底口径) */

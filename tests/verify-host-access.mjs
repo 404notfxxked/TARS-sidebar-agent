@@ -146,7 +146,7 @@ try {
     check(
       hint1.includes("尚未获得") &&
         hint1.includes("的站点访问授权") &&
-        hint1.includes("设置 → 安全"), "find_elements 被权限门拦下,指引含目标 origin 与安全页入口",  // i18n-ok SW 侧面向模型的文案, 不经字典(硬规则 16)
+        hint1.includes("设置 → 安全"), "find_elements 被权限门拦下,指引含目标 origin 与安全页入口",  // i18n-ok SW 侧面向模型的文案, 不经字典(AGENTS.md「文案」)
       hint1.slice(0, 220), 
     );
 
@@ -159,7 +159,7 @@ try {
     check(
       hint2.includes("web_fetch 需要访问") &&
         hint2.includes("的授权") &&
-        hint2.includes("设置 → 安全"), "web_fetch 未授权指引明确(域 + 安全页入口)",  // i18n-ok SW 侧面向模型的文案, 不经字典(硬规则 16)
+        hint2.includes("设置 → 安全"), "web_fetch 未授权指引明确(域 + 安全页入口)",  // i18n-ok SW 侧面向模型的文案, 不经字典(AGENTS.md「文案」)
       hint2.slice(0, 220), 
     );
   } finally {

@@ -91,7 +91,7 @@ export class McpClient {
     private label: string,
   ) {}
 
-  /** 协议时代的中文标签 —— 只用于后台日志(硬规则 16 口径);设置页等 UI
+  /** 协议时代的中文标签 —— 只用于后台日志(后台日志不经字典的口径);设置页等 UI
    *  展示不读它:port 载荷传机器值 era(shared/messages.ts 的 McpEra),
    *  面板按字典键 settings.eraModern/eraLegacy/eraUnknown 映射 */
   get eraLabel(): string {

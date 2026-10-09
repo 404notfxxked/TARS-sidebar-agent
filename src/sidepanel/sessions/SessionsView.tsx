@@ -258,7 +258,7 @@ function SessionRow({
   onRemove: (id: string) => void;
 }) {
   const t = useT();
-  /** 标题兜底:SW 对空标题回空串,用户可见文案在面板侧经字典渲染(硬规则 1) */
+  /** 标题兜底:SW 对空标题回空串,用户可见文案在面板侧经字典渲染(AGENTS.md「文案」) */
   const titleOf = (s: SessionMeta): string => s.title || t("sessions.untitled");
   return (
     <li className="sessions-row-in" style={{ animationDelay: `${delay}ms` }}>

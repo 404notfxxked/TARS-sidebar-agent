@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ErrorBoundary 渲染兜底回归(需求 REQ-P0-4):此前一次 render 抛错 = 整块面板
 // 白屏,无任何出口。边界挂载后:子树抛错必须渲染兜底 UI(标题 + 重载出口),
-// 子树正常时不得出现兜底。文案期望一律经 zhCN 字典键派生(硬规则 1)。
+// 子树正常时不得出现兜底。文案期望一律经 zhCN 字典键派生(AGENTS.md「文案」)。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";

@@ -206,7 +206,7 @@ await restartSW(cdpSend, extId);
 await sidepanel.reload();
 await sleep(1500); // 等 SW 启动迁移完成
 await openSessionsView(sidepanel);
-// 等待 + 对捕获值断言(硬规则 2:参数序 check(name, cond),条件必须真)
+// 等待 + 对捕获值断言(断言纪律:参数序 check(name, cond),条件必须真)
 const migratedTitle = sidepanel.getByText("旧会话迁移测试").first();
 await migratedTitle.waitFor({ timeout: 10000 }).catch(() => {});
 check((await migratedTitle.count()) > 0, "旧会话出现在历史列表");

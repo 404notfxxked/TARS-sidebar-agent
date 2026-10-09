@@ -101,7 +101,7 @@ export function useProviderFetch(
       if (ctl.signal.aborted) return;
       setFetchState("error");
       const raw = e instanceof Error ? e.message.slice(0, 120) : String(e);
-      // 分类错误:可行动提示在前,原始错误串作诊断后缀(全角括号,见硬规则 6)
+      // 分类错误:可行动提示在前,原始错误串作诊断后缀(全角括号,见 tests/README 单元测试节)
       const hint =
         e instanceof ModelsFetchError ? t(FETCH_ERROR_HINTS[e.code]) : "";
       setFetchError(hint ? `${hint}（${raw}）` : raw);

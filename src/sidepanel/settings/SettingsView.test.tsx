@@ -4,7 +4,7 @@
 // 修复后:失败渲染「读取失败 + 重试」,重试仍失败停在失败态、不崩。
 // 刻意不测「重试成功 → 分节渲染」:整页挂载会触发各分节的挂载副作用
 // (DataSection 的 storage.estimate、Memory/Skill 的 port 请求),jsdom 无桩,
-// 那条路径归 layout e2e 覆盖。期望串经 zhCN 字典键派生(硬规则 1)。
+// 那条路径归 layout e2e 覆盖。期望串经 zhCN 字典键派生(AGENTS.md「文案」)。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";

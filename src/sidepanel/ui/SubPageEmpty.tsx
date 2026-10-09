@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /** 子页空态(记忆/技能/历史共用):图标 + 主文案 + 可选副文案 + 可选动作。
- *  文案在调用侧经 t() 现取后传入 —— 组件内不查字典(硬规则 1:禁动态键) */
+ *  文案在调用侧经 t() 现取后传入 —— 组件内不查字典(AGENTS.md「文案」:禁动态键) */
 export function SubPageEmpty({ icon, title, hint, children }: {
   icon: ReactNode; title: string; hint?: string; children?: ReactNode;
 }) {

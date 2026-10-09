@@ -43,7 +43,7 @@ export default function SkillView({
   // 编辑态原文经 SKILL_RAW 异步取回,取回前 textarea 呈加载态(不留空窗闪帧)
   const [editLoading, setEditLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  // 请求序号守卫(硬规则 10,同 useAgentChannel 的 actionSeq):连点两条
+  // 请求序号守卫(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):连点两条
   // 技能时先点的请求可能后回,迟到的原文若仍回填,会把 A 的内容存进 B
   // (save 用 editor.id + 当前 draft)。每次 startEdit 取递增序号,回包
   // 过期即丢弃;关闭/切添加同样递增,作废全部在途请求。渲染期不写 ref

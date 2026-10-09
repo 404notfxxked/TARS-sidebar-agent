@@ -106,7 +106,7 @@ export async function saveHistory(
   if (freshRaw.length === 0) return;
   const imageRows = collectImageRows(sessionId, freshRaw);
   const fresh = freshRaw.map(persistableMsg);
-  // 思考落盘计量:只记 turns 与字节数,不记原文(诊断导出判据,硬规则 12)。
+  // 思考落盘计量:只记 turns 与字节数,不记原文(诊断导出判据,日志隐私纪律)。
   // 用于评估全量落盘的真实存储分布(2026-09-18 决策:全量落盘试运行);
   // 日志按类 400 条环形淘汰,重用会滚掉更早的条目
   const reasoningTurns = freshRaw.filter(
@@ -415,7 +415,7 @@ function deriveTitle(msgs: InternalMsg[]): string {
     .replace(/\s+/g, " ")
     .trim();
   // 空标题:用户可见兜底文案由面板经字典渲染(SessionsView 的 titleOf)。
-  // SW 侧不产出中文标题 —— 硬规则 1:用户可见文案一律走字典键
+  // SW 侧不产出中文标题 —— 用户可见文案一律走字典键(AGENTS.md「文案」)
   if (!text) return "";
   return text.length > TITLE_MAX_CHARS
     ? `${text.slice(0, TITLE_MAX_CHARS)}…`
@@ -460,7 +460,7 @@ function collectImageRows(
 }
 
 /** 工具结果在回放投影里的单条字符上限:与实况单条工具结果同量级,超出截断
- *  并标注体量(硬规则 8 同款纪律)。截断只影响投影,库里仍全量 */
+ *  并标注体量(拼接输入硬预算同款纪律)。截断只影响投影,库里仍全量 */
 const PROCESS_RESULT_CAP_CHARS = 12_000;
 
 /** assistant 行 → 过程项(思考 / 中间文案)。**段边界只在 wireBlocks 里**:
