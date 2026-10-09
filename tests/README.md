@@ -1,4 +1,4 @@
-# tests/ 地图 — 单元测试 + E2E 套件分类
+# tests/ 地图 — 单元测试 + E2E 套件 + evals 分类
 
 两层测试,配合使用:
 
@@ -111,7 +111,10 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 
 - `lib-cdp-mock.mjs` — CDP Fetch 拦截 + 环形日志断言(readLogs/waitForRunLog)
   + ask/sse + seedSessions/seedMemories/setTheme;所有套件的地基,新链路照
-  verify-*.mjs 模式加套件(并在 run.mjs SUITES 登记)。
+  verify-*.mjs 模式加套件(并在 run.mjs SUITES 登记)。**层归属(2026-10):
+  Playwright ^1.62 已能拦到扩展 SW 的 fetch,故 SW 发起的请求由手动 CDP 层
+  独占处理,pw 路由层识别到 SW 请求立即让渡(不查路由表);页面导航类仍走
+  pw 层——两层共用一条路由表,新套件的 mock 路由无需关心层。
   **统一入口(2026-09-29 收敛,新套件禁止再手抄这些样板)**:断言用
   `makeChecker`(ok,label,detail,全仓唯一签名);面板开关用 `openPanel`
   (goto/就绪/注配置+reload 一条龙;窄视口在其后 setViewportSize,勿在
@@ -166,6 +169,76 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
   console error 收集;`--accents` 只跑 8 套重点色试色;`--hints` 只跑
   设置提示分层留档(ⓘ 悬停/「了解详情」折叠展开,中英各一组,带 ok
   健康检查)
+
+## evals(真模型行为基线,`node tests/evals/run.mjs`)
+
+与断言套件的分工:verify-* 的模型永远是 mock(lib-cdp-mock 回放罐头 SSE),
+锚定 harness 的确定性逻辑;evals 用**真模型**跑真扩展 + CDP fixture 页,度量
+**模型 × harness 的耦合行为**——工具选择、确认门遵守、长文预算下的表现。
+mock 能测的归 tests,evals 只测真模型才暴露的问题。程序化判分,无 LLM judge。
+
+- 运行:`pnpm evals`(= `node tests/evals/run.mjs`)
+  `[--case <name>] [--runs N]`(N 缺省 3)`[--mock]`;前置 `pnpm build`。
+  REAL 模式(缺省)环境变量:`EVALS_BASE_URL` / `EVALS_API_KEY` /
+  `EVALS_MODEL` 必填,`EVALS_KIND`(缺省 chat-completions)、
+  `EVALS_CONTEXT_TOKENS`(缺省 128000)可选;env 不齐退出码 2 并报缺哪个。
+  provider 约定 baseUrl 含 /v1(如 `https://api.deepseek.com/v1`),实测
+  不带 /v1 亦可工作,观测计数与形态无关。`EVALS_DEBUG=1` 时观测路由向
+  stderr 打印每次命中的 host/path/msgs/chars 计数(不含 query 与 body),
+  供请求计数诊断。密钥只从 env 读,任何输出(JSONL/报告/日志)不含 key,
+  baseUrl 只记 host
+- `--mock`:罐头模型自检 runner 自身链路(直答探针 + fixture 转写探针 +
+  两段式探针),无 key 可跑;不写 JSONL、不参与基线——output/ 只留真模型
+  测量
+- 判分口径:**pass^k**(k 次全过才算 pass);每 (case, run) 一行 JSONL 写
+  `tests/evals/output/run-<时间戳>.jsonl`(.gitignore 排除,本地产物),
+  行含 `llmRequests`(本 run 的 LLM 请求计数)、`answerHead`(最终回答
+  前 500 字;仅回答文本不含工具参数原文——output/ 是 gitignore 本地
+  产物不进 CI,与「最小原文纪律」的取舍:判分可诊断性优先,原文不出
+  本机)与 `evalRev`(判分口径内容哈希:graders.mjs + 该 case 文件
+  + 该 case 的 fixture 文件,sha256 前 8 位;口径变化 → rev 变化);
+  结束打印按 case 聚合表(pass^k / 平均 turns / 平均工具调用数;
+  error 行只进通过率分母,不进均值)并和 output/ 下最近一次**同模型+
+  同 host** 的 JSONL 做基线 diff(单 model 不区分端点;kind 不入
+  key):rev 一致才标回归/改善,rev 不同只列数值并提示「判分口径与
+  基线不同」。退出码:全过 0 / 有 FAIL 1 / env 缺失 2。FAIL 是发现
+  不是障碍——禁止为变绿放宽 grader、改 fixture 事实或改 instruction
+- case 清单(按单一场景拆分,每条判分均为可达断言):
+  `read-long-article`(145k 长文事实抽取,原六条判分;已知形态:事实在
+  短末卷,模型可能仅凭 page_find+page_outline 直达、page_read 零调用,
+  「翻窗阅读」要单独设计跨节聚合型 fixture 才测得到)/
+  `truncated-doc-honesty`(180k fixture,事实不可达时**不编造、交代缺失**;
+  其期望建立在每节 4k 截断之上(2026-10 起截断带省略量注记,信号已在,
+  可达性仍无),src 截断策略再改动需重审,见 case 头注)/
+  `confirm-deny-honesty`(被拒后如实交代,四条)/
+  `confirm-retry-completion`(两段式:被拒→交代→用户再授权→应完成,
+  五条+完成语义定稿判分)
+- 两段式驱动:case 可选 `steps: [{instruction, confirmPolicy}]`,runner 以
+  同一 sessionId 按序发送,confirms 按步拼接,turns 记各步合计;无 steps
+  的 case 沿用 instruction/confirmPolicy 单段
+- case 规格:`cases/*.mjs` export default(形状见 run.mjs 头注)。grade 从
+  `graders.mjs` 取共享判分原语(结果/轨迹/终态三类)组装 checks;轨迹由
+  `lib-eval-driver.mjs` 统一提取(历史投影里的工具调用序列 + 最终回答 +
+  run 窗口日志),case 不摸原始结构。确认策略三档(auto_deny /
+  deny_first_approve_rest / approve_all)由驱动经 port 自动应答;单步 run
+  超时 300s;每次 (case, run) 独立 userDataDir,k 次运行之间不共享 IndexedDB
+- fixture 规则:`fixtures/` 下合成内容(事实串全文唯一、置于指定区域,
+  `<title>` 不含答案,无交互元素),经 CDP 路由回填(`https://eval-fixture.test/`
+  域,永不触真网);**禁本地 HTTP server**(与 e2e 同款硬规则)。fixture 页
+  由 runner 保证是除面板外唯一普通标签页——port 驱动不带 tabId,page_*
+  工具的 tab 回退链落「实时激活 tab」。**设计约束**:读页转写对每节内容
+  有 4k 截断(src/offscreen/pipeline.ts sectionText maxChars=4000;
+  2026-10 起截断节末带「[本节超长,已省略 N 字]」注记——注记只加信号不加可达
+  性,尾部内容仍读不到;全局 DOC_MAX_CHARS=160k 才置 truncated_total)
+  ——判分所需的事实必须放在内容 <4k 的节里,否则尾部会被砍掉
+- 花费口径:REAL 模式给模型端点注册 pass-through 观测路由,计数为 **CDP
+  Fetch 层口径**——Playwright 路由层会对同一请求二次拦截(实测与 CDP 层
+  成对到达),不计入,否则系统性 2×;健康标准是 `llmRequests` 与 turns
+  1:1,偏离即用 `EVALS_DEBUG=1` 诊断。只记每轮请求的 messages 条数与字符
+  数,不存原文
+- 守卫说明:`check-test-strings` 与固定等待棘轮只扫 tests/ 根目录,
+  不递归 `tests/evals/`——但规范照样遵守(eval 文件不写死 UI 文案、
+  不用盲等)
 
 ## 保持本地(.gitignore 精确排除,不入库)
 

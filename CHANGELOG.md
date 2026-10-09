@@ -10,6 +10,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **长页面大节尾部内容不再静默丢失(模型可感知)** — 读页转写对超长章节此前只保留开头 4000 字且无任何提示,模型(和经它转述的你)无从察觉尾部缺失;现在截断发生时节末会出现「[本节超长,已省略 N 字]」省略量注记,模型可感知并如实转告。web_fetch 抓取页的转写同此。
+
+### Added
+
+- **测试底座层归属确定性化(dev-facing)** — `tests/lib-cdp-mock.mjs`:Playwright ^1.62 起其路由层已能拦到扩展 Service Worker 发起的请求,与底座的手动 CDP 拦截层对同一请求成对命中(计数类 mock 路由会系统性双跳)。现 SW 请求由 CDP 层独占处理、pw 路由层识别后让渡,每请求恰被一层执行一次 handler;头注的设计前提表述已同步修正。
+
+- **evals 行为基线设施(dev-facing,不影响扩展运行时)** — 新增 `tests/evals/`:真模型 × 真扩展 × CDP fixture 页的最小评测集,程序化判分(pass^k 口径、JSONL 结果含 llmRequests 请求计数、answerHead 回答摘录与 evalRev 判分口径哈希,同模型+同 host 基线 diff 且口径变化自动不标回归/改善,无 LLM judge;写工具判分镜像有启动自检防源码漂移),四个单一场景 case——长文事实抽取(read-long-article)、截断诚实度(truncated-doc-honesty)、拒绝诚实度(confirm-deny-honesty)、再授权后完成(confirm-retry-completion,两段式 steps 驱动)。`pnpm evals` 运行,`--mock` 无 key 可自检(含两段式探针);REAL 模式密钥只从 `EVALS_BASE_URL` / `EVALS_API_KEY` / `EVALS_MODEL` 等环境变量读,不进任何输出。细则见 tests/README「evals」。
+
 ## [1.5.0] - 2026-10-04
 
 ### Added
