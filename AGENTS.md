@@ -110,6 +110,10 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
 - 每个非测试源文件的头部注释写清职责与关键取舍;Service Worker
   与 offscreen 间的协议常量单点声明,确需镜像的(如 content 侧
   选择器常量)在镜像处写明同步义务
+- 仓库产物自包含:代码注释、commit 主题、CHANGELOG 不引用不入库
+  的台账编号(工单号、计划条目号,如 T3、M1、FIX1)或本地文档
+  路径;编号只有同文件内有定义时才可用。追踪关系单向——本地
+  台账回填 commit hash,仓库不反向指台账
 
 ## 测试
 
@@ -119,7 +123,7 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
 ## 提交与发版
 
 - commit 风格:conventional commits + 中文主题,测试改动用
-  `test(...)` scope
+  `test(...)` scope;主题与正文不带工单/台账编号(见「边界」)
 - push/PR 到 main 自动跑四件套;e2e 手动按域跑,nightly 全量
 - 入库文档固定四份:README、CHANGELOG、AGENTS.md、tests/README,
   新增 `*.md` 须经用户当轮确认
