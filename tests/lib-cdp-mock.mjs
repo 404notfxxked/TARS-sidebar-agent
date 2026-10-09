@@ -3,10 +3,18 @@
 //   Target.setAutoAttach(flatten) 自动附加扩展的所有上下文 target(service
 //   worker / offscreen document / 页面),在每个扩展 target 上启用 Fetch 域,
 //   提供确定性网络拦截。
-//   为什么不用 Playwright 的 context.route:实测它拦不到扩展上下文主动发起的
-//   organic fetch(尤其 SW / offscreen)。为什么要覆盖多个 target:web_search
-//   的引擎请求和 LLM 请求走 SW,web_fetch 的抓取走 offscreen document ——
-//   它们是不同 target,Fetch 域要各挂各的。
+//   层归属契约(2026-10):设计前提在 Playwright ^1.62 发生变化——
+//   实测其路由层已能拦到扩展 **SW** 发起的 fetch,与手动 CDP 层成对命中
+//   同一请求(诊断:成对命中间隔 3-4ms、body 完全相同;evals 观测路由
+//   曾因此系统性 2× 计数)。因此
+//   SW 发起的请求由 **手动 CDP 层独占处理**:pw 路由层(handlePwRoute)
+//   用 request.serviceWorker() 识别出 SW 请求后立即让渡(continue,不查
+//   路由表),每个请求恰被一层执行一次 handler,不再靠 fulfill 竞速。
+//   页面导航(tab 搜索 / fixture 页等文档请求)仍走 Playwright 路由层;
+//   offscreen document 另有专属 CDP 会话(见 attachPlaywrightPage),其
+//   请求由该会话处理(pw 层对「CDP 即时 fulfill」的请求竞速必败,实测
+//   从未双跑)。为什么仍要手动 CDP 层:SW 请求的 mock 全靠它,且这是
+//   SW 请求的唯一处理层。
 //   实现说明:autoAttach 在 flatten 模式下,子会话的域名事件(Fetch.*)
 //   直接出现在同一条 WebSocket 上,消息带 sessionId 字段;发命令时也带
 //   sessionId。新 target(SW 重启、offscreen 懒创建)由 Chrome 主动推送,
@@ -253,6 +261,28 @@ export async function launchWithCdp({ extDir, userDataDir, proxy, flavor = "gran
   async function handlePwRoute(route) {
     const req = route.request();
     const url = req.url();
+    // 层归属:Playwright ^1.62 已能拦到扩展 SW 发起的 fetch
+    // (诊断:与手动 CDP 层成对命中同一请求,间隔 3-4ms,body 相同),
+    // 本文件头注「实测 Playwright 拦不到扩展 SW fetch」的设计前提失效。
+    // SW 发起的请求一律让渡给 CDP 层——不查路由表,直接放行本层视图;
+    // 两层各自独立持锁,放行不影响 CDP 层的 fulfill(实证:让渡后 mock
+    // 全绿,LLM 回填完整)。判别 API:req.serviceWorker() 非 null 即 SW
+    // 发起(实证 1.62.1;SW 请求上 frame() 会抛,不作为判别依据)。
+    // 为什么 mock 模式从未暴露双跑:CDP 层 fulfill 是本地即时完成,
+    // Playwright 拦截竞速必败,SW 请求只有「CDP pass 放行到真网」时才被
+    // pw 层追加拦截——计数类路由(如 evals 观测)因此系统性 2×。
+    let fromServiceWorker = false;
+    try {
+      fromServiceWorker =
+        typeof req.serviceWorker === "function" &&
+        req.serviceWorker() !== null;
+    } catch {
+      fromServiceWorker = false;
+    }
+    if (fromServiceWorker) {
+      await route.continue().catch(() => {});
+      return;
+    }
     if (process.env.CDP_DEBUG) console.log(`[cdp-mock] pw request: ${req.method()} ${url.slice(0, 100)}`);
     for (const entry of routes) {
       if (!entry.match(url)) continue;
