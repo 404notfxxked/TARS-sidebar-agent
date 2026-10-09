@@ -166,7 +166,10 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
 
   if (heads.length === 0) {
     const full = turndown.turndown(root);
-    pushPart(truncateMarkdown(full, DOC_MAX_CHARS));
+    // 全文路径不加节级注记:全局帽截断已有 truncated_total 标记,不重复
+    // 处理;注记只服务每节 4k 截断(那一路径此前无任何信号)
+    const { text } = truncateMarkdown(full, DOC_MAX_CHARS);
+    pushPart(text);
     truncatedTotal = full.length > DOC_MAX_CHARS;
   } else {
     // 前置节:首个标题之前的内容不属于任何标题节,单独补一段,
@@ -260,7 +263,7 @@ function headingTitle(el: HTMLElement): string {
 
 /**
  * 前置节:根起点到首个标题之前的内容。
- * maxChars 默认 4000 兜底,与标题节同规。
+ * maxChars 默认 4000 兜底,与标题节同规;超长截断时补省略量注记。
  */
 function preambleText(
   doc: Document,
@@ -273,13 +276,14 @@ function preambleText(
   range.setEnd(firstHeading, 0);
   const container = doc.createElement("div");
   container.appendChild(range.cloneContents());
-  return truncateMarkdown(turndown.turndown(container), maxChars);
+  return truncateWithNote(turndown.turndown(container), maxChars);
 }
 
 /**
  * 某一标题节的内容:标题末尾到下一标题开头;最后一节延伸到根末尾
  * (不是标题自己的父容器——它可能只是个深层包装)。
- * maxChars 默认 4000 兜底单节,避免病态大节撑爆快照。
+ * maxChars 默认 4000 兜底单节,避免病态大节撑爆快照;超长截断时补
+ * 省略量注记。
  */
 function sectionText(
   doc: Document,
@@ -294,15 +298,33 @@ function sectionText(
   else range.setEndAfter(root);
   const container = doc.createElement("div");
   container.appendChild(range.cloneContents());
-  return truncateMarkdown(turndown.turndown(container), maxChars);
+  return truncateWithNote(turndown.turndown(container), maxChars);
 }
 
-/** 截断到 maxChars,尽量在行边界断开 */
-function truncateMarkdown(md: string, maxChars: number): string {
-  if (md.length <= maxChars) return md;
+/** 节级截断的省略注记:样式对齐仓内惯例(方括号 + 精确数,见 tokenBudget
+ *  / compaction 的省略标记),N 为精确字符数。注记不计入 maxChars 判定
+ *  ——保底内容量不因注记缩水 */
+function omissionNote(omitted: number): string {
+  return `\n[本节超长,已省略 ${omitted} 字]`;
+}
+
+/** truncateMarkdown + 截断发生时拼省略注记 */
+function truncateWithNote(md: string, maxChars: number): string {
+  const { text, omitted } = truncateMarkdown(md, maxChars);
+  return omitted > 0 ? `${text}${omissionNote(omitted)}` : text;
+}
+
+/** 截断到 maxChars,尽量在行边界断开;返回省略量供调用方拼注记。
+ *  (节级截断此前静默无任何信号,模型对内容缺失零感知) */
+function truncateMarkdown(
+  md: string,
+  maxChars: number,
+): { text: string; omitted: number } {
+  if (md.length <= maxChars) return { text: md, omitted: 0 };
   const cut = md.slice(0, maxChars);
   const nl = cut.lastIndexOf("\n");
-  return nl > maxChars * 0.8 ? cut.slice(0, nl) : cut;
+  const text = nl > maxChars * 0.8 ? cut.slice(0, nl) : cut;
+  return { text, omitted: md.length - text.length };
 }
 
 /** 按行扫描收集标题锚点;跳过 ``` / ~~~ 围栏内部,代码里的 "# 注释" 不算标题 */

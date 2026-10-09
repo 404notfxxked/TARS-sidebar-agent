@@ -186,3 +186,44 @@ describe("标题层级与定位的边界(2026-09 审计)", () => {
     expect(doc.md.slice(pos, pos + 3)).toBe("目标词");
   });
 });
+
+describe("每节截断省略量注记", () => {
+  it("超长节末尾出现精确省略量注记,正常节不受影响", () => {
+    // 第一节 4800 字符 > 每节帽 4000:截断保 4000(无换行,不回吸),
+    // 省略量 = 4800 - 4000 = 800;第二节短,无注记
+    const html = `<body><article>
+      <h2>第一节</h2><p>${"山".repeat(4800)}</p>
+      <h2>第二节</h2><p>短内容,不足以触发截断。</p>
+    </article></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    const cut = doc.md.indexOf("第二节");
+    const s1 = doc.md.slice(0, cut);
+    const m = /\[本节超长,已省略 (\d+) 字\]/.exec(s1);
+    expect(m).not.toBeNull();
+    expect(Number(m?.[1])).toBe(800);
+    // 保留内容(去注记)不越帽(truncateMarkdown 构造保证 ≤ maxChars;
+    // 切片含标题行与 unit 间换行,给小容差)
+    const kept = s1.replace(/\n?\[本节超长,已省略 \d+ 字\]/, "");
+    expect(kept.length).toBeLessThanOrEqual(4000 + 20);
+    const s2 = doc.md.slice(cut);
+    expect(s2).not.toContain("本节超长");
+  });
+
+  it("preamble(首标题前内容)超长同样带注记", () => {
+    const html = `<body><article>
+      <p>${"前言".repeat(2500)}</p>
+      <h2>正文</h2><p>短。</p>
+    </article></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    const m = /\[本节超长,已省略 (\d+) 字\]/.exec(doc.md);
+    expect(m).not.toBeNull();
+    // 5000 字符前言保 4000,省略 1000
+    expect(Number(m?.[1])).toBe(1000);
+  });
+
+  it("无标题全文路径不加节级注记(全局截断已有 truncated_total)", () => {
+    const html = `<body><p>${"段".repeat(5000)}</p></body>`;
+    const doc = buildVirtualDoc(capture(html));
+    expect(doc.md).not.toContain("本节超长");
+  });
+});
