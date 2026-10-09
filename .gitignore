@@ -19,6 +19,8 @@ yarn.lock
 # 仅真网探针保持本地:对真搜索引擎发真实查询,公开等于提供刷引擎工具,
 # 在 CI 里跑还会把出口 IP 写进日志
 /tests/real-search-probe.mjs
+# evals 的测量结果(每模型一份基线,本地产物,见 tests/README.md「evals」)
+/tests/evals/output/
 
 .vscode/
 .zcode/
