@@ -74,6 +74,14 @@ mock.setRoutes([
         if (!usedTool) return toolCall(ctx, "memory_save", { content: "用户偏好深色界面" });
         return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
       }
+      if (/记住我喜欢等宽字体/.test(lastUser)) {
+        if (!usedTool) return toolCall(ctx, "memory_save", { content: "用户偏好等宽字体" });
+        return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
+      }
+      if (/删掉那条等宽偏好/.test(lastUser)) {
+        if (!usedTool) return toolCall(ctx, "memory_delete", { match: "等宽字体" });
+        return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
+      }
       if (/点一下提交按钮/.test(lastUser)) {
         if (!usedTool)
           return toolCall(ctx, "click_element", {
@@ -275,8 +283,64 @@ try {
   await waitIdle();
   const memRows2 = await idbGetAll(sidepanel, "memories");
   check(
-    memRows2.length === 1 && memRows2[0].text === "用户偏好深色界面", "允许 → 记忆落库(source=model)", 
-    JSON.stringify(memRows2.map((r) => r.text)), 
+    memRows2.length === 1 && memRows2[0].text === "用户偏好深色界面", "允许 → 记忆落库",
+    JSON.stringify(memRows2.map((r) => r.text)),
+  );
+  check(
+    memRows2[0]?.source === "model", "落库行 source=model(工具写入,区别于设置页手填)",
+    JSON.stringify(memRows2[0] ?? null),
+  );
+
+  // ---- 场景 3b:memory_delete 过门(拒绝 → 拒;允许 → 真删) ----
+  // 一次性记忆本节内自造自删:后续 off/auto 场景按记忆条数断言,不动 M 落的那条
+  scene = "MD memory_delete 确认门";
+  console.log("\n── MD memory_delete 确认门(拒绝/允许)──");
+  await sendOnly("记住我喜欢等宽字体");
+  await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(allowBtn).click();
+  await waitIdle();
+  const mdRows0 = await idbGetAll(sidepanel, "memories");
+  check(
+    mdRows0.some((r) => r.text === "用户偏好等宽字体"), "MD 前置:一次性记忆已落库",
+    JSON.stringify(mdRows0.map((r) => r.text)),
+  );
+
+  await sendOnly("删掉那条等宽偏好");
+  await sidepanel.locator(denyBtn).waitFor({ timeout: 20000 });
+  const delCardText = await sidepanel.locator(card).innerText();
+  check(
+    delCardText.includes(zh.chat.confirmMemoryDeleteTitle), "确认卡为删除族标题",
+    `卡片内容:${delCardText}`,
+  );
+  check(delCardText.includes("等宽字体"), "展示删除匹配词");
+  await sidepanel.locator(denyBtn).click();
+  await waitIdle();
+  const mdRows1 = await idbGetAll(sidepanel, "memories");
+  check(
+    mdRows1.some((r) => r.text === "用户偏好等宽字体"), "拒绝 → 记忆未被删",
+    JSON.stringify(mdRows1.map((r) => r.text)),
+  );
+  const entriesMD1 = await readRunLogs(sidepanel);
+  const delDenyLog = findToolLog(entriesMD1, /memory_delete 失败/);
+  check(
+    !!delDenyLog && /declined/.test(delDenyLog.data ?? "{}"), "拒绝 → declined 文案回给模型",
+    JSON.stringify(delDenyLog?.data ?? null).slice(0, 200),
+  );
+
+  await sendOnly("删掉那条等宽偏好");
+  await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(allowBtn).click();
+  await waitIdle();
+  const mdRows2 = await idbGetAll(sidepanel, "memories");
+  check(
+    !mdRows2.some((r) => r.text === "用户偏好等宽字体"), "允许 → 记忆已删",
+    JSON.stringify(mdRows2.map((r) => r.text)),
+  );
+  const entriesMD2 = await readRunLogs(sidepanel);
+  const delOkLog = findToolLog(entriesMD2, /memory_delete 完成/);
+  check(
+    !!delOkLog, "允许 → memory_delete 完成日志在场",
+    JSON.stringify(delOkLog?.data ?? null).slice(0, 200),
   );
 
   // ---- 场景 4:web_fetch 出口底线(私网过门;公开页直抓) ----
@@ -602,6 +666,24 @@ try {
   check(
     !!clickDeny && /declined/.test(clickDeny.data ?? "{}"), "pill 菜单切 strict → click 弹卡,拒绝后 declined 回给模型",
     JSON.stringify(clickDeny?.data ?? null).slice(0, 200),
+  );
+
+  // strict + 允许:同一张门点「允许」→ 真实分发(测试环境无普通页,执行期
+  // 失败也算放行,关键是错误不再是 declined)—— strict 档 click 此前只有
+  // 拒绝侧,允许侧在这里补齐
+  await sendOnly("点一下提交按钮");
+  await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(allowBtn).click();
+  await waitIdle();
+  const entriesPillAllow = await readRunLogs(sidepanel);
+  const clickAllow = entriesPillAllow.find(
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /click_element (失败|完成)/.test(e.msg),
+  );
+  check(
+    !!clickAllow && !/declined/.test(clickAllow.data ?? "{}"), "strict:click 允许 → 门放行真实分发",
+    JSON.stringify(clickAllow?.data ?? null).slice(0, 200),
   );
 
   // 从 pill 菜单点「全部放行」:三档同权单击落档(T6),下一轮全程无卡

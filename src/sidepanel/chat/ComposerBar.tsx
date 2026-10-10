@@ -5,6 +5,7 @@ import { useLayoutEffect } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { SkillInfo } from "../../shared/messages";
 import type { ConfirmLevel, ProviderEntry } from "../../shared/configStore";
+import type { AgentStatus } from "./useAgentChannel";
 import type { PendingImage } from "./images";
 import ConfirmLevelPill from "./ConfirmLevelPill";
 import ModelPicker from "./ModelPicker";
@@ -75,7 +76,7 @@ export default function ComposerBar({
   setInput: (v: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
-  status: string;
+  status: AgentStatus;
   chatInputRef: RefObject<HTMLTextAreaElement | null>;
   attachments: ComposerAttachments;
   skills: ComposerSkills;

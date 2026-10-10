@@ -3,7 +3,7 @@
 //   node tests/run.mjs                  # 列出全部域与用法(不跑)
 //   node tests/run.mjs memory mcp       # 只跑指定域(顺序执行,汇总退出码)
 //   node tests/run.mjs --all            # 全量(发版/横切重构才需要)
-// 前置:pnpm build(本脚本只提醒 dist 过期,不代跑)。
+// 前置:pnpm build(dist 过期只警告不代跑,但退出码置红)。
 // 单元测试不在这里:pnpm test(vitest,秒级,改纯逻辑就该跑)。
 
 import { spawnSync } from "node:child_process";
@@ -124,6 +124,8 @@ if (newestSrc > distMtime) {
   console.log(
     "⚠️  src/ 比 dist/ 新 —— 套件跑的是旧构建。先 pnpm build,再重跑。\n",
   );
+  // 只提醒不代跑,但退出码要红:对旧 dist 跑出全绿会误导(CI 先 build 无此风险)
+  process.exitCode = 1;
 }
 
 // ---- 顺序执行 ----

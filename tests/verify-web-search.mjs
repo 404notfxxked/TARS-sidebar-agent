@@ -397,6 +397,8 @@ console.log("\n===== A0d. 节流:同引擎请求被拉开间隔 =====");
     (e) => e.tag === "search" && e.msg.includes("web_search 完成"), "节流第二搜完成");
   const after = scrapeHits.ddg[scrapeHits.ddg.length - 1];
   const gap = after - before;
+  // 阈值 2300 = 真源 MIN_INTERVAL_MS(tabSearch.ts,2_500)留 200ms 调度抖动余量;
+  // 改节流常量时同步收紧/放宽这条断言线
   check(gap >= 2300, `A0d 两次 ddg 请求间隔 ${gap}ms(≥2300ms,连发节律被打散)`);
 }
 

@@ -8,7 +8,13 @@
 
 import { describe, expect, it } from "vitest";
 import type { InternalMsg } from "../provider";
-import { coveredLibraryRows, estimateBaselineTokens, estimateRange } from "./tokenBudget";
+import {
+  coveredLibraryRows,
+  enforceToolResultBudget,
+  estimateBaselineTokens,
+  estimateRange,
+  trimHistoryForWindow,
+} from "./tokenBudget";
 
 // 20 行库历史;上一轮把前 16 行压成摘要,tail 只剩 4 行,user 收尾。
 // promptTokens = 2000 是该轮实测,覆盖摘要 + 尾部 + 提问(即全部 20 行)。
@@ -91,5 +97,101 @@ describe("estimateBaselineTokens 压缩基线口径(审计 §1.1 回归)", () =>
     const rows = coveredLibraryRows(loopAnchors);
     const ctx = { promptTokens: 2000, msgs: 6, rows };
     expect(estimateBaselineTokens(ctx, filtered, FIXED)).toBe(2100);
+  });
+});
+
+// ---- enforceToolResultBudget(run 内工具结果预算安全阀) ----
+// 语义(源码同注释):总字符超预算时从最旧的大结果开始换省略标记;最新一条
+// tool 保留不截,但单条自身超预算时例外——按预算半数截断保头部并注记原量。
+
+type ToolMsg = Extract<InternalMsg, { role: "tool" }>;
+const toolMsg = (content: string, id: string): ToolMsg => ({
+  role: "tool",
+  toolCallId: id,
+  content,
+});
+
+describe("enforceToolResultBudget(run 内预算安全阀)", () => {
+  it("总字符未超预算:消息原样不动", () => {
+    const msgs: InternalMsg[] = [toolMsg("a".repeat(100), "t1"), toolMsg("b".repeat(50), "t2")];
+    const before = JSON.stringify(msgs);
+    enforceToolResultBudget(msgs, 1000);
+    expect(JSON.stringify(msgs)).toBe(before);
+  });
+
+  it("超预算:最旧的超长结果换省略标记,够省即停,最新一条保留", () => {
+    const msgs: InternalMsg[] = [
+      toolMsg("a".repeat(3000), "old"),
+      toolMsg("b".repeat(2000), "mid"),
+      toolMsg("c".repeat(100), "new"),
+    ];
+    enforceToolResultBudget(msgs, 4000);
+    const m0 = msgs[0] as ToolMsg;
+    const m1 = msgs[1] as ToolMsg;
+    const m2 = msgs[2] as ToolMsg;
+    expect(m0.content.startsWith("a".repeat(1500))).toBe(true);
+    expect(m0.content).toContain("已因长度限制省略");
+    expect(m0.toolCallId).toBe("old"); // 只改 content,toolCallId 不动
+    expect(m1.content).toBe("b".repeat(2000)); // 截完 m0 已在预算内,不再动
+    expect(m2.content).toBe("c".repeat(100)); // 最新一条保留
+  });
+
+  it("最新一条自身超预算:例外截断——按预算半数保头部,注记声明原量", () => {
+    const msgs: InternalMsg[] = [toolMsg("b".repeat(9000), "huge")];
+    enforceToolResultBudget(msgs, 4000);
+    const m0 = msgs[0] as ToolMsg;
+    expect(m0.content.startsWith("b".repeat(2000))).toBe(true);
+    expect(m0.content).toContain("共 9000 字符");
+    expect(m0.toolCallId).toBe("huge");
+  });
+
+  it("最新一条与更早结果都超预算:先例外截最新,再从最旧截到预算内", () => {
+    const msgs: InternalMsg[] = [toolMsg("a".repeat(5000), "old"), toolMsg("b".repeat(9000), "new")];
+    enforceToolResultBudget(msgs, 4000);
+    const m0 = msgs[0] as ToolMsg;
+    const m1 = msgs[1] as ToolMsg;
+    expect(m1.content.startsWith("b".repeat(2000))).toBe(true);
+    expect(m0.content.startsWith("a".repeat(1500))).toBe(true);
+    expect(m0.content).toContain("已因长度限制省略");
+  });
+});
+
+describe("trimHistoryForWindow(溢出裁剪,整轮为单位)", () => {
+  // 每轮 = user 起 + assistant 收(与 isTurnStart 的轮判定一致)
+  const turn = (n: number, pad: number): InternalMsg[] => [
+    { role: "user", content: `u${n}: ${"x".repeat(pad)}` },
+    { role: "assistant", content: `a${n}: ${"x".repeat(pad)}` },
+  ];
+
+  it("未超限:原样返回", () => {
+    const h = [...turn(1, 10), ...turn(2, 10)];
+    expect(trimHistoryForWindow(h, { contextTokens: 8000, currentEstimate: 100 })).toBe(h);
+  });
+
+  it("超限:从最旧的整轮开始丢,保住最近轮(轮判定不裁出非法结构)", () => {
+    // usable = 2000 − 200 − 20%·2000 = 1400;前两轮各 ≈2000 token,叠加超限
+    const h = [...turn(1, 4000), ...turn(2, 4000), ...turn(3, 100)];
+    const out = trimHistoryForWindow(h, {
+      contextTokens: 2000,
+      maxTokens: 200,
+      currentEstimate: 50,
+    });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("u3"),
+    });
+  });
+
+  it("单轮即超限:保底全发,交给 API 报错", () => {
+    const h = [...turn(1, 4000)];
+    expect(
+      trimHistoryForWindow(h, { contextTokens: 2000, maxTokens: 200, currentEstimate: 50 }),
+    ).toBe(h);
+  });
+
+  it("未配 contextTokens:不裁", () => {
+    const h = [...turn(1, 4000)];
+    expect(trimHistoryForWindow(h, { currentEstimate: 0 })).toBe(h);
   });
 });

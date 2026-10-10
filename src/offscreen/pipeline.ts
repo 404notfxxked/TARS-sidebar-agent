@@ -145,6 +145,7 @@ export interface CaptureMeta {
  */
 export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
   const parsed = new DOMParser().parseFromString(meta.html, "text/html");
+  // 解析根与 content/index.ts 的采样根选择器是跨边界镜像,改动须两处同步
   const root = (parsed.querySelector("main, article") ?? parsed.body) as HTMLElement;
   absolutizeLinks(root, meta.baseURI);
   pruneNoise(root);

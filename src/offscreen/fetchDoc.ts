@@ -1,7 +1,7 @@
 // 网页虚拟文档缓存(运行在 offscreen document):
 // web_fetch 工具的解析端 —— 接收 SW 抓好的 HTML → buildVirtualDoc 转规范
 // markdown → 按 URL 缓存(LRU)→ 复用 page_read 的窗口协议切片。
-// 抓取在 SW(background/webFetch.ts):与 web_search 的「SW 抓取、offscreen
+// 抓取在 SW(background/web/webFetch.ts):与 web_search 的「SW 抓取、offscreen
 // 解析」分工一致;这里只做纯 DOM/文本运算,不做网络。
 
 import { buildVirtualDoc, runPageRead, type VirtualDoc } from "./pipeline";
@@ -39,7 +39,8 @@ export function fetchBuild(args: { url: string; html: string; base: string }): v
   lruEvict(cache, FETCH_CACHE_MAX, (e) => e.at);
   log.info("fetch", "网页已解析入库", {
     ms: Date.now() - startedAt,
-    htmlBytes: args.html.length,
+    // 字符数非字节(中英混排差 2~3 倍);要字节走 pipeline 的 TextEncoder 口径
+    htmlChars: args.html.length,
     totalChars: doc.totalChars,
     url: args.base,
   });

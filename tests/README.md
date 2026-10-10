@@ -4,13 +4,14 @@
 
 - **单元测试**(`pnpm test`,vitest):纯逻辑层秒级回归,改了就跑,
   不用 build 不用浏览器。**用例在 src/ 内与被测模块同目录
-  (`*.test.ts`)**(build 的 tsc 顺带对其做类型检查,产物不打包)
+  (`*.test.ts`;React 组件用 `*.test.tsx`)**(build 的 tsc 顺带对其做类型
+  检查,产物不打包)
 - **e2e 套件**(`node tests/run.mjs <域>`):真扩展 + CDP mock,按域挑着跑;
   **改哪块跑哪块,全量(--all)留给发版与横切重构**
 
 硬约定:mock 必须走 CDP 拦截(lib-cdp-mock.mjs),裸 http server 的
 SSE 会让 Playwright 挂死。
-e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
+e2e 套件先 `pnpm build` 再跑(dist 过期时 run.mjs 警告并置红退出码);
 断言套件 PASS/FAIL 对应退出码。
 
 ## 断言纪律(所有套件通用)
@@ -24,7 +25,8 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 
 - 本地:`node tests/run.mjs <域...> | --all`;视觉截图产物统一在
   `/tmp/tars-m3/`(人看,不进仓库)
-- CI:`.github/workflows/e2e.yml`(手动触发,支持按域参数)——e2e 驱动
+- CI:`.github/workflows/e2e.yml`(e2e:手动触发,支持按域参数;另有
+  schedule nightly 全量,UTC 19:00 = 北京 03:00)——e2e 驱动
   真实扩展窗口,headful 跑,CI 里经 `xvfb-run` 包裹;Chromium 用
   `playwright install --with-deps` 安装,另装 `fonts-noto-cjk` 保证
   截图里的中文不是豆腐块
@@ -35,7 +37,7 @@ e2e 套件先 `pnpm build` 再跑(run.mjs 会提醒 dist 过期);
 ## 单元测试(vitest)
 
 - `pnpm test` / `pnpm test:watch` / `pnpm test:coverage`;用例
-  `src/**/*.test.ts` 与被测模块同目录,配置在根目录 `vitest.config.ts` +
+  `src/**/*.test.ts(x)` 与被测模块同目录,配置在根目录 `vitest.config.ts` +
   `vitest.setup.ts`(内存版 chrome.storage 桩,供 logger/loadConfig 使用;
   vitest 优先读 vitest.config.ts,与扩展构建的 vite.config.js 互不干扰)。
   coverage 口径是 all:true 全量文件(默认只报被 import 的文件,数字虚高);

@@ -86,7 +86,8 @@ function summarizeResult(name: string, result: unknown): unknown {
   switch (name) {
     case "capture_doc": {
       const r = result as { html?: string; url?: string; root?: string };
-      return { htmlBytes: r.html?.length ?? 0, url: r.url, root: r.root };
+      // htmlChars = 字符数(UTF-16 码元)非字节;字节口径见 offscreen/pipeline.ts
+      return { htmlChars: r.html?.length ?? 0, url: r.url, root: r.root };
     }
     case "find_elements": {
       const r = result as { count?: number; returned?: number };
@@ -110,6 +111,7 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
     // 只搬字节不做转换——链接相对性也原样保留,由解析侧按 baseURI 绝对化;
     // 绝不在真实 DOM 上改写属性,避免污染宿主页面。
     case "capture_doc": {
+      // 采样根选择器与 offscreen/pipeline.ts 的解析根是跨边界镜像,改动须两处同步
       const root = (document.querySelector("main, article") ?? document.body) as HTMLElement;
       // 入口上界:无限流 SPA/巨型表格页的 outerHTML 可达数十 MB,无上界
       // 会在 SW↔offscreen 两次拷贝 + DOMParser 再拷贝处打出内存峰值。

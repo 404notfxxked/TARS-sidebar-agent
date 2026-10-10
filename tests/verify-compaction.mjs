@@ -193,6 +193,9 @@ const waitRunLog = (predicate, label) =>
 
 // ---- S1:触发 + 摘要注入 + 全量历史保留 + 滚动 ----
 console.log("\n===== S1. 触发:摘要调用 + <context-summary> 注入 + 库保全量 =====");
+// 手算锚点:usable = contextTokens − maxTokens − 20%·contextTokens,档位阈值
+// early 0.6 / standard 0.75 / late 0.9(真源 background/agent/compaction.ts,
+// 公式与阈值有单测钉——compaction.test.ts「三档阈值」;下列数字是本套件种子的展开)
 await setModelCfg(8000); // usable = 8000-4096-1600 = 2304;标准档阈值 1728,种子历史远超
 await setCompactCfg({ compact: "standard" });
 await seedSession("s-main", "压缩主会话", 3, 1100);

@@ -406,7 +406,7 @@ export class AnthropicMessagesAdapter implements ChatProvider {
     // 不记结果正文
     for (const b of wireBlocks) {
       if (b.type === "server_tool_use") {
-        const query = (b.input as { query?: unknown } | null)?.query;
+        const query = serverToolQuery(b.input);
         log.info("provider", "server tool use", {
           name: b.name,
           query: typeof query === "string" ? query.slice(0, 40) : "",
@@ -604,12 +604,20 @@ function toEchoBlock(
 /** 不可解密的思考块在桥接端点上的占位文本(不展示任何原文) */
 const REDACTED_THINKING_CARRIER = "[encrypted thinking omitted]";
 
+/** 服务端工具的查询词提取:Anthropic 原生字段是 input.query,部分第三方
+ *  端点的方言是 input.search_query(智谱 web_search_prime 实测)。诊断日志
+ *  与桥接回传载体两处消费统一走这里,新增消费方不要再各写一份 */
+export function serverToolQuery(input: unknown): unknown {
+  const i = input as { query?: unknown; search_query?: unknown } | null;
+  return i?.query ?? i?.search_query;
+}
+
 /** server_tool_use → 文本载体。带上查询词:模型仍知道「自己搜过什么」,
  *  来源明细由结果载体带(桥接端点没有对应的输入块类型,载荷只能以文本表达) */
 function serverToolUseCarrier(
   b: Extract<WireBlock, { type: "server_tool_use" }>,
 ): string {
-  const query = (b.input as { query?: unknown } | null)?.query;
+  const query = serverToolQuery(b.input);
   const suffix = typeof query === "string" && query ? `: ${query}` : "";
   return `[server tool: ${b.name}${suffix}]`;
 }

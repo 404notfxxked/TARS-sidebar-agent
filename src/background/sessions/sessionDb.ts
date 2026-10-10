@@ -256,7 +256,8 @@ export async function loadMessageRows(
 // ---- 写 ----
 
 /** 追加消息 + upsert 会话元数据 + 落图片字节,一个事务内原子生效。
- *  baseSeq = 该会话已有消息条数(run 开始时的历史长度) */
+ *  baseSeq = 该会话已有消息条数(每 turn 收口时按已持久化进度推进,
+ *  见 agent/persistence.ts) */
 export async function appendMessages(
   sessionId: string,
   meta: SessionRow,

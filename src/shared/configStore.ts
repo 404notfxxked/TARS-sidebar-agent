@@ -33,7 +33,7 @@ export type AccentPref =
   | "coral"
   | "rose"
   | "graphite";
-const ACCENT_IDS: AccentPref[] = [
+export const ACCENT_IDS: AccentPref[] = [
   "green",
   "ocean",
   "teal",
@@ -158,7 +158,7 @@ export interface AppConfig {
   /** 历史会话保留天数:0 = 全部保留;缺省 7(sessionHistory.pruneExpiredSessions) */
   historyRetention: number;
   /** 上下文压缩触发档位:对话历史占用可用窗口超过该比例时,自动把较早的
-   *  整轮压成摘要(见 background/compaction);需当前模型配了 contextTokens
+   *  整轮压成摘要(见 background/agent/compaction);需当前模型配了 contextTokens
    *  才生效;缺省 standard */
   compact: CompactLevel;
   /** 压缩用模型:摘要调用的供应商 id + wire 模型名,引用语义与

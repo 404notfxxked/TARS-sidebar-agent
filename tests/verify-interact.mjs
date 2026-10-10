@@ -88,6 +88,8 @@ async function main() {
   // 闭集逐值直行守卫:role 参数 schema enum 的 9 个值必须全部可归一——
   // 报错文案/结果字段/schema enum 都用这套词,别名表漏直行就会出现
   // 「报错说支持 input、传 input 却被拒」的自相矛盾(2026-09-17 真机踩中)
+  // 真源 = page_interact 注册 schema 的 role enum(tools.ts)+ content/observe.ts
+  // 的词表;.mjs 不能直 import TS 源,此处镜像——enum 改动时必须同步本清单
   const CLOSED_SET = [
     "button", "link", "input", "checkbox", "radio",
     "switch", "select", "textarea", "contenteditable",

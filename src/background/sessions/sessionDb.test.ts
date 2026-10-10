@@ -23,6 +23,57 @@ afterEach(async () => {
   await clearAllRows();
 });
 
+describe("sessionDb v1 → v4 升级(读时迁移)", () => {
+  it("v1 库打开即补建 images/memories/skills,旧会话数据原样保留", async () => {
+    // 手工造 v1 库(2026-08 首版形态:只有 sessions + messages)并写入一行
+    // 旧会话;必须先于本文件其他用例跑 —— 封装层的连接缓存一旦以 v4 打开,
+    // upgradeneeded 就不会再走
+    await new Promise<void>((done, fail) => {
+      const req = indexedDB.open("tars", 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        db.createObjectStore("sessions", { keyPath: "id" });
+        const m = db.createObjectStore("messages", {
+          keyPath: ["sessionId", "seq"],
+        });
+        m.createIndex("bySession", "sessionId");
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(["sessions", "messages"], "readwrite");
+        tx.objectStore("sessions").put({
+          id: "legacy-1",
+          title: "旧会话",
+          createdAt: 0,
+          updatedAt: 0,
+          msgCount: 1,
+        });
+        tx.objectStore("messages").put({
+          sessionId: "legacy-1",
+          seq: 0,
+          msg: { role: "user", content: "旧问题" },
+        });
+        tx.oncomplete = () => {
+          db.close();
+          done();
+        };
+        tx.onerror = () => fail(tx.error);
+      };
+      req.onerror = () => fail(req.error);
+    });
+
+    // 封装层以 DB_VERSION=4 打开:upgradeneeded 里按 contains 幂等补建
+    const sessions = await listSessions();
+    expect(sessions.map((s) => s.id)).toEqual(["legacy-1"]);
+    expect(await loadMessageRows("legacy-1")).toHaveLength(1);
+
+    // 三个后增 store 全部在场且可读写(计数为 0 即存储已建)
+    expect(await countStore("images")).toBe(0);
+    expect(await countStore("memories")).toBe(0);
+    expect(await countStore("skills")).toBe(0);
+  });
+});
+
 const meta = (id: string, msgCount: number): SessionRow => ({
   id,
   title: `会话 ${id}`,

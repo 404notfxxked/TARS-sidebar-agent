@@ -118,8 +118,6 @@ export function useChatModels() {
     providers,
     modelProvider,
     modelId,
-    curProvider,
-    curModels,
     visionOk,
     curModelEntry,
     thinkingOptions,

@@ -492,10 +492,46 @@ mock.setRoutes([
         return answerSSE(ctx, "issue #42 的要点已整理完毕。");
       }
       if (!usedTool) {
-        // 第一轮:让模型发起 web_search 工具调用(驱动过程卡)
+        // 第一轮:先给一句中间文案再发工具调用(text → tool)—— 过程卡的
+        // 文本行排版/文案因此进「人看产物」的视野;此前 mock 只有裸 tool_calls,
+        // 改文本行标签位时只能靠临时探针才能截到那一行(纯视觉脚本,不影响断言型套件)
         await ctx.delay(400);
-        return toolCallSSE(ctx, "web_search", {
-          query: "Material Design 3 设计规范",
+        return ctx.fulfill({
+          headers: { "Content-Type": "text/event-stream" },
+          body: sse(
+            {
+              choices: [
+                {
+                  delta: {
+                    role: "assistant",
+                    content: "我先查一下 Material 3 的规范原文,稍等。",
+                  },
+                },
+              ],
+            },
+            {
+              choices: [
+                {
+                  delta: {
+                    role: "assistant",
+                    tool_calls: [
+                      {
+                        id: "call_shot_m3_search",
+                        type: "function",
+                        function: {
+                          name: "web_search",
+                          arguments: JSON.stringify({
+                            query: "Material Design 3 设计规范",
+                          }),
+                        },
+                      },
+                    ],
+                  },
+                },
+                { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+              ],
+            },
+          ),
         });
       }
       // 第二轮:流式 markdown 正文(练习 markdown.css 的各元素)

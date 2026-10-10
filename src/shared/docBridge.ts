@@ -3,6 +3,9 @@
 // - page_* 三工具的调用转发(DOC_TOOL_CALL / DOC_TOOL_RESULT 协议)
 // - 一次性解析任务转发(PARSE_CALL / PARSE_RESULT):解析数据由本侧自带,
 //   不绑定 tab 快照(如 web_search 抓到的搜索结果页 HTML)
+// - 协议字面量(下述 7 个 type 串 + NOT_CACHED: 前缀,后者另见 webFetch.ts)
+//   与 src/offscreen/main.ts 是跨上下文镜像(offscreen 侧不可 import 本模块):
+//   改动任何一侧的字面量必须同步另一侧
 // - capture_doc 中继:offscreen document 没有 chrome.tabs/chrome.scripting 的
 //   访问权限面(Chrome 只给它 runtime 消息等子集),抓取宿主页 HTML 必须借道
 //   本 SW 完成——offscreen 发 CAPTURE_DOC_REQUEST,这里用 callContentTool
@@ -106,9 +109,10 @@ export function callOffscreenTool(
 }
 
 /**
- * 一次性解析任务:解析数据(HTML)由本侧随消息自带或由 offscreen 自取,
- * 不绑定 tab 快照(search:SW 抓好的搜索结果页;fetch_read:offscreen 按
- * URL 自抓自缓存)。默认 15s;web_fetch 含网络抓取,调用方传 30s。
+ * 一次性解析任务:解析数据(HTML)由本侧随消息自带,不绑定 tab 快照
+ * (search:SW 抓好的搜索结果页;fetch_read:offscreen 只读 URL 缓存,
+ * 未命中回 NOT_CACHED、由 SW 抓取重建)。默认 15s;fetch_build 要解析
+ * 大 HTML,调用方传 20s。
  */
 export function callOffscreenParser(
   kind: string,
