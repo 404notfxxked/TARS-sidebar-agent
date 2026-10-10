@@ -162,7 +162,7 @@ export default function ChatView({
     });
     // 本地回显:预览 url 先入气泡缓存,渲染无需再向后台取字节
     for (const p of pendingImages) cacheImgUrl(p.id, p.url);
-    // 送达回执决定草稿去留(REQ-P0-2):发送失败时输入框与待发附件原样
+    // 送达回执决定草稿去留:发送失败时输入框与待发附件原样
     // 保留,消息流里以「未送达 + 重试」呈现;成功才清空(原行为)
     const delivered = chat.submitUserMessage({
       sessionId,

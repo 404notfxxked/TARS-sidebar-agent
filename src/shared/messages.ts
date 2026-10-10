@@ -263,8 +263,8 @@ export type AgentEvent =
   | {
       type: typeof MSG.SESSIONS;
       sessions: SessionMeta[];
-      /** 列表读取失败原因(存储抛错等):面板走错误态而非空态(REQ-P0-3,
-       *  同 MEMORIES.error / SKILLS.error 的兜底回包纪律) */
+      /** 列表读取失败原因(存储抛错等):面板走错误态而非空态
+       *  (同 MEMORIES.error / SKILLS.error 的兜底回包纪律) */
       error?: string;
     }
   | {

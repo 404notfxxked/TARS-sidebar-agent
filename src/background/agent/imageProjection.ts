@@ -1,6 +1,6 @@
 // 请求侧图片投影:按视觉能力与字节预算决定哪些图片随请求发送。
 // ⚠️ 只做投影,不改内存 loop.messages、不落盘 —— 溢出裁剪同理,落盘保持
-// 全量历史(架构不变式 15①)。图片只在 user 角色发送 —— OpenAI 规范的
+// 全量历史(虚拟上下文不变式)。图片只在 user 角色发送 —— OpenAI 规范的
 // tool/assistant 消息不支持 image_url,兼容端点同此。
 
 import type { InternalMsg } from "../provider";

@@ -33,7 +33,7 @@ export default function MessageList({
   memorySaved,
   onOpenMemory,
   onPickEmpty,
-  /** 重试未送达的提交(REQ-P0-2):挂在带 sendFailed 标记的用户气泡上 */
+  /** 重试未送达的提交:挂在带 sendFailed 标记的用户气泡上 */
   onRetrySend,
   onRetryLoadHistory,
   atBottom,
@@ -134,7 +134,7 @@ export default function MessageList({
               const failedSubmit = m.sendFailed ? m.failedSubmit : undefined;
               const node =
                 m.role === "user" ? (
-                  // 未送达(REQ-P0-2):发送失败的乐观气泡带「未送达 + 重试」行,
+                  // 未送达:发送失败的乐观气泡带「未送达 + 重试」行,
                   // 挂在气泡下方右对齐;重试 = 以气泡携带的原参数重走提交路径
                   <div key={i} className="flex flex-col items-end gap-1">
                     <UserBubble text={m.content} images={m.images} />

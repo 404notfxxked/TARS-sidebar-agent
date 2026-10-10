@@ -259,7 +259,7 @@ export async function resolveRunConfig(
     .filter((t) => visionOk || t.name !== "page_screenshot"), ...mcpSchemas];
   // 执行上下文档案:模型与开关状态(index.ts 的 run started 已记用户原文,
   // 这里补齐判断搜索质量时需要的模型身份)。confirmLevel 随档位入库:
-  // 历史 run 可回算档位使用率(日志聚合面板尚不存在,欠账见方案 T6)
+  // 历史 run 可回算档位使用率(日志聚合面板尚不存在)
   log.info("agent", "run config", {
     session: payload.sessionId ?? "",
     provider: cur.name,
@@ -434,7 +434,7 @@ export async function assemblePrompt(
   // 对 [system, 记忆?, 摘要?, ...保留历史, user] 的形状依然成立
   loop.persistedInCtx = loop.messages.length - 2;
   // 落盘游标从「prompt 携带的旧内容条数」起:裁剪/摘要只影响本轮 prompt,
-  // 不写回库 —— 库保持全量历史(架构不变式 15①)
+  // 不写回库 —— 库保持全量历史(虚拟上下文不变式)
   loop.savedUpTo = loop.persistedInCtx;
   return fetchAllowlist;
 }

@@ -51,12 +51,12 @@ export interface ChatMsg {
   processItems?: ProcessItem[];
   /** 该消息在库里的 seq(仅历史回放有;压缩分隔条据此定位) */
   seq?: number;
-  /** 发送失败标记(REQ-P0-2,仅实况):消息从未抵达后台,渲染「未送达」+
+  /** 发送失败标记(仅实况):消息从未抵达后台,渲染「未送达」+
    *  重试入口;不落库(后台根本没收到),历史回放天然没有 */
   sendFailed?: true;
   /** 发送失败时的原提交参数(引用,不复制):重试走同一条提交路径 */
   failedSubmit?: SubmitArgs;
-  /** 历史读取失败气泡(REQ-P0-3):重试语义是「重新拉取历史」而非
+  /** 历史读取失败气泡:重试语义是「重新拉取历史」而非
    *  regenerate(重跑上一问),MessageList 据此分流挂线 */
   historyError?: true;
 }
@@ -275,8 +275,8 @@ export function useAgentChannel({
     // 当前会话」的包 —— 快速切会话时先到的旧回包不能盖上新会话的 id
     // (曾因回包无 sessionId、靠「最后请求 == 当前会话」推断而串台)。
     // 本地已有该会话记录则保留本地(本地更新过/正在用),idempotent。
-    // 读取失败的回包:当前会话落错误气泡(存储异常不得伪装成空会话,
-    // REQ-P0-3 评审补漏);别的会话的错不串台
+    // 读取失败的回包:当前会话落错误气泡(存储异常不得伪装成空会话);
+    // 别的会话的错不串台
     if (evt.sessionId === sessionRef.current) {
       // 错误文本先出窄化(setMessages 回调内属性收窄不保证)
       const errorText = evt.error;
@@ -393,7 +393,7 @@ export function useAgentChannel({
   };
 
   /**
-   * 用户动作触发的发送统一护栏(REQ-P0-2):postMessage 同步抛错(端口断开/
+   * 用户动作触发的发送统一护栏:postMessage 同步抛错(端口断开/
    * 扩展上下文失效)= 消息从未抵达后台。返回是否送达;失败只留诊断日志,
    * 可见反馈由各调用点自理(提交/重生成有失败态,其余自愈,见各自注释)。
    * 「run 被拒」(会话忙)是另一类失败:后台回 AGENT_ERROR,走既有错误气泡,
@@ -573,7 +573,7 @@ export function useAgentChannel({
   };
 
   /** 提交用户消息:归档上一轮文本段 → 本地回显 → 开新一轮 → 发给后台。
-   *  返回是否送达(REQ-P0-2):发送失败时乐观气泡转「未送达」并携带原参数,
+   *  返回是否送达:发送失败时乐观气泡转「未送达」并携带原参数,
    *  返回 false —— 视图侧据此保留输入框草稿(含待发附件)不清空;
    *  附件预览 url 需在调用前经 cacheImgUrl 入缓存(回显气泡直接渲染) */
   const submitUserMessage = (opts: SubmitArgs): boolean => {
@@ -640,7 +640,7 @@ export function useAgentChannel({
     loadSessionHistory(sessionId);
   };
 
-  /** 重试未送达的提交(REQ-P0-2):移除对应墓碑气泡后走同一条提交路径
+  /** 重试未送达的提交:移除对应墓碑气泡后走同一条提交路径
    *  (参数引用对号,避免位置推断)。再次失败时新墓碑照常生成 */
   const retrySubmit = (args: SubmitArgs): boolean => {
     setMessages((ms) => ms.filter((m) => m.failedSubmit !== args));

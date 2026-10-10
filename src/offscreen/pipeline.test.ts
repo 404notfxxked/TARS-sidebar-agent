@@ -156,7 +156,7 @@ describe("空壳页 hint(管线自报,京东/淘宝壳页案)", () => {
   });
 });
 
-describe("单节/采样截断不再静默(REQ-P0-1)", () => {
+describe("单节/采样截断不再静默", () => {
   it("单节超 4000 上限被截:read/outline 带 sections_truncated 与 web_fetch 指引", () => {
     const html =
       `<body><h1>第一节</h1><p>${"长".repeat(6000)}</p>` +

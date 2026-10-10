@@ -2,7 +2,7 @@
 // useAgentChannel 的 hook 层单测,三块:
 // 1) HISTORY 回包新鲜度:回包自带 sessionId,只认「响应会话 == 当前会话」
 //    —— 快速切会话时迟到的旧回包不得串台(回归钉死)
-// 2) 提交失败护栏(REQ-P0-2):postMessage 同步抛错 = 消息未抵达后台,
+// 2) 提交失败护栏:postMessage 同步抛错 = 消息未抵达后台,
 //    断言返回 false / 气泡转未送达 / retrySubmit 重发同路径
 // 3) HISTORY 兜底回包:历史读取失败必须可见,不得伪装成空会话
 
@@ -95,7 +95,7 @@ describe("useAgentChannel HISTORY 回包新鲜度", () => {
   });
 });
 
-describe("useAgentChannel 提交失败护栏(REQ-P0-2)", () => {
+describe("useAgentChannel 提交失败护栏", () => {
   const baseArgs = (): SubmitArgs => ({ sessionId: "s1", text: "你好" });
 
   it("发送成功:返回 true,乐观气泡正常入列,无未送达标记", () => {

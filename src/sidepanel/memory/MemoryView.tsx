@@ -365,7 +365,7 @@ export default function MemoryView({
 
 // ---- 行 ----
 
-/** tag 徽标文案:渲染时现取 t()(模块级求值会停在默认语言,AGENTS.md「面板状态」) */
+/** tag 徽标文案:渲染时现取 t()(模块级求值会停在默认语言) */
 function memoryTagLabel(
   t: TFn,
   tag: MemoryTag,

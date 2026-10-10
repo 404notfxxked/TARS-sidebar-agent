@@ -1,12 +1,12 @@
-// 验证读页三件套真实执行链(REQ-P0-5 page-tools 域;此前该链路 e2e 零覆盖,
-// page_find 一次都没出现过 —— P0-1 的静默截断缺陷能长期存活正因如此)
+// 验证读页三件套真实执行链(page-tools 域;此前该链路 e2e 零覆盖,
+// page_find 一次都没出现过 —— 静默截断缺陷能长期存活正因如此)
 // 用法: pnpm build && node tests/verify-page-tools.mjs
 //
 // 场景:
 //   PT1 主链路:page_outline → page_find → page_read(offset=pos) 全链路
 //      (面板 → SW → offscreen 解析 → content 采样回填),断言 —— 大纲条目
 //      与 offset 体系、find 命中 pos 与标题链、read 按 pos 精确续读
-//   PT2 截断标记(REQ-P0-1 回归):单节超 4000 上限的页面 → outline/read
+//   PT2 截断标记回归:单节超 4000 上限的页面 → outline/read
 //      带 sections_truncated + 指引点名 web_fetch(且不指 refresh —— 重建
 //      快照对单节上限无效);被裁内容确实不在快照里
 //   说明:content 侧采样截断(source_truncated,CAPTURE_HTML_MAX_CHARS=1M)
@@ -192,7 +192,7 @@ console.log("\nPT1 读页三件套主链路(outline → find → read)");
   await page.close();
 }
 
-// ---- PT2 截断标记(REQ-P0-1 回归)----
+// ---- PT2 截断标记回归 ----
 console.log("\nPT2 单节截断不再静默(sections_truncated + web_fetch 指引)");
 {
   const { page, tabId } = await openTarget("doc-big");

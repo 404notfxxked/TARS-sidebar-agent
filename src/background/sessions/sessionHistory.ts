@@ -416,7 +416,7 @@ function deriveTitle(msgs: InternalMsg[]): string {
     .replace(/\s+/g, " ")
     .trim();
   // 空标题:用户可见兜底文案由面板经字典渲染(SessionsView 的 titleOf)。
-  // SW 侧不产出中文标题 —— 用户可见文案一律走字典键(AGENTS.md「文案」)
+  // SW 侧不产出中文标题 —— 用户可见文案一律走字典键
   if (!text) return "";
   return text.length > TITLE_MAX_CHARS
     ? `${text.slice(0, TITLE_MAX_CHARS)}…`

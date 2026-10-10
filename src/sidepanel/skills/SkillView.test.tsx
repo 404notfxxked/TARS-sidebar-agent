@@ -20,7 +20,7 @@ const h = vi.hoisted(() => ({
     { id: "a", name: "skill-a", description: "A 技能", enabled: true, updatedAt: 1, chars: 10 },
     { id: "b", name: "skill-b", description: "B 技能", enabled: true, updatedAt: 2, chars: 10 },
   ] as SkillInfo[],
-  // 列表请求失败开关(REQ-P0-3 用例;仅对 SKILL_LIST 生效,写动作不受影响)
+  // 列表请求失败开关(仅对 SKILL_LIST 生效,写动作不受影响)
   failList: false,
 }));
 
@@ -100,7 +100,7 @@ describe("SkillView 编辑器新鲜度守卫(审计 §1.4 回归)", () => {
   });
 });
 
-describe("SkillView 列表读取失败(REQ-P0-3 回归)", () => {
+describe("SkillView 列表读取失败回归", () => {
   it("列表请求 reject → 错误态 + 重试,而非「还没有安装技能」空态;重试成功后列表恢复", async () => {
     const user = userEvent.setup();
     h.failList = true;

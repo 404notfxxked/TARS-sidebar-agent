@@ -1,5 +1,5 @@
 // composer 档位指示的状态 hook:从存储读 confirmLevel 并订阅变化。
-// 档位呈现已收口到 pill(T7 撤设置页字段),storage 订阅仍必要:多个
+// 档位呈现已收口到 pill(设置页字段已撤),storage 订阅仍必要:多个
 // 浏览器窗口可各开一个侧栏面板,一窗切档另一窗要跟上;直写 storage 的
 // 来源同理跟上(写法照 useChatModels 的 storage 订阅)。
 // 真话边界:pill 显示存储档,在途 run 用 run 开始时的快照;用户在本轮

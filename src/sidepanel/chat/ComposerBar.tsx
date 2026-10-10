@@ -180,7 +180,7 @@ export default function ComposerBar({
         <textarea
           ref={chatInputRef}
           rows={1}
-          // biome-ignore lint/a11y/noAutofocus: 面板即输入的产品语义(见 CHANGELOG「输入区焦点」),非表单页
+          // biome-ignore lint/a11y/noAutofocus: 面板即输入的产品语义,非表单页
           autoFocus
           value={input}
           onChange={(e) => {

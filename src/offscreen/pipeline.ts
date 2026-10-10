@@ -61,7 +61,7 @@ const DOC_MAX_CHARS = 160_000;
 const READ_WINDOW_DEFAULT = 6000;
 const READ_WINDOW_MAX = 20000;
 /** 单节(标题节/前置节)正文的字符上限:病态大节到此为止,截断必须上报
- *  (REQ-P0-1:静默截断 = 模型拿半节正文当全文下结论) */
+ *  (静默截断 = 模型拿半节正文当全文下结论) */
 const SECTION_MAX_CHARS = 4000;
 /** 大纲条数不超过该值时全量返回 */
 const OUTLINE_FULL_MAX = 60;
@@ -152,7 +152,7 @@ export interface CaptureMeta {
   /** 采样根标签(main/article/body);诊断用,解析侧自行重新选取、不消费此字段 */
   root?: string;
   /** 采样 HTML 被 CAPTURE_HTML_MAX_CHARS 截断时由 content 侧上报;
-   *  必须被消费透出(REQ-P0-1:不许保留「上报了但没人看」的字段) */
+   *  必须被消费透出(不许保留「上报了但没人看」的字段) */
   truncated?: boolean;
 }
 

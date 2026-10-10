@@ -435,7 +435,7 @@ export async function testServer(
 ): Promise<{ ok: boolean; toolCount?: number; era?: McpEra; error?: string }> {
   try {
     const entry = await refreshServer(server);
-    // era 传机器值,展示文案由 UI 按字典键映射(AGENTS.md「文案」);eraLabel 只进日志
+    // era 传机器值,展示文案由 UI 按字典键映射;eraLabel 只进日志
     return { ok: true, toolCount: entry.tools.length, era: entry.client.era };
   } catch (err) {
     return { ok: false, error: errText(err) };

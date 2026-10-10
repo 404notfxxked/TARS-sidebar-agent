@@ -90,7 +90,7 @@ describe("MemoryView 列表新鲜度守卫(审计 §1.4 回归)", () => {
   });
 });
 
-describe("MemoryView 列表读取失败(REQ-P0-3 回归)", () => {
+describe("MemoryView 列表读取失败回归", () => {
   it("列表请求 reject → 错误态 + 重试,而非「还没有记忆」空态;重试成功后列表恢复", async () => {
     const user = userEvent.setup();
     render(<MemoryView onBack={() => {}} />);

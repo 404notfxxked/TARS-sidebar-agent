@@ -74,7 +74,7 @@ const pool = new SnapshotPool<VirtualDoc>(async (tabId, refresh) => {
     baseURI: cap.baseURI ?? "",
     url: cap.url ?? "",
     title: cap.title ?? "",
-    // content 侧的采样截断上报必须消费(REQ-P0-1):透出为 source_truncated
+    // content 侧的采样截断上报必须消费:透出为 source_truncated
     truncated: cap.truncated === true,
   });
   // 快照重建是 page_* 工具最常见的第一跳,耗时与输入/输出体量记下来:

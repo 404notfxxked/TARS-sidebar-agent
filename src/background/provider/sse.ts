@@ -1,15 +1,15 @@
 // SSE 流式解析(共享层):LLM chat 补全与 MCP streamable HTTP 响应共用同一套
-// 帧解析与停滞看门狗 —— 脏形态(CRLF/多行 data/坏帧)的准绳在 chatCompletions.test.ts,
-// 两处消费方必须保持同一种消化方式(此前 MCP 侧自己手写、漏了 CRLF 归一,
-// 合规 CRLF 服务器的帧边界永远切不出来)。
+// 帧解析与看门狗 —— 脏形态(CRLF/多行 data/坏帧)的回归用例在
+// chatCompletions.test.ts,两处消费方必须保持同一套解析(此前 MCP 侧自己
+// 手写、漏了 CRLF 归一,按规范输出 CRLF 的服务器帧边界永远切不出来)。
 
 import { createLogger } from "../../shared/logger";
 
 const log = createLogger({ ctx: "bg" });
 
-// 流中 inactivity watchdog:client 层超时只护到响应头,流中途断流
+// 流式期间的不活动看门狗:client 层超时只护到响应头,流中途断流
 // (代理静默吞连接/端点挂起)会让 read() 永久悬挂。窗口取 120s ——
-// 思考型模型两 delta 之间可以很久,但不会久到两分钟无任何字节
+// 思考型模型两个 delta 之间可以很久,但不会久到两分钟收不到任何字节
 // (连心跳注释帧都算字节,正常端点撑不满这个窗口)
 const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
@@ -30,7 +30,7 @@ const STREAM_IDLE_TIMEOUT_MS = 120_000;
  * 注意:一次网络 read() 可能同时包含多个帧,也可能只包含半个帧,
  * 所以要用 buffer 攒着,按空行切出完整帧再解析,切剩下的留到下次。
  *
- * 兼容端点的三种脏形态都在这里消化:
+ * 兼容端点的三种脏形态都在这里处理:
  * - CRLF 行尾(规范允许 \r\n,某些代理/网关会改写):buffer 统一归一成 \n
  *   再切帧;孤立 \r 留在 buffer 里等下一个块的 \n 到齐,不会劈开帧
  * - 多行 data:(SSE 规范:一个事件可拆多行,按 \n 拼接成一整条载荷)

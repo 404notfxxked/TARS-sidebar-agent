@@ -1,4 +1,4 @@
-// Chat Completions 协议适配器(原 openai.ts,按协议更名):OpenAI / DeepSeek /
+// Chat Completions 协议适配器:OpenAI / DeepSeek /
 // Groq / vLLM / Ollama 等一切兼容端点都走这;Anthropic Messages 见 anthropicMessages.ts
 // 只做「内部格式 ⇄ chat-completions wire 格式」的双向转换;SSE 流式解析在共享层 sse.ts
 // 类型用本地 SSEChunk / ToolSchema 即可,暂不引入第三方类型包(@open-schemas/types)
@@ -17,8 +17,8 @@ import type {
   ToolCall,
 } from "./types";
 
-// SSE 解析在共享层(与 MCP 响应同一套准绳);此处按原路径再导出,
-// chatCompletions.test.ts 的脏形态回归基准继续从这里取
+// SSE 解析在共享层(与 MCP 响应同一套解析);此处按原路径再导出,
+// chatCompletions.test.ts 的脏形态回归用例继续从这里取
 export { readSSE } from "./sse";
 
 /** Base URL 缺省时的官方地址(设置页与 agent 预检共用同一兜底口径) */

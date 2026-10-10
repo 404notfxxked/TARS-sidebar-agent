@@ -87,8 +87,8 @@ export default function SessionsView({
   const t = useT();
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   // 列表读取失败(SESSIONS 回包带 error):显式错误态 + 重试,绝不复用
-  // 「还没有会话」空态文案 —— 存储异常呈现成数据消失是恐慌性误报(REQ-P0-3,
-  // 与记忆/技能页同口径;后台原文字段,语言切换展示后台原文,同 MEMORIES)
+  // 「还没有会话」空态文案 —— 存储异常呈现成数据消失是恐慌性误报
+  // (与记忆/技能页同口径;后台原文字段,语言切换展示后台原文,同 MEMORIES)
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
@@ -181,7 +181,7 @@ export default function SessionsView({
           </svg>
           <input
             type="text"
-            // biome-ignore lint/a11y/noAutofocus: 打开历史列表即检索是产品语义(见 CHANGELOG)
+            // biome-ignore lint/a11y/noAutofocus: 打开历史列表即检索是产品语义
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -268,7 +268,7 @@ function SessionRow({
   onRemove: (id: string) => void;
 }) {
   const t = useT();
-  /** 标题兜底:SW 对空标题回空串,用户可见文案在面板侧经字典渲染(AGENTS.md「文案」) */
+  /** 标题兜底:SW 对空标题回空串,用户可见文案在面板侧经字典渲染 */
   const titleOf = (s: SessionMeta): string => s.title || t("sessions.untitled");
   return (
     <li className="sessions-row-in" style={{ animationDelay: `${delay}ms` }}>

@@ -4,7 +4,7 @@
 // tool_result 聚合、图片 base64 块)与**端点类别决定的历史回传形状**
 // (native 逐块原样 / bridge 降形状 + 合成 unsigned 思考块);④SSE 事件流聚合
 // (四类 delta、stop_reason 映射、usage、error 帧)。流式解析层(sse.ts)的
-// 脏形态准绳在 chatCompletions.test.ts,此处不重复。
+// 脏形态回归用例在 chatCompletions.test.ts,此处不重复。
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AnthropicMessagesAdapter, serverToolQuery } from "./anthropicMessages";

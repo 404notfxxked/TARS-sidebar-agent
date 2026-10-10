@@ -1,4 +1,4 @@
-// 验证 run 结束通知的确定性路径(REQ-P0-5 notify 域)
+// 验证 run 结束通知的确定性路径(notify 域)
 // 用法: pnpm build && node tests/verify-notify.mjs
 //
 // 场景:

@@ -1,7 +1,7 @@
 // 带撞窗重试的 chat 调用:超窗错误 → 紧急压缩(保最近 2 轮)再试一次,
 // 之后所有轮次沿用压缩投影。⚠️ emergency 是「发送投影」而非落盘状态:
 // loop.emergency 的写入只发生在这里,只喂 projectEmergency /
-// shouldEmergencyCompact,不得写进 loop.messages 或落盘(架构不变式 15①)。
+// shouldEmergencyCompact,不得写进 loop.messages 或落盘(虚拟上下文不变式)。
 
 import {
   EMERGENCY_KEEP_TURNS,

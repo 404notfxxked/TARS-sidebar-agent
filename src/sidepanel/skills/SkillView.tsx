@@ -31,7 +31,7 @@ export default function SkillView({
   const t = useT();
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
   // 列表读取失败(传输级 reject / SKILL_LIST 回包带 error):显式错误态 + 重试,
-  // 绝不复用「还没有技能」空态文案(REQ-P0-3)。判别联合让 transport 的标题
+  // 绝不复用「还没有技能」空态文案。判别联合让 transport 的标题
   // 渲染时经 t() 现取,语言切换不冻结
   const [listLoadError, setListLoadError] = useState<
     { kind: "transport" } | { kind: "backend"; message: string } | null

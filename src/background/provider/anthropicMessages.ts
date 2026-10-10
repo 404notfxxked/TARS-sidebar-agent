@@ -1,6 +1,6 @@
 // Anthropic Messages 协议适配器:api.anthropic.com 及一切兼容端点(中转/网关)
 // 只做「内部格式 ⇄ anthropic-messages wire 格式」的双向转换;SSE 流式解析在共享层 sse.ts
-// 与 chatCompletions.ts 的结构对称:同样只发 stream:true,流中无重试(AGENTS.md「喂给模型的数据」)
+// 与 chatCompletions.ts 的结构对称:同样只发 stream:true,流中无重试
 
 import { apiFetch } from "./client";
 import { safeParse } from "./json";
@@ -190,8 +190,8 @@ export class AnthropicMessagesAdapter implements ChatProvider {
     // 回传口径按端点类别一次判定(见 isNativeAnthropicEndpoint):官方端点原样
     // 回传签名思考块与服务端工具块;兼容端点降形状。不做「先送、撞 400、再剥」
     // 的补救 —— 那条路每轮都要重付一次必然失败的请求,且报错文案是「thinking
-    // 未回传」,会把归因指向错误的方向(2026-09 修正;AGENTS.md 也禁止已开始的流
-    // 重放,这里连补救的余地都不留)
+    // 未回传」,会把归因指向错误的方向(2026-09 修正;已开始的流本就禁止重放,
+    // 这里连补救的余地都不留)
     const policy: ReplayPolicy = {
       native: isNativeAnthropicEndpoint(this.cfg.baseUrl),
     };

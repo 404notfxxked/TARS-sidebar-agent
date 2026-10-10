@@ -1,6 +1,6 @@
 // 长期记忆注入规划单测(shared/memory,面板与后台共用同一套):
 // token 粗估公式 / 置顶优先+最近更新优先 / 预算裁剪的不变式 / 跳过大条目继续装小的 /
-// 动态预算(按 contextTokens 缩放)/ 裁剪尾注。此前只有 verify-memory T3 的 e2e
+// 动态预算(按 contextTokens 缩放)/ 裁剪尾注。此前只有 verify-memory 的 e2e
 // 覆盖裁剪结果,这里把规划本身钉死。
 
 import { describe, expect, it } from "vitest";

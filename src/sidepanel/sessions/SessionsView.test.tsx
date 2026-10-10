@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// SessionsView 列表读取失败(REQ-P0-3 收尾):SESSIONS 回包带 error(存储
+// SessionsView 列表读取失败:SESSIONS 回包带 error(存储
 // 异常)时必须走错误态而非「还没有会话」空态 —— 存储异常呈现成数据消失是
 // 恐慌性误报;重试重发 LIST_SESSIONS,成功后错误态退场、列表出现。
 // 空会话(无 error)仍走既有空态,不误报。
@@ -48,7 +48,7 @@ function renderView() {
   );
 }
 
-describe("SessionsView 列表读取失败(REQ-P0-3 回归)", () => {
+describe("SessionsView 列表读取失败回归", () => {
   it("SESSIONS 回包带 error → 错误态而非空态;重试重发 LIST_SESSIONS,成功后列表出现", async () => {
     const user = userEvent.setup();
     const { port, listeners } = installPort();

@@ -29,7 +29,7 @@ export async function handleSessionMessage(
       // sessionId 必须回带:面板按「响应会话 == 当前会话」判定新鲜度,
       // 缺了它,快速切会话时旧回包会把 A 的转写盖上 B 的 id。
       // 兜底回包纪律(同 LIST_SESSIONS):读取抛错必须带 error 回包,
-      // 否则面板把存储异常伪装成空会话(REQ-P0-3 评审补漏)
+      // 否则面板把存储异常伪装成空会话
       try {
         const history = await loadHistory(msg.sessionId);
         const compaction = await getCompactionMark(msg.sessionId);
@@ -53,7 +53,7 @@ export async function handleSessionMessage(
     }
     case MSG.LIST_SESSIONS: {
       // 兜底回包纪律(port 消息 checklist):handler 抛错必须带 error 回包,
-      // 否则面板只能干等超时,且会把存储异常误读成「还没有会话」(REQ-P0-3)
+      // 否则面板只能干等超时,且会把存储异常误读成「还没有会话」
       try {
         const sessions = await listSessions();
         port.postMessage({ type: MSG.SESSIONS, sessions });
