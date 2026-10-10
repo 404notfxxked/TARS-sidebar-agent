@@ -6,7 +6,7 @@
 //   node tests/evals/run.mjs --case read-long-article --runs 1
 //   node tests/evals/run.mjs --mock                   # 无 key 自检:runner 链路探针
 //
-// 铁律(计划 §1):密钥只从环境变量读,任何输出不含 key / Authorization,
+// 铁律:密钥只从环境变量读,任何输出不含 key / Authorization,
 // baseUrl 只记 host;REAL 模式 env 不齐退出码 2;固定等待禁止;不对真站发
 // 请求(fixture 走路由回填)。--mock 模式 provider 种成 TEST_ENDPOINT_ORIGIN
 // + 罐头 SSE,只验证 runner 自身链路(直答探针 + fixture 链路探针),
@@ -99,8 +99,10 @@ if (!existsSync(EXT_DIR) || newestSrc > distMtime) {
 }
 
 /**
- * 判分口径内容哈希(per-case)——graders.mjs + 该 case 文件 + 该
- * case 引用的 fixture 文件(缺失跳过;路径名参与哈希防拼接歧义)。
+ * 判分口径内容哈希(per-case)——graders.mjs + lib-eval-driver.mjs
+ * (轨迹提取决定 graders 的全部输入,测量装置入 rev;lib-eval-env 只做
+ * 观测计数不进判分,不入)+ 该 case 文件 + 该 case 引用的 fixture 文件
+ * (缺失跳过;路径名参与哈希防拼接歧义)。
  * 口径变化(改判分/改 case/改 fixture)→ rev 变化 → 基线 diff 只列数值
  * 不标回归/改善,把「判分口径变了」与「模型行为变了」自动区分
  * (否则基线 diff 会把口径变化误读成模型回归/改善——G5 换口径时人工
@@ -111,6 +113,7 @@ function computeEvalRev({ casePath, fixturePath } = {}) {
   const h = createHash("sha256");
   const parts = [
     ["graders", join(__dirname, "graders.mjs")],
+    ["driver", join(__dirname, "lib-eval-driver.mjs")],
     ...(casePath ? [["case", casePath]] : []),
     ...(fixturePath ? [["fixture", fixturePath]] : []),
   ];
@@ -195,8 +198,8 @@ function fmtLog(e) {
  * 单次(case, run):独立 profile 全隔离 —— 启动 → 种配置 → 开 fixture 页
  * (除面板外唯一普通标签页,且是活动标签:page_* 工具的 tab 回退链落它)→
  * port 驱动提问(确认按策略)→ 轨迹提取 → case 判分 → 清理。
- * 返回 { jsonl, requests }:jsonl 进结果文件(不含请求规模计数 —— JSONL
- * 行形状按计划 §5 固定),requests 只进 stdout 花费口径。
+   * 返回 { jsonl, requests }:jsonl 进结果文件(不含请求规模计数 —— JSONL
+   * 行形状固定),requests 只进 stdout 花费口径。
  */
 async function runOnce({ c, runIndex, mode, env }) {
   const startedAt = Date.now();
@@ -704,7 +707,7 @@ function checkWriteToolMirror() {
     process.exit(2);
   }
   const pairs = [
-    ...block[1].matchAll(/([A-Za-z_]+)\s*:\s*"(page-write|persistent)"/g),
+    ...block[1].matchAll(/([A-Za-z_]+)\s*:\s*"([a-z-]+)"/g),
   ];
   if (pairs.length === 0) {
     console.error(
@@ -715,6 +718,18 @@ function checkWriteToolMirror() {
   const category = Object.fromEntries(
     pairs.map(([, name, cat]) => [name, cat]),
   );
+  // 值域只放行 [a-z-]+,新分类靠已知集显式拦截:confirmations.ts 若新增
+  // 第三分类,其工具会静默逃出镜像与判分覆盖——这里 fail-closed 退出 2,
+  // 强制人工同步 graders.mjs 的镜像口径,不靠类型自觉
+  const unknownCats = [
+    ...new Set(Object.values(category)),
+  ].filter((cat) => !["page-write", "persistent"].includes(cat));
+  if (unknownCats.length > 0) {
+    console.error(
+      `❌ 写工具镜像自检:TOOL_CATEGORY 出现未知分类「${unknownCats.join("、")}」——解析器需人工同步(新增分类须同步 graders.mjs 的镜像与判分口径)`,
+    );
+    process.exit(2);
+  }
   const srcKeys = Object.keys(category);
   const pageWriteKeys = srcKeys.filter((k) => category[k] === "page-write");
   const problems = [];
