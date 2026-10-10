@@ -7,6 +7,7 @@ import { MSG, PORT_NAME, type SessionMeta } from "../../shared/messages";
 import { createLogger } from "../../shared/logger";
 import { useConfirmDelete, useRowStagger, useT } from "../ui/hooks";
 import { SubPageEmpty } from "../ui/SubPageEmpty";
+import { SubPageError } from "../ui/SubPageError";
 import SkeletonRows from "../ui/SkeletonRows";
 import SubPageHeader from "../ui/SubPageHeader";
 import { TrashIcon } from "../ui/icons";
@@ -85,6 +86,10 @@ export default function SessionsView({
 }) {
   const t = useT();
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
+  // 列表读取失败(SESSIONS 回包带 error):显式错误态 + 重试,绝不复用
+  // 「还没有会话」空态文案 —— 存储异常呈现成数据消失是恐慌性误报(REQ-P0-3,
+  // 与记忆/技能页同口径;后台原文字段,语言切换展示后台原文,同 MEMORIES)
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
 
@@ -92,7 +97,10 @@ export default function SessionsView({
     const port = chrome.runtime.connect({ name: PORT_NAME });
     portRef.current = port;
     port.onMessage.addListener((evt) => {
-      if (evt.type === MSG.SESSIONS) setSessions(evt.sessions);
+      if (evt.type === MSG.SESSIONS) {
+        setSessions(evt.sessions);
+        setLoadError(evt.error ?? null);
+      }
     });
     port.postMessage({ type: MSG.LIST_SESSIONS });
     return () => {
@@ -194,7 +202,9 @@ export default function SessionsView({
 
       {/* 顶部不留 padding:组头吸顶后若上方有缝,行会从缝里露出来(间距在组头自身 padding 里) */}
       <div className="mx-auto w-full max-w-[560px] min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {sessions === null ? (
+        {loadError ? (
+          <SubPageError title={loadError} onRetry={refresh} />
+        ) : sessions === null ? (
           <SkeletonRows widths={[72, 55, 63, 46]} />
         ) : sessions.length === 0 ? (
           <SubPageEmpty

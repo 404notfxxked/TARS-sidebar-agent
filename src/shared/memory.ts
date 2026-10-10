@@ -27,6 +27,10 @@ export function memoryFooterText(dropped: number): string {
  *  「头注 + 条目 + 尾注」整体不破预算,而不是尾注加在预算外 */
 const MEMORY_FOOTER_RESERVE = estimateTokens(memoryFooterText(999));
 
+/** 段头预留:卡片与简条混合时注入块带 [profile]/[notes] 两个段头,成本计入
+ *  预留才真正「整体不破」;纯单形态无段头,多扣的 ~3 token 无害(保守方向) */
+const MEMORY_SECTION_HEADERS_RESERVE = estimateTokens("[profile]\n[notes]");
+
 /** 记忆粗分类:注入分组/记忆页徽标/二期蒸馏权重(tag 权重+年龄)共用。
  *  定稿依据:ChatGPT 记忆内容实证五类(身份/工作上下文/输出偏好/长期项目/禁则,
  *  归并为 work→project、禁则→preference);health 单列,作「低频但致命」类
@@ -70,6 +74,9 @@ export interface MemoryTextLike {
   text: string;
   pinned: boolean;
   updatedAt: number;
+  /** 条目 id:注入行渲染短 id 前缀,作模型可见的引用锚(replaceOf/delete
+   *  按 id 定位)。缺省不渲染前缀(仅测试桩会缺;生产 MemoryRow 恒有) */
+  id?: string;
   /** 卡片槽位名:有值即卡片态(注入渲染「key: text」,预算裁剪优先于简条;
    *  按 subject+key upsert) */
   key?: string;
@@ -84,11 +91,43 @@ export function isMemoryCard(r: Pick<MemoryTextLike, "key">): boolean {
   return typeof r.key === "string" && r.key.length > 0;
 }
 
-/** 单条注入行:卡片渲染「(subject) key: text」消歧,简条原文加「・」 */
+/** 注入行里的短 id:uuid 前 8 位 hex(16^8 ≈ 4e9,库存几十条,前缀歧义
+ *  由 resolveMemoryRef 显式报错兜住)。每行 +10 字符,在 200-2000 token
+ *  注入预算内无感;换来 replaceOf / memory_delete 的精确引用锚 */
+export function memoryShortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/** 单条注入行:短 id 前缀 + 卡片渲染「(subject) key: text」消歧,简条原文加「・」 */
 export function memoryLine(r: MemoryTextLike): string {
-  if (!isMemoryCard(r)) return `・${r.text}`;
+  const ref = r.id ? `[${memoryShortId(r.id)}] ` : "";
+  if (!isMemoryCard(r)) return `・${ref}${r.text}`;
   const subject = r.subject ? `(${r.subject}) ` : "";
-  return `・${subject}${r.key}: ${r.text}`;
+  return `・${ref}${subject}${r.key}: ${r.text}`;
+}
+
+/**
+ * 模型引用 → 库内条目(memory_save.replaceOf 与 memory_delete 按 id 共用)。
+ * 完整 id 精确命中;否则按短 id 前缀匹配,必须唯一 —— 歧义抛错报候选数
+ * (宁慢勿错:猜一条删错代价比让模型换长前缀高),零命中返回 null 由调用
+ * 方决定文案。ref 为空串返回 null。
+ */
+export function resolveMemoryRef<T extends { id: string }>(
+  rows: T[],
+  ref: string,
+): T | null {
+  const needle = ref.trim().toLowerCase();
+  if (!needle) return null;
+  const exact = rows.find((r) => r.id.toLowerCase() === needle);
+  if (exact) return exact;
+  const hits = rows.filter((r) => r.id.toLowerCase().startsWith(needle));
+  if (hits.length === 0) return null;
+  if (hits.length > 1) {
+    throw new Error(
+      `Memory id "${ref}" matches ${hits.length} entries; use a longer prefix`,
+    );
+  }
+  return hits[0];
 }
 
 /** 注入行列表:卡片在前、简条在后,两段都非空才加段头——单一形态不加,
@@ -143,7 +182,8 @@ export function planMemoryInjection<T extends MemoryTextLike>(
   let budget =
     memoryBudgetTokens(contextTokens) -
     estimateTokens(MEMORY_PREAMBLE) -
-    MEMORY_FOOTER_RESERVE;
+    MEMORY_FOOTER_RESERVE -
+    MEMORY_SECTION_HEADERS_RESERVE;
   const kept: T[] = [];
   const dropped: T[] = [];
   for (const r of sorted) {

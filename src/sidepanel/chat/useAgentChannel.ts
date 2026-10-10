@@ -6,6 +6,7 @@
 // setState 一律函数式或稳定 setter,首帧闭包因此安全。
 
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../ui/hooks";
 import {
   MSG,
   PORT_NAME,
@@ -13,6 +14,7 @@ import {
   type CompactionMark,
   type ImageMeta,
   type ProcessItem,
+  type SideToBg,
 } from "../../shared/messages";
 import { getActiveTabId } from "../../shared/contentTools";
 import { createLogger } from "../../shared/logger";
@@ -49,6 +51,14 @@ export interface ChatMsg {
   processItems?: ProcessItem[];
   /** 该消息在库里的 seq(仅历史回放有;压缩分隔条据此定位) */
   seq?: number;
+  /** 发送失败标记(REQ-P0-2,仅实况):消息从未抵达后台,渲染「未送达」+
+   *  重试入口;不落库(后台根本没收到),历史回放天然没有 */
+  sendFailed?: true;
+  /** 发送失败时的原提交参数(引用,不复制):重试走同一条提交路径 */
+  failedSubmit?: SubmitArgs;
+  /** 历史读取失败气泡(REQ-P0-3):重试语义是「重新拉取历史」而非
+   *  regenerate(重跑上一问),MessageList 据此分流挂线 */
+  historyError?: true;
 }
 
 export type AgentStatus = "idle" | "thinking" | "streaming";
@@ -78,6 +88,9 @@ export function useAgentChannel({
   resumeSessionId: string | null;
   onResumeDone: () => void;
 }) {
+  // 事件闭包经 ref 读最新状态,本 hook 的文案只有 regenerate 失败气泡一处,
+  // 随渲染闭包现取(React Compiler 把 useT 的 t 身份当依赖,语言切换即重算)
+  const t = useT();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   // 当前会话的压缩点(存在 = 更早的历史已压成摘要,列表里渲染分隔条)
   const [compaction, setCompaction] = useState<CompactionMark | null>(null);
@@ -214,6 +227,11 @@ export function useAgentChannel({
     // 响应会话 != 当前会话(请求后切走过)同样作废。
     // 内容无差异(断连时本来就空闲收尾)→ 不换不打扰
     if (evt.resync) {
+      // 重同步读取失败:断连提示气泡已在场,静默忽略(不打断对账语义)
+      if (evt.error) {
+        log.warn("chat", "resync load failed", { sessionId: evt.sessionId });
+        return;
+      }
       if (
         evt.sessionId !== sessionRef.current ||
         resyncSeqRef.current !== actionSeqRef.current
@@ -257,7 +275,24 @@ export function useAgentChannel({
     // 当前会话」的包 —— 快速切会话时先到的旧回包不能盖上新会话的 id
     // (曾因回包无 sessionId、靠「最后请求 == 当前会话」推断而串台)。
     // 本地已有该会话记录则保留本地(本地更新过/正在用),idempotent。
+    // 读取失败的回包:当前会话落错误气泡(存储异常不得伪装成空会话,
+    // REQ-P0-3 评审补漏);别的会话的错不串台
     if (evt.sessionId === sessionRef.current) {
+      // 错误文本先出窄化(setMessages 回调内属性收窄不保证)
+      const errorText = evt.error;
+      if (errorText) {
+        setMessages((ms) => [
+          ...ms,
+          {
+            role: "assistant",
+            content: errorText,
+            sessionId: evt.sessionId,
+            error: true,
+            historyError: true,
+          },
+        ]);
+        return;
+      }
       setMessages((ms) => {
         if (ms.some((m) => m.sessionId === evt.sessionId)) return ms;
         return evt.messages.map((m) => ({ ...m, sessionId: evt.sessionId }));
@@ -350,11 +385,31 @@ export function useAgentChannel({
       resyncPendingRef.current = false;
       const sid = resyncSessionRef.current;
       if (sid && sessionRef.current === sid && statusRef.current === "idle") {
-        port.postMessage({ type: MSG.LOAD_HISTORY, sessionId: sid, resync: true });
+        safeSend({ type: MSG.LOAD_HISTORY, sessionId: sid, resync: true });
       }
     }
 
     return port;
+  };
+
+  /**
+   * 用户动作触发的发送统一护栏(REQ-P0-2):postMessage 同步抛错(端口断开/
+   * 扩展上下文失效)= 消息从未抵达后台。返回是否送达;失败只留诊断日志,
+   * 可见反馈由各调用点自理(提交/重生成有失败态,其余自愈,见各自注释)。
+   * 「run 被拒」(会话忙)是另一类失败:后台回 AGENT_ERROR,走既有错误气泡,
+   * 与本护栏的「未送达」两种文案天然可区分。
+   */
+  const safeSend = (msg: SideToBg): boolean => {
+    try {
+      connect().postMessage(msg);
+      return true;
+    } catch (e) {
+      log.warn("chat", "send failed, message not delivered", {
+        type: (msg as { type?: string }).type,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return false;
+    }
   };
 
   /** 打开面板 = 一律新会话(历史去列表找):会话 id 在首次提交时才生成,
@@ -368,11 +423,12 @@ export function useAgentChannel({
     return { tabId: tabId ?? undefined, sessionId: sessionRef.current };
   };
 
-  // 加载某会话历史到面板(去重:同一会话不重复请求)
+  // 加载某会话历史到面板(去重:同一会话不重复请求)。
+  // 发送失败不挂失败态:端口断开 = 面板自身难保,且下次任何动作都会重连重拉
   const loadSessionHistory = (sessionId: string) => {
     if (sessionId === lastLoadedSessionRef.current) return;
     lastLoadedSessionRef.current = sessionId;
-    connect().postMessage({ type: MSG.LOAD_HISTORY, sessionId });
+    safeSend({ type: MSG.LOAD_HISTORY, sessionId });
   };
 
   // 从历史列表切回某会话:清空本地视图后向后端拉消息。
@@ -413,7 +469,7 @@ export function useAgentChannel({
   // biome-ignore lint/correctness/useExhaustiveDependencies: 仅挂载执行;connect 每渲染换身份,入依赖会反复断连 port,其闭包经 ref 读最新状态
   useEffect(() => {
     connect();
-    setImageSender((id) => connect().postMessage({ type: MSG.GET_IMAGE, id }));
+    setImageSender((id) => safeSend({ type: MSG.GET_IMAGE, id }));
     return () => {
       portRef.current?.disconnect();
       portRef.current = null;
@@ -441,20 +497,33 @@ export function useAgentChannel({
   const cancel = () => {
     log.info("chat", "cancel clicked", { sessionId: sessionRef.current });
     if (!sessionRef.current) return;
-    connect().postMessage({
-      type: MSG.CANCEL_RUN,
-      sessionId: sessionRef.current,
-    });
+    // 失败不自挂失败态:能断连必先经 onDisconnect,run 已被后台 abort,自愈
+    safeSend({ type: MSG.CANCEL_RUN, sessionId: sessionRef.current });
   };
 
-  // 重新生成:末条答案退场,同问重答。本地乐观清场(本轮答案在 runSegs,
-  // 末条 user 之后的本地气泡 = 历史答案/错误/系统提示一并退场),后台负责
-  // 截库(自末条 user 行含)并以原内容重跑;技能 /name 原文随库重走解析
+  // 重新生成:末条答案退场,同问重答。后台负责截库(自末条 user 行含)
+  // 并以原内容重跑;技能 /name 原文随库重走解析。
+  // 发送顺序有意「先发后截」(与提交路径相反):重生成的本地动作是破坏性的
+  // (截掉旧答案),postMessage 抛错 = 后台根本没收到、库未截 —— 此时本地
+  // 截断就丢了视图还无从恢复;发送失败改为落一条错误气泡,原视图不动。
+  // 同步窗口内无事件可插(单线程),发送成功后立刻乐观截断没有竞态
   const regenerate = () => {
     if (status !== "idle") return;
     const sid = sessionRef.current;
     if (!sid) return;
     log.info("chat", "regenerate", { sessionId: sid });
+    if (!safeSend({ type: MSG.REGENERATE, sessionId: sid })) {
+      setMessages((ms) => [
+        ...ms,
+        {
+          role: "assistant",
+          content: t("chat.sendFailedDetail"),
+          sessionId: sid,
+          error: true,
+        },
+      ]);
+      return;
+    }
     actionSeqRef.current += 1; // 本地动作:未决的断连重同步作废
     run.newRound();
     setMemorySaved(0);
@@ -472,14 +541,14 @@ export function useAgentChannel({
       });
       return lastUser === -1 ? ms : ms.slice(0, lastUser + 1);
     });
-    connect().postMessage({ type: MSG.REGENERATE, sessionId: sid });
   };
 
-  // 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)
+  // 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)。
+  // 失败不自挂失败态:端口断开 = 后台 run 已被 abort,确认对象已不存在,自愈
   const answerConfirm = (approved: boolean) => {
     if (!confirmReq) return;
     log.info("chat", "confirm answered", { approved, name: confirmReq.name });
-    connect().postMessage({
+    safeSend({
       type: MSG.CONFIRM_RESPONSE,
       requestId: confirmReq.requestId,
       approved,
@@ -504,9 +573,10 @@ export function useAgentChannel({
   };
 
   /** 提交用户消息:归档上一轮文本段 → 本地回显 → 开新一轮 → 发给后台。
-   *  附件预览 url 需在调用前经 cacheImgUrl 入缓存(回显气泡直接渲染);
-   *  输入框与待发附件的清理由视图侧自理 */
-  const submitUserMessage = (opts: SubmitArgs) => {
+   *  返回是否送达(REQ-P0-2):发送失败时乐观气泡转「未送达」并携带原参数,
+   *  返回 false —— 视图侧据此保留输入框草稿(含待发附件)不清空;
+   *  附件预览 url 需在调用前经 cacheImgUrl 入缓存(回显气泡直接渲染) */
+  const submitUserMessage = (opts: SubmitArgs): boolean => {
     sessionRef.current = opts.sessionId;
     setCurrentSession(opts.sessionId);
     actionSeqRef.current += 1; // 本地动作:未决的断连重同步作废
@@ -518,15 +588,15 @@ export function useAgentChannel({
       w,
       h,
     }));
-    setMessages((ms) => [
-      ...ms,
-      {
-        role: "user",
-        content: opts.text,
-        sessionId: opts.sessionId,
-        ...(metas.length ? { images: metas } : {}),
-      },
-    ]);
+    // 乐观回显气泡自建对象:发送失败时按对象身份精确转「未送达」,
+    // 不靠「末条一定是它」的位置推断(并发追加不会误伤别的消息)
+    const bubble: ChatMsg = {
+      role: "user",
+      content: opts.text,
+      sessionId: opts.sessionId,
+      ...(metas.length ? { images: metas } : {}),
+    };
+    setMessages((ms) => [...ms, bubble]);
     run.newRound(); // AGENT_STARTED 会再兜一次
     const uploads = (opts.images ?? []).map(({ mime, base64, w, h }) => ({
       mime,
@@ -534,7 +604,7 @@ export function useAgentChannel({
       w,
       h,
     }));
-    connect().postMessage({
+    const delivered = safeSend({
       type: MSG.USER_MESSAGE,
       payload: {
         text: opts.text,
@@ -543,6 +613,38 @@ export function useAgentChannel({
         ...(uploads.length ? { images: uploads } : {}),
       },
     });
+    if (!delivered) {
+      setMessages((ms) =>
+        ms.map((m) =>
+          m === bubble
+            ? { ...m, sendFailed: true, failedSubmit: opts }
+            : m,
+        ),
+      );
+      return false;
+    }
+    return true;
+  };
+
+  /** 重试加载会话历史(历史读取失败气泡的恢复动作)。
+   *  必须先清该会话的本地视图再重拉:applyHistory 的「本地已有该会话记录
+   *  则保留本地」幂等守卫会把成功回包整体丢弃,错误气泡在场时只重发不清场,
+   *  重试永远拿到同一条失败。清场顺带移除失败气泡本身。运行中不做
+   *  (与 openSession 同一 status 门控;该气泡只在空闲切会话时出现)。 */
+  const retryLoadHistory = (sessionId: string) => {
+    if (status !== "idle") return;
+    log.info("chat", "retry load history", { sessionId });
+    actionSeqRef.current += 1; // 本地动作:未决的断连重同步作废
+    lastLoadedSessionRef.current = ""; // 放开 loadSessionHistory 的去重守卫
+    setMessages((ms) => ms.filter((m) => m.sessionId !== sessionId));
+    loadSessionHistory(sessionId);
+  };
+
+  /** 重试未送达的提交(REQ-P0-2):移除对应墓碑气泡后走同一条提交路径
+   *  (参数引用对号,避免位置推断)。再次失败时新墓碑照常生成 */
+  const retrySubmit = (args: SubmitArgs): boolean => {
+    setMessages((ms) => ms.filter((m) => m.failedSubmit !== args));
+    return submitUserMessage(args);
   };
 
   return {
@@ -560,6 +662,8 @@ export function useAgentChannel({
     toggleGroup: run.toggleGroup,
     resolveContext,
     submitUserMessage,
+    retrySubmit,
+    retryLoadHistory,
     openSession,
     resetConversation,
     regenerate,

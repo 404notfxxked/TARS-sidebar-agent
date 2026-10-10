@@ -3,9 +3,10 @@
 // (useAgentChannel)仍归 ChatView 唯一持有。
 
 import type { RefObject } from "react";
-import type { AgentStatus, ChatMsg } from "./useAgentChannel";
+import type { AgentStatus, ChatMsg, SubmitArgs } from "./useAgentChannel";
 import type { RunSegment } from "./useRunSegments";
 import { ReplayProcessCard, RunZone } from "./trace";
+import { WarnIcon } from "../ui/icons";
 import {
   AssistantBubble,
   CompactionDivider,
@@ -32,6 +33,9 @@ export default function MessageList({
   memorySaved,
   onOpenMemory,
   onPickEmpty,
+  /** 重试未送达的提交(REQ-P0-2):挂在带 sendFailed 标记的用户气泡上 */
+  onRetrySend,
+  onRetryLoadHistory,
   atBottom,
   onJumpLatest,
 }: {
@@ -50,6 +54,9 @@ export default function MessageList({
   onOpenMemory: () => void;
   /** 空态 chips 点击:回填输入并聚焦 */
   onPickEmpty: (text: string) => void;
+  onRetrySend?: (args: SubmitArgs) => void;
+  /** 重试加载历史(历史读取失败气泡):重新拉取,而非 regenerate */
+  onRetryLoadHistory?: (sessionId: string) => void;
   atBottom: boolean;
   onJumpLatest: () => void;
 }) {
@@ -85,11 +92,12 @@ export default function MessageList({
   }
   // 错误重试挂点:与 lastAssistantIdx 同规则,只有末条就是错误气泡
   // 才挂 —— 重试 = regenerate(截到末条 user 重跑),挂在中间错误上
-  // 会让重试范围看起来比实际大
+  // 会让重试范围看起来比实际大。历史读取失败气泡不在此列:它的重试
+  // 语义是重新拉历史(onRetryLoadHistory),截库重跑上一问是灾难
   let lastErrorIdx = -1;
   if (runSegs.length === 0 && status === "idle") {
     const last = visible[visible.length - 1];
-    if (last && last.role === "assistant" && last.error) {
+    if (last && last.role === "assistant" && last.error && !last.historyError) {
       lastErrorIdx = visible.length - 1;
     }
   }
@@ -122,9 +130,30 @@ export default function MessageList({
               if (showDivider) dividerPlaced = true;
               const divider =
                 showDivider ? [<CompactionDivider key="ctx-div" />] : [];
+              // 未送达气泡的原参数先出窄化(回调内属性收窄不保证)
+              const failedSubmit = m.sendFailed ? m.failedSubmit : undefined;
               const node =
                 m.role === "user" ? (
-                  <UserBubble key={i} text={m.content} images={m.images} />
+                  // 未送达(REQ-P0-2):发送失败的乐观气泡带「未送达 + 重试」行,
+                  // 挂在气泡下方右对齐;重试 = 以气泡携带的原参数重走提交路径
+                  <div key={i} className="flex flex-col items-end gap-1">
+                    <UserBubble text={m.content} images={m.images} />
+                    {m.sendFailed && (
+                      <div className="flex items-center gap-1.5 text-[11.5px] text-error">
+                        <WarnIcon />
+                        <span>{t("chat.notDelivered")}</span>
+                        {onRetrySend && failedSubmit && (
+                          <button
+                            type="button"
+                            className="error-retry-btn"
+                            onClick={() => onRetrySend(failedSubmit)}
+                          >
+                            {t("chat.retry")}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ) : m.error ? (
                   // 失败轮:过程卡(如有)+ 错误气泡,与实况「过程卡 → 错误」同构
                   <div key={i} className="flex flex-col gap-1.5">
@@ -133,7 +162,13 @@ export default function MessageList({
                     )}
                     <ErrorBubble
                       text={m.content}
-                      onRetry={i === lastErrorIdx ? regenerate : undefined}
+                      onRetry={
+                        m.historyError
+                          ? () => onRetryLoadHistory?.(m.sessionId)
+                          : i === lastErrorIdx
+                            ? regenerate
+                            : undefined
+                      }
                     />
                   </div>
                 ) : m.notice ? (

@@ -12,9 +12,14 @@ import { runPageScreenshot } from "./screenshot";
 import {
   addMemory,
   deleteMemoriesByMatch,
+  deleteMemoryRef,
   loadMemories,
 } from "../memory/memoryStore";
-import { MEMORY_TAGS, type MemoryTag } from "../../shared/memory";
+import {
+  MEMORY_TAGS,
+  type MemoryTag,
+  memoryShortId,
+} from "../../shared/memory";
 import type { ToolSchema } from "../../shared/toolTypes";
 import { getMcpTool } from "../mcp/mcpManager";
 
@@ -129,6 +134,8 @@ registerTool<
     next_offset?: number | null;
     done?: boolean;
     truncated_total?: boolean;
+    sections_truncated?: boolean;
+    source_truncated?: boolean;
     headings?: { level: number; title: string }[];
     text?: string;
   }
@@ -136,7 +143,7 @@ registerTool<
   type: "function",
   name: "page_read",
   description:
-    "Read a window of page content by character offset (preserves the markdown structure of headings / lists / code blocks). Usage: offset comes from a page_outline outline item or a page_find match's pos; omit it to read from the top. A non-null next_offset in the result means more content follows — feed it back as offset to keep paging; done=true means you reached the end. headings is the chain of ancestor headings for this window. offset / pos are internal character offsets for tool positioning; when citing content to the user, refer to headings or original text, never numeric values.\nWhen to use: reading a specific section in context after surveying a long document; right after a page_find hit, read around pos; short pages can be read from the top in one call.\nWhen NOT to use: just checking whether a topic exists → page_find first; want the section list → page_outline.",
+    "Read a window of page content by character offset (preserves the markdown structure of headings / lists / code blocks). Usage: offset comes from a page_outline outline item or a page_find match's pos; omit it to read from the top. A non-null next_offset in the result means more content follows — feed it back as offset to keep paging; done=true means you reached the end of the SNAPSHOT, which is not always the whole page: truncated_total / sections_truncated / source_truncated mark a partial snapshot (document or per-section size caps, a cut capture), and the accompanying hint says so — content missing from the snapshot cannot be recovered by page_find or refresh; use web_fetch for the full text and do not present a partial read as the whole page. headings is the chain of ancestor headings for this window. offset / pos are internal character offsets for tool positioning; when citing content to the user, refer to headings or original text, never numeric values.\nWhen to use: reading a specific section in context after surveying a long document; right after a page_find hit, read around pos; short pages can be read from the top in one call.\nWhen NOT to use: just checking whether a topic exists → page_find first; want the section list → page_outline.",
   parameters: {
     type: "object",
     properties: {
@@ -163,6 +170,8 @@ registerTool<
       next_offset?: number | null;
       done?: boolean;
       truncated_total?: boolean;
+      sections_truncated?: boolean;
+      source_truncated?: boolean;
       headings?: { level: number; title: string }[];
       text?: string;
     }>("page_read", args),
@@ -219,6 +228,8 @@ registerTool<
     total_chars?: number;
     total_headings?: number;
     truncated_total?: boolean;
+    sections_truncated?: boolean;
+    source_truncated?: boolean;
     collapsed?: boolean;
     cutoff_level?: number;
     items?: { offset: number; level: number; title: string; descendant_headings?: number }[];
@@ -228,7 +239,7 @@ registerTool<
   type: "function",
   name: "page_outline",
   description:
-    "Read the page's heading outline. Each item has offset (usable directly as page_read's offset to jump to that section), level and title; very long documents auto-collapse deep subsections, and kept items carry a descendant_headings count. Also returns total_chars so you can gauge document size. Reading this first markedly cuts trial-and-error.\nWhen to use: answering \"what sections does this document have / how is it structured\", or as the opening map before close reading.\nWhen NOT to use: pages without heading structure return empty items (the hint says so) → use page_find; very short pages do not need an outline — page_read in full.",
+    "Read the page's heading outline. Each item has offset (usable directly as page_read's offset to jump to that section), level and title; very long documents auto-collapse deep subsections, and kept items carry a descendant_headings count. Also returns total_chars so you can gauge document size — note this is the size of the SNAPSHOT: truncated_total / sections_truncated / source_truncated in the result mean the snapshot only covers part of the page (the hint says what to do; web_fetch reads the full text). Reading this first markedly cuts trial-and-error.\nWhen to use: answering \"what sections does this document have / how is it structured\", or as the opening map before close reading.\nWhen NOT to use: pages without heading structure return empty items (the hint says so) → use page_find; very short pages do not need an outline — page_read in full.",
   parameters: {
     type: "object",
     properties: {
@@ -523,10 +534,13 @@ registerTool<
   },
   {
     saved: true;
+    /** 本条的短 id(注入行同款引用锚):下一轮 replaceOf / memory_delete 用 */
+    id: string;
     duplicate: boolean;
     upserted?: boolean;
     replaced?: boolean;
     total: number;
+    text: string;
   }
 >({
   type: "function",
@@ -561,7 +575,7 @@ registerTool<
       replaceOf: {
         type: "string",
         description:
-          "Id of an existing entry you can see in <user-memory>; its text is replaced by content. Use for corrections, not for adding new facts",
+          "Id of an existing entry you can see in <user-memory> — the 8-char short id in [brackets] at the start of its line (full id also works). Its text is replaced by content. Use for corrections, not for adding new facts",
       },
     },
     required: ["content"],
@@ -581,30 +595,53 @@ registerTool<
       },
     );
     const total = (await loadMemories()).length;
-    return { saved: true, duplicate, upserted, replaced, total, text: row.text };
+    // 回带短 id:注入行同款引用锚,模型下一轮即可按它 replaceOf/删除
+    return {
+      saved: true,
+      id: memoryShortId(row.id),
+      duplicate,
+      upserted,
+      replaced,
+      total,
+      text: row.text,
+    };
   },
 });
 
-registerTool<{ match: string }, { deleted: number; texts: string[] }>({
+registerTool<
+  { match?: string; id?: string },
+  { deleted: number; texts: string[] }
+>({
   type: "function",
   name: "memory_delete",
   write: true,
   description:
-    "Delete saved memories by keyword (substring match against memory text, case-insensitive; all matches are deleted together). Use when the user asks to \"forget / delete a memory\"; keep match precise to avoid deleting the wrong entries. The result lists what was actually deleted.",
+    "Delete saved memories. Two forms: by id — the 8-char short id in [brackets] at the start of an entry's line in <user-memory> (precise, deletes that single entry); or by keyword — substring match against memory text, case-insensitive, ALL matches are deleted together. Prefer id when you can see the entry; keep the keyword form precise to avoid deleting the wrong entries. The result lists what was actually deleted.",
   parameters: {
     type: "object",
     properties: {
+      id: {
+        type: "string",
+        description: "Short id from an entry's [brackets] in <user-memory> (full id also works); deletes exactly that entry",
+      },
       match: {
         type: "string",
-        description: "Match keyword (substring), e.g. \"cilantro\" deletes every memory containing it",
+        description: "Match keyword (substring), e.g. \"cilantro\" deletes every memory containing it — use only when no id is available",
       },
     },
-    required: ["match"],
   },
   execute: async (args) => {
-    const { count, deleted } = await deleteMemoriesByMatch(
-      typeof args?.match === "string" ? args.match : "",
-    );
+    // id 优先:精确删除是读写对称性的正道,子串匹配只作无锚时的兜底
+    if (typeof args?.id === "string" && args.id.trim()) {
+      const { text } = await deleteMemoryRef(args.id);
+      return { deleted: 1, texts: [text] };
+    }
+    if (typeof args?.match !== "string" || !args.match.trim()) {
+      throw new Error(
+        "Provide either the [bracketed] short id from <user-memory> (id) or a match keyword (match)",
+      );
+    }
+    const { count, deleted } = await deleteMemoriesByMatch(args.match);
     if (count === 0) {
       throw new Error(
         "No memory matched the keyword; retry with a more precise one, or tell the user to review / delete memories in Settings → Memory",

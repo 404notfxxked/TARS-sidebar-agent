@@ -392,6 +392,21 @@ export async function injectTestConfig(page, baseUrl = "https://api.test.example
  *  仍按调用点计数,基线只降不升) */
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** 状态轮询直至谓词满足(事件驱动等待的库内实现,不占套件的固定等待基线):
+ *  正向(waitForRunLog 同族)与负向断言(等某物「不出现」,如通知/副作用)
+ *  都用轮询形态,超时抛错并带上最后观测值,失败现场可读 */
+export async function pollUntil(get, predicate, label, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await get();
+    if (predicate(value)) return value;
+    if (Date.now() > deadline) {
+      throw new Error(`轮询超时: ${label}(最后观测: ${JSON.stringify(value)})`);
+    }
+    await sleep(300);
+  }
+}
+
 /**
  * 打开面板页并等其就绪,收敛各套件手抄的
  * 「newPage → goto → sleep →(注配置 → reload → sleep)」样板(曾 8 处内联)。

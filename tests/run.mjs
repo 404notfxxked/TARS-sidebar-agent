@@ -27,6 +27,8 @@ const SUITES = {
   cancel: "verify-cancel.mjs",
   "llm-errors": "verify-llm-errors.mjs",
   interact: "verify-interact.mjs",
+  "page-tools": "verify-page-tools.mjs",
+  notify: "verify-notify.mjs",
   confirm: "verify-confirm.mjs",
   "host-access": "verify-host-access.mjs",
   layout: "probe-layout.mjs", // 悬浮层硬规则的断言防线

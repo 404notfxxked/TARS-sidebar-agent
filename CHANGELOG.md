@@ -10,17 +10,24 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **长期记忆读写对称:注入行带短 id,删除/改写可精确锚定** — `<user-memory>` 注入行首新增 8 位方括号短 id(如 `・[a1b2c3d4] diet: 不吃香菜`),`memory_save` 的结果也回带本条短 id;模型的 `replaceOf`(改写)与 `memory_delete`(删除)接受该短 id 精确定位单条——此前 delete 只有按关键词的子串匹配(破坏性模糊删除),而 `replaceOf` 引用的 id 从未对模型可见,参数实际不可用。注入行因此每行加长约 10 字符,注入预算同步把段头成本计入预留,整体不破上限。
+
 ### Fixed
 
-- **长页面大节尾部内容不再静默丢失(模型可感知)** — 读页转写对超长章节此前只保留开头 4000 字且无任何提示,模型(和经它转述的你)无从察觉尾部缺失;现在截断发生时节末会出现「[本节超长,已省略 N 字]」省略量注记,模型可感知并如实转告。web_fetch 抓取页的转写同此。
+- **读页截断不再静默,模型可感知并可逃生** — 长文档单个小节超出长度上限被裁时:工具结果带 `sections_truncated` 标记并附指引(缺失内容在快照里无法找回,需全文时改用 `web_fetch`;有意不指向 refresh——重建快照对单节上限无效),转写正文的节末同时出现「[本节超长,已省略 N 字]」省略量注记,模型可感知并如实转告;页面 HTML 采样被截断时同样透出 `source_truncated`。`done` 的语义也在工具说明中写清:读到快照末尾不等于读完整页。web_fetch 抓取页的转写同此。
+- **发送失败不再静默丢失** — 后台进程刚被回收、连接断开的瞬间点发送:此前本地气泡已上屏、输入框已清空,但消息从未抵达后台,永远没有回答;现在发送走统一回执,失败时该条消息就地标「未送达」并附「重试」入口(按原内容与附件原样重发),输入框草稿与待发附件保留不清。重新生成的发送也改为先确认送达再截掉旧答案,发送失败时原回答不受影响。
+- **会话页加载失败不再伪装成空态** — 历史会话列表读取失败此前渲染成「还没有会话」,存储异常会被误读成数据全部丢失(恐慌性误报);现错误态就地示错并提供「重试」,与记忆/技能页同口径。同一纪律补齐对话区:会话内历史读取失败此前同样无提示(消息区静默空置),现落一条错误气泡明示原因,气泡上的「重试」重新拉取该会话历史(与 run 失败的「重试」重跑上一问是两回事,互不串线)。
+- **SPA 换路由后快照重建不再被吞** — 读页工具的 `refresh=true`(SPA 换路由后重建快照的唯一手段)此前会被同批并发的普通读页请求合并掉,拿到旧路由的快照;现 refresh 请求不再并入更早启动的普通构建,等其在飞构建收口后重新采集。
+- **搜索结果标题/摘要的截断不再劈开 emoji** — 标题/摘要按字符数截断时可能把 emoji(占两个码元)切成半个乱码字喂给模型与结果展示;现切点落在代理对中间时回退一位保住完整字符。
+- **智谱系端点的服务端搜索查询词不再落空** — `web_search_prime` 等方言端点的查询参数字段是 `input.search_query`,此前诊断日志与回放载体只认 `input.query`(查证「端点真的搜了」的唯一日志恒为空);现两字段统一识别,诊断与回放都能看到真实查询词。
 
 ### Added
 
 - **测试底座层归属确定性化(dev-facing)** — `tests/lib-cdp-mock.mjs`:Playwright ^1.62 起其路由层已能拦到扩展 Service Worker 发起的请求,与底座的手动 CDP 拦截层对同一请求成对命中(计数类 mock 路由会系统性双跳)。现 SW 请求由 CDP 层独占处理、pw 路由层识别后让渡,每请求恰被一层执行一次 handler;头注的设计前提表述已同步修正。
 
-- **evals 行为基线设施(dev-facing,不影响扩展运行时)** — 新增 `tests/evals/`:真模型 × 真扩展 × CDP fixture 页的最小评测集,程序化判分(pass^k 口径、JSONL 结果含 llmRequests 请求计数、answerHead 回答摘录与 evalRev 判分口径哈希,同模型+同 host 基线 diff 且口径变化自动不标回归/改善,无 LLM judge;写工具判分镜像有启动自检防源码漂移),四个单一场景 case——长文事实抽取(read-long-article)、截断诚实度(truncated-doc-honesty)、拒绝诚实度(confirm-deny-honesty)、再授权后完成(confirm-retry-completion,两段式 steps 驱动)。`pnpm evals` 运行,`--mock` 无 key 可自检(含两段式探针);REAL 模式密钥只从 `EVALS_BASE_URL` / `EVALS_API_KEY` / `EVALS_MODEL` 等环境变量读,不进任何输出。细则见 tests/README「evals」。
-
-## [1.5.0] - 2026-10-04
+- **evals 行为基线设施(dev-facing,不影响扩展运行时)** — 新增 `tests/evals/`:真模型 × 真扩展 × CDP fixture 页的最小评测集,程序化判分(pass^k 口径、JSONL 结果含 llmRequests 请求计数、answerHead 回答摘录与 evalRev 判分口径哈希,同模型+同 host 基线 diff 且口径变化自动不标回归/改善,无 LLM judge;写工具判分镜像有启动自检防源码漂移),四个单一场景 case——长文事实抽取(read-long-article)、截断诚实度(truncated-doc-honesty)、拒绝诚实度(confirm-deny-honesty)、再授权后完成(confirm-retry-completion,两段式 steps 驱动)。`pnpm evals` 运行,`--mock` 无 key 可自检(含两段式探针);REAL 模式密钥只从 `EVALS_BASE_URL` / `EVALS_API_KEY` / `EVALS_MODEL` 等环境变量读,不进任何输出。细则见 tests/README「evals」。## [1.5.0] - 2026-10-04
 
 ### Added
 

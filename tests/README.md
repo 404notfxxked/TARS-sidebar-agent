@@ -155,6 +155,8 @@ e2e 套件先 `pnpm build` 再跑(dist 过期时 run.mjs 警告并置红退出�
 | `cancel` | `verify-cancel.mjs` | 停止按钮链路(LLM 流中取消;与 web-search 的 H 场景互补) |
 | `llm-errors` | `verify-llm-errors.mjs` | LLM 端点异常路径:401 鉴权失败(明确错误不重试)/流中途错误帧(服务端文案透传)/网络层断连(Fetch.failRequest,重试耗尽)/finish_reason=length(截断上屏不报错) |
 | `interact` | `verify-interact.mjs` | 页面交互工具(独立 harness:esbuild 注入,不加载扩展;esbuild 为显式 devDep) |
+| `page-tools` | `verify-page-tools.mjs` | 读页三件套真实链路(面板→SW→offscreen→content 采样回填):outline→find→read 的 offset 体系/pos 续读/P0-1 截断标记(sections_truncated + web_fetch 指引,且不指 refresh)/正常页零误报 |
+| `notify` | `verify-notify.mjs` | run 结束通知:开关关闭不通知/开启后按实测判据定期望(自洽断言:可见+持焦⇒抑制,否则⇒产生;getAll 可观测)/取消不打扰(基线相对)。焦点分支语义由 notify.test.ts 单测钉住 |
 | `confirm` | `verify-confirm.mjs` | 写操作确认门(安全 V1 + 三档 confirmLevel):确认卡内容(目标页/写入/回车/定位;记忆族/外链族标题与内容)/拒绝 declined 回给模型/允许放行到内容层/web_fetch 出口判定(私网必卡/白名单命中直抓/白名单外逐个出卡 + 批准后同域复用)/三档矩阵(off:click/fill/memory 全程无卡真实分发;auto:click 免门、memory 仍过门拒绝 declined)/composer 档位 pill(场景 9:存储跟随/菜单切 strict 后弹卡 declined/菜单三项含 off 三档同权/单击切 off 下一轮全程无卡)/设置页安全分节(站点授权在场,档位反向断言);断言用 readRunLogs(run 窗口),mock 环境整轮 <100ms 时间窗会串 |
 | `host-access` | `verify-host-access.mjs` | 权限拒绝路径与生产注入路径(zero/dynamic flavor):未授权工具给可行动指引且 run 正常收口(find_elements / web_fetch)/授权态无静态 content script 时按需注入真实执行(sendMessage 失败 → executeScript → 重试) |
 | `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),悬浮层硬规则的自动化防线 |
