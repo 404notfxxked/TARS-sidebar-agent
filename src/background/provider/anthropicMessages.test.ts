@@ -7,7 +7,7 @@
 // 脏形态准绳在 chatCompletions.test.ts,此处不重复。
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AnthropicMessagesAdapter } from "./anthropicMessages";
+import { AnthropicMessagesAdapter, serverToolQuery } from "./anthropicMessages";
 import { apiFetch } from "./client";
 import { bytesToBase64 } from "../../shared/imageCodec";
 import type { ChatRequest, InternalMsg } from "./types";
@@ -644,6 +644,15 @@ describe("未知内容块(方言守卫)", () => {
 // 注入由适配器选项控制(配置侧已无独立开关:联网总开关开 = 该协议走服务端搜索,
 // 见 agent/runSetup);服务端块的聚合与回传是响应侧兼容性,始终启用。
 
+describe("服务端工具查询词提取(方言字段)", () => {
+  it("serverToolQuery:query 优先,缺省回退智谱方言 search_query,两者皆缺为 undefined", () => {
+    expect(serverToolQuery({ query: "a", search_query: "b" })).toBe("a");
+    expect(serverToolQuery({ search_query: "智谱查询词" })).toBe("智谱查询词");
+    expect(serverToolQuery({})).toBeUndefined();
+    expect(serverToolQuery(null)).toBeUndefined();
+  });
+});
+
 describe("服务端搜索注入", () => {
   /** 以指定 req 覆盖 + cfg 跑一轮文本流,返回发给 apiFetch 的 body */
   async function bodyOf(
@@ -818,6 +827,29 @@ describe("端点类别决定历史回传形状", () => {
       { type: "text", text: "https://a" },
       { type: "text", text: "找到一条" },
       { type: "tool_use", id: "t1", name: "page_read", input: { tabId: 1 } },
+    ]);
+  });
+
+  it("bridge:search_query 方言(智谱 web_search_prime)的查询词同样进回传载体", async () => {
+    const { body } = await runWith({ baseUrl: BRIDGE }, [
+      { role: "user", content: "查" },
+      {
+        role: "assistant",
+        content: "找到一条",
+        wireBlocks: [
+          {
+            type: "server_tool_use",
+            id: "srvtoolu_1",
+            name: "web_search",
+            input: { search_query: "智谱查询词" },
+          },
+          { type: "text", text: "找到一条" },
+        ],
+      },
+    ]);
+    expect((body.messages as Array<Record<string, unknown>>)[1].content).toEqual([
+      { type: "text", text: "[server tool: web_search: 智谱查询词]" },
+      { type: "text", text: "找到一条" },
     ]);
   });
 

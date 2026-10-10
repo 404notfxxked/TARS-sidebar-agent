@@ -384,7 +384,7 @@ function ReplayReasoningRow({ text }: { text: string }) {
 
 /** 回放过程卡:历史 run 投影的 processItems(思考/中间文案/工具调用+结果),
  *  折叠成只报步数的摘要 chip(耗时未落盘,不报时长),展开复用实况同一套
- *  行组件回看。由 ChatView 组合在收尾气泡上方 —— trace 已引用 AssistantBubble,
+ *  行组件回看。由 MessageList 组合在收尾气泡上方 —— trace 已引用 AssistantBubble,
  *  bubbles 反向导入会成环 */
 export function ReplayProcessCard({ items }: { items: ProcessItem[] }) {
   const t = useT();

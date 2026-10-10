@@ -13,6 +13,7 @@ import {
   LOG_HELLO_ACK,
   createLogger,
   installGlobalErrorHook,
+  staleLogKeys,
 } from "../shared/logger";
 import { runAgentLoop, type AgentPort } from "./agent/agent";
 import { zhCN } from "../shared/i18n/locales/zh-CN";
@@ -48,16 +49,17 @@ chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
   return false;
 });
 
-/** 清理已关闭 tab 的内容脚本日志 key(日志本体有环形上限,key 本身不限) */
+/** 清理内容脚本日志 key:已关闭 tab 的 log:tab:<id>,以及握手切走后遗留的
+ *  回退键 log:cs(日志本体有环形上限,key 本身不限;判定纯函数见 shared/logger) */
 async function pruneDeadTabLogKeys(): Promise<void> {
   try {
     const bag = await chrome.storage.local.get(null);
-    const tabKeys = Object.keys(bag).filter((k) => /^log:tab:\d+$/.test(k));
-    if (tabKeys.length === 0) return;
     const alive = new Set(
-      (await chrome.tabs.query({})).map((t) => t.id),
+      (await chrome.tabs.query({}))
+        .map((t) => t.id)
+        .filter((id): id is number => id !== undefined),
     );
-    const stale = tabKeys.filter((k) => !alive.has(Number(k.split(":")[2])));
+    const stale = staleLogKeys(Object.keys(bag), alive);
     if (stale.length > 0) await chrome.storage.local.remove(stale);
   } catch {
     /* 日志清理失败无关紧要 */

@@ -37,6 +37,29 @@ const REDACT_KEY_RE = /passw|pwd|secret|token|api[-_]?key|authorization/i;
 export const LOG_HELLO = "log_hello";
 export const LOG_HELLO_ACK = "log_hello_ack";
 
+/** content 副本未报到时的回退 storage key(与 content/log.ts 的本地字面量镜像) */
+export const CONTENT_LOG_FALLBACK_KEY = "log:cs";
+const CONTENT_LOG_TAB_KEY_RE = /^log:tab:(\d+)$/;
+
+/** SW 启动期该清理的日志 key:死 tab 的 log:tab:<id>,以及握手切走后遗留的
+ *  回退键 log:cs(仍在回退态的 content 副本下次 flush 会重建,无害)。
+ *  纯函数只做判定,清理动作由调用方执行 */
+export function staleLogKeys(
+  bagKeys: string[],
+  aliveTabIds: ReadonlySet<number>,
+): string[] {
+  const stale: string[] = [];
+  for (const k of bagKeys) {
+    if (k === CONTENT_LOG_FALLBACK_KEY) {
+      stale.push(k);
+      continue;
+    }
+    const m = CONTENT_LOG_TAB_KEY_RE.exec(k);
+    if (m && !aliveTabIds.has(Number(m[1]))) stale.push(k);
+  }
+  return stale;
+}
+
 let seqCounter = 0;
 
 function defaultKey(ctx: LogCtx): string {

@@ -19,7 +19,8 @@
     "icons:export": "node scripts/export-icons.mjs",
     "tokens:m3": "node scripts/generate-m3.mjs",
     "catalog:refresh": "node scripts/fetch-model-catalog.mjs",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "evals": "node tests/evals/run.mjs"
   },
   "dependencies": {
     "highlight.js": "^11.11.2",

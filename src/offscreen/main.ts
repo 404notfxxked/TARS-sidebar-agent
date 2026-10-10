@@ -3,7 +3,7 @@
 // DOC_TOOL_CALL / DOC_TOOL_INVALIDATE。快照缺失时向 SW 发 CAPTURE_DOC_REQUEST,
 // 由 SW 向目标 tab 的 content script 索取 HTML——本上下文没有 chrome.tabs /
 // chrome.scripting 权限面(offscreen 只开放 runtime 消息等子集),
-// 中继协议见 shared/docBridge.ts。
+// 中继协议见 shared/docBridge.ts(协议字面量两侧镜像,改动须同步)。
 
 import {
   buildVirtualDoc,
@@ -98,10 +98,11 @@ async function ensureSnapshot(tabId: number, refresh?: boolean): Promise<Virtual
       snapshots.set(tabId, { doc, capturedAt: Date.now() });
       lruEvict(snapshots, DOC_CACHE_MAX, (e) => e.capturedAt);
       // 快照重建是 page_* 工具最常见的第一跳,耗时与输入/输出体量记下来:
-      // htmlBytes 大而 mdChars 异常小 = 采集到了但解析/分节丢内容,排查入口
+      // htmlChars 大而 mdChars 异常小 = 采集到了但解析/分节丢内容,排查入口
+      // (字符数非字节;字节口径见 pipeline.ts 的 TextEncoder)
       log.info("doc", `快照已重建(tab ${tabId})`, {
         ms: Date.now() - startedAt,
-        htmlBytes: cap.html.length,
+        htmlChars: cap.html.length,
         url: cap.url || undefined,
         refresh: refresh === true,
         mdChars: doc.totalChars,

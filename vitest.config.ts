@@ -30,6 +30,16 @@ const coverageThresholds = {
     lines: 100,
   },
   "src/background/web/engineHealth.ts": { statements: 90, branches: 85, lines: 90 },
+  // 2026-10-10 known-issues 清账轮随补测钉上(searchParse 分支未盖为
+  // resolveHref 解析失败兜底;tokenBudget 未盖为防御性窄化与回落分支)
+  "src/background/web/domainFilter.ts": {
+    statements: 100,
+    branches: 100,
+    functions: 100,
+    lines: 100,
+  },
+  "src/offscreen/searchParse.ts": { statements: 92, branches: 70, functions: 100, lines: 97 },
+  "src/background/agent/tokenBudget.ts": { statements: 94, branches: 83, functions: 100, lines: 97 },
   "src/shared/i18n/**": { statements: 100, branches: 90, functions: 100, lines: 100 },
   // provider 层:双适配器改造时随新测试钉上(2026-09,Anthropic Messages)
   "src/background/provider/anthropicMessages.ts": { statements: 95, branches: 80, lines: 95 },

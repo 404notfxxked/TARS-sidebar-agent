@@ -454,8 +454,11 @@ console.log("\n===== T4. 单台宕机:其余工具照常 =====");
   const done = await runAsk("s-t4", "宕机隔离测试");
   check(done.type === "agent_done", "T4-1 run 正常收束");
   const names = (lastAgentBody.tools ?? []).map((t) => t.function?.name);
+  // wire 名形如 mcp_{server}_{tool}(shared/mcp.ts mcpWireName),精确匹配
+  // "mcp_Down_" 恒 false(近恒真断言);前缀匹配才是「Down 服务器零工具上线」
   check(
-    names.includes(WIRE_GET_ISSUE) && !names.includes("mcp_Down_"),
+    names.includes(WIRE_GET_ISSUE) &&
+      !names.some((n) => n.startsWith("mcp_Down_")),
     "T4-2 健康服务器工具在、宕机服务器工具不在",
     JSON.stringify(names),
   );

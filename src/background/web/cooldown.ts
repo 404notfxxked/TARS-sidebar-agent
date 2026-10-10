@@ -1,5 +1,6 @@
 // web_search 失败冷却(限流/不可达后短期跳过):API 通道(webSearch.ts)与
-// tab 通道(tabSearch.ts)共用同一张表——被标记的 id 不论走哪条路径都该跳。
+// tab 通道(tabSearch.ts)共用同一张表,但两通道处置不同——tab 通道两种
+// kind 都跳,API 通道只拦 blocked(unreachable 放行重试)。
 // 存 storage.session:浏览器会话内有效,SW 被杀重启也不丢;浏览器重开自动清零。
 // 本模块只收口状态读写,不收口日志:两跳的 warn 文案与字段名不同(provider
 // vs engine),由调用方各自记录。

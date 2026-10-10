@@ -118,7 +118,7 @@ describe("失败轮错误行(回放语义)", () => {
   });
 });
 
-describe("思考内容落盘(展示元数据,prompt 剥离)", () => {
+describe("思考内容全量落盘、prompt 不剥离(展示元数据)", () => {
   it("全量落盘:loadHistory 保留 reasoning_content", async () => {
     await saveHistory(
       "s7",

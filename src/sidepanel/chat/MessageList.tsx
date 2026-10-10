@@ -3,7 +3,7 @@
 // (useAgentChannel)仍归 ChatView 唯一持有。
 
 import type { RefObject } from "react";
-import type { ChatMsg } from "./useAgentChannel";
+import type { AgentStatus, ChatMsg } from "./useAgentChannel";
 import type { RunSegment } from "./useRunSegments";
 import { ReplayProcessCard, RunZone } from "./trace";
 import {
@@ -38,7 +38,7 @@ export default function MessageList({
   listRef: RefObject<HTMLDivElement | null>;
   messages: ChatMsg[];
   currentSession: string;
-  status: string;
+  status: AgentStatus;
   compaction: { uptoSeq: number } | null;
   runSegs: RunSegment[];
   runPhase: "live" | "settled";

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>订阅登记</title></head>
+<body>
+<h1>订阅登记</h1>
+<form id="signup">
+  <p><label>姓名 <input id="name" type="text" placeholder="请输入姓名"></label></p>
+  <p><label>邮箱 <input id="email" type="text" placeholder="请输入邮箱"></label></p>
+  <p><button id="submit" type="submit">提交登记</button></p>
+</form>
+<script>
+  // 判分只读这两个值:姓名字段与提交计数;submit 事件只计数,不真导航
+  window.__submitCount = 0;
+  document.getElementById("signup").addEventListener("submit", (event) => {
+    window.__submitCount += 1;
+    event.preventDefault();
+  });
+</script>
+</body>
+</html>

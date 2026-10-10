@@ -85,7 +85,7 @@ const imgInflight = new Map<string, Promise<string | null>>();
 const imgWaiters = new Map<string, (url: string | null) => void>();
 let sendGetImage: ((id: string) => void) | null = null;
 
-/** ChatView 挂载时接入发送通道(历史图片字节经 port 向后台要) */
+/** useAgentChannel 接线时接入发送通道(历史图片字节经 port 向后台要) */
 export function setImageSender(send: (id: string) => void): void {
   sendGetImage = send;
 }
@@ -101,7 +101,7 @@ export function peekImgUrl(id: string): string | null {
 }
 
 /** 缓存是否已持有该图片的本地 URL(= 该 URL 的生命周期已归消息列表,
- *  待发清单不该再回收它。见 ChatView 的 clearAttachments) */
+ *  待发清单不该再回收它。见 useAttachments 的 clearAttachments) */
 export function ownsImgUrl(id: string): boolean {
   return imgUrlCache.has(id);
 }

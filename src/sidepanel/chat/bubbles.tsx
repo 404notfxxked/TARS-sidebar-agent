@@ -43,7 +43,8 @@ import {
 } from "../ui/icons";
 import { peekImgUrl, requestImgUrl } from "./images";
 
-// markdown 渲染配置:引用保持稳定,配合 memo 让历史消息不因无关状态重渲染/重解析
+// markdown 渲染配置:引用保持稳定——模块级常量让编译器记忆化生效,
+// 历史消息不因无关状态重渲染/重解析(手写 memo 已删,见头注)
 const MD_REMARK: NonNullable<MarkdownOptions["remarkPlugins"]> = [remarkGfm];
 const MD_REHYPE: NonNullable<MarkdownOptions["rehypePlugins"]> = [
   [

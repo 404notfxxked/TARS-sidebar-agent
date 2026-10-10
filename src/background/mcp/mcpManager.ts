@@ -224,7 +224,7 @@ async function refreshServer(server: McpServerEntry): Promise<CacheEntry> {
       description: t.description ?? "",
       schema: normalizeInputSchema(t.inputSchema),
     })),
-    serverKey: sanitizeWirePart(server.name) || hostKey(server.url),
+    serverKey: sanitizeWirePart(server.name) || hostPortKey(server.url),
     fetchedAt: Date.now(),
   };
   cache.set(server.id, entry);
@@ -236,8 +236,10 @@ async function refreshServer(server: McpServerEntry): Promise<CacheEntry> {
   return entry;
 }
 
-/** 服务器没命名时的 key 兜底:主机名(端口号保留,防同主机不同端口互撞) */
-function hostKey(url: string): string {
+/** 服务器没命名时的 key 兜底:主机名+端口。与 web/outboundGuard.ts 的
+ *  hostKey 语义不同——那是白名单域名键(剥 www、不含端口),这里是
+ *  MCP 服务器去重键(保留端口,防同主机不同端口互撞) */
+function hostPortKey(url: string): string {
   try {
     const u = new URL(url);
     return u.hostname + (u.port ? `_${u.port}` : "");

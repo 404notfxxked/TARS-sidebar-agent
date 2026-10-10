@@ -26,7 +26,9 @@ export function allowlistDomainOf(rawUrl: string): string | null {
 
 /** 域名归一:小写、去尾点、去一层 www. 前缀(www.example.com ≡ example.com),
  *  IPv6 字面量的方括号一并剥掉(URL.hostname 对 IPv6 保留括号)。
- *  其余子域不通配:api.evil.tld 不因 evil.tld 在白名单而放行 */
+ *  其余子域不通配:api.evil.tld 不因 evil.tld 在白名单而放行。
+ *  与 mcp/mcpManager.ts 的 hostPortKey 区分:那是服务器去重键(保留端口),
+ *  这里是白名单键 */
 export function hostKey(hostname: string): string {
   const h = hostname
     .toLowerCase()

@@ -255,8 +255,8 @@ registerTool<
 
 // ---- 联网搜索 ----
 // 免 Key 方案:后台新开真实搜索引擎标签页(tabSearch.ts)→ 完整渲染后取
-// 整页 HTML → offscreen DOMParser 解析。引擎编排与兜底在 background/webSearch.ts,
-// 此处只做注册。描述按「少搜、搜准」纪律写:每次搜索都是一次真实页面访问,
+// 整页 HTML → offscreen DOMParser 解析。引擎编排与兜底在 tabSearch.ts +
+// engineHealth.ts(webSearch.ts 只剩路由与 API 通道),此处只做注册。描述按「少搜、搜准」纪律写:每次搜索都是一次真实页面访问,
 // 引导模型先宽后窄、引句逐字复制(凭记忆重打易错一字 → 精确匹配归零)、
 // 优先读结果而非重搜、每题至多三次。
 registerTool<WebSearchArgs, WebSearchResult>({
@@ -392,8 +392,13 @@ registerTool<
   {
     url?: string;
     viewport?: { w: number; h: number };
+    page?: {
+      scroll_y: number;
+      scroll_height: number;
+      viewport_height: number;
+      at_bottom: boolean;
+    };
     marks?: { n: number; selector: string; tag: string; role: string | null; label: string | null }[];
-    hint?: string;
     screenshot?: unknown;
   }
 >({
