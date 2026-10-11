@@ -643,10 +643,16 @@ if (ACCENTS_ONLY) {
   await shot(page, "1-chat-light");
   console.log(`  会话可见: ${await page.getByText("核心变化").count()}`);
 
-  // 模型弹层
+  // 模型弹层(两级:摘要栏 → 面板 + 模型列表)
+  await page
+    .locator(`button[aria-label="${zh.chat.modelThinkingAria}"]`)
+    .click();
+  await sleep(200);
   await page.locator(`button[aria-label="${zh.chat.selectModel}"]`).click();
   await sleep(300);
   await shot(page, "2-combo-light");
+  await page.keyboard.press("Escape");
+  await sleep(150);
   await page.keyboard.press("Escape");
   await sleep(200);
 

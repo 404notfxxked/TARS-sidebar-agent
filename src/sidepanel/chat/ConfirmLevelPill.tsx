@@ -56,8 +56,8 @@ export default function ConfirmLevelPill({
   const [activeIdx, setActiveIdx] = useState(0);
   const popRef = useRef<HTMLDivElement | null>(null);
   /** 菜单水平收偏:combo-pop--up 锚定锚点左缘向右伸(max-content 封顶
-   *  280px),而底行 pill 离面板左缘远(附件钮/模型 chip/思考 picker 都在
-   *  左边),窄侧栏下右侧放不下 —— 打开时量锚点位置,把菜单向左收,
+   *  280px),而档位 pill 在左簇(附件钮右侧),右边是模型/思考摘要栏与
+   *  发送键,窄侧栏下右侧放不下 —— 打开时量锚点位置,把菜单向左收,
    *  右缘贴视口(留 8px),左缘不低于 8px。0 = 不收(空间充足时维持左对齐) */
   const [shiftX, setShiftX] = useState(0);
 
@@ -116,7 +116,9 @@ export default function ConfirmLevelPill({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t("chat.confirmPillAria", { level: t(LEVEL_LONG[level]) })}
-        className={`flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium transition-colors duration-150 hover:bg-on-surface/8 ${
+        // 底色 hover 显形:与摘要栏同一视觉层级(工具条里两个下拉触发控件
+        // 同语言);off 的琥珀警示字色不受 hover 影响
+        className={`composer-pill flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors duration-150 hover:bg-on-surface/8 ${
           level === "off"
             ? "text-warning"
             : "text-on-surface-variant hover:text-on-surface"
@@ -126,7 +128,7 @@ export default function ConfirmLevelPill({
         <span className="flex items-center [&>svg]:my-0">
           <Icon />
         </span>
-        <span>{t(LEVEL_SHORT[level])}</span>
+        <span className="whitespace-nowrap">{t(LEVEL_SHORT[level])}</span>
         <svg
           width="10"
           height="10"
@@ -137,7 +139,7 @@ export default function ConfirmLevelPill({
           strokeLinecap="round"
           strokeLinejoin="round"
           aria-hidden="true"
-          className="shrink-0"
+          className="composer-pill-chevron shrink-0"
         >
           <path d="m6 3.5 4.5 4.5L6 12.5" />
         </svg>

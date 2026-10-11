@@ -428,8 +428,9 @@
     transform: rotate(90deg);
   }
 
-  /* 浮层基座(聊天区模型选择弹层):M3 menu —— container 底、xs 圆角、2 级海拔,
-     菜单项全出血方角(状态层贴边),不再是旧圆角卡片 */
+  /* 浮层基座(聊天区模型选择弹层):container 底、2 级海拔,菜单项全出血
+     方角(状态层贴边)。圆角跟容器语言走 lg(16):弹层是面板级表面,嵌套
+     行(md12)+ 面板内边距 4 同心(16 = 12 + 4),不再用 xs 小圆角包大圆角 */
   .combo-pop {
     position: absolute;
     z-index: 20;
@@ -439,7 +440,7 @@
     overscroll-behavior: contain;
     padding: 6px 0;
     background: var(--md-sys-color-surface-container);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-2);
   }
   /* 从锚点上方弹出;宽度随内容,封顶防溢出面板(超长 ID 截断) */
@@ -464,6 +465,20 @@
   .combo-pop--list {
     padding-top: 0;
     padding-bottom: 0;
+  }
+  /* 选择器菜单面板(composer 摘要栏弹出):右缘对齐锚点 —— 摘要栏贴着
+     发送键,面板向左伸,窄面板下永不越右缘(--up 的左对齐会溢出) */
+  .combo-pop--up-right {
+    left: auto;
+    right: 0;
+  }
+  /* 二级菜单面板:容纳整行触发钮;行触发的二级列表是 absolute 子元素,
+     面板自身的 overflow/max-height 会把它裁掉,这里放开。行数固定(≤3)
+     无需滚动,二级列表的自滚不受影响 */
+  .combo-pop--menu {
+    overflow: visible;
+    max-height: none;
+    padding: 4px;
   }
   /* / 技能菜单:输入条上方全宽弹出(锚 = 输入表单容器),双行选项 */
   .skill-pop {
@@ -862,4 +877,14 @@
   .model-row-action-danger.confirming {
     font-weight: 600;
   }
+}
+
+/* 弹层列表滚动条:默认隐形、悬停弹层时显形(先例:代码块横滚条)。
+   浮层是瞬态表面,常驻滚动条悬在面板边缘像破损;滚轮/触摸滚动始终可用。
+   写在 layers 外:specificity 压过 base.css 的全局滚动条(thumb 上色) */
+.combo-pop::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.combo-pop:hover::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant);
 }

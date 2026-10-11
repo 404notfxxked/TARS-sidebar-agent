@@ -1,9 +1,9 @@
 // 输入区的思考程度选择器:当前模型被判定为推理模型且目录有该模型的档位
-// 数据时才渲染(可见性由调用侧判)。pill 触发钮 + 向上 combo-pop,与
-// ModelPicker 同款交互(点外/Esc 关闭);选择写回该模型的 reasoningEffort
-// (持久,聊天里改的是该模型的默认),发送侧由 agent 按能力标记门控。
-// 选项不含「不发送」这类隐式状态:关(如支持)与各档位,未选择时由调用侧
-// 传折中默认档,显示与实际发送永远一致。
+// 数据时才渲染(可见性由调用侧判)。标签左、值右的整行触发钮 + 向上
+// combo-pop,与 ModelPicker 同款交互(点外/Esc 关闭);选择写回该模型的
+// reasoningEffort(持久,聊天里改的是该模型的默认),发送侧由 agent 按
+// 能力标记门控。选项不含「不发送」这类隐式状态:关(如支持)与各档位,
+// 未选择时由调用侧传折中默认档,显示与实际发送永远一致。
 
 import { useEffect, useRef, useState } from "react";
 import type { TFn } from "../../shared/i18n";
@@ -63,17 +63,18 @@ export default function ThinkingPicker({
   }, [open]);
 
   return (
-    <div ref={popRef} className="relative min-w-0">
+    <div ref={popRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t("chat.thinkingLevel")}
-        className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-[12px] font-medium transition-colors duration-150 hover:bg-on-surface/8"
       >
-        <span>
-          {t("chat.thinking")} · {effortLabel(t, value)}
+        <span className="shrink-0 text-on-surface">{t("chat.thinkingLevel")}</span>
+        <span className="min-w-0 flex-1 truncate text-right font-normal text-on-surface-variant">
+          {effortLabel(t, value)}
         </span>
         <svg
           width="10"
@@ -94,7 +95,8 @@ export default function ThinkingPicker({
         <div
           role="listbox"
           aria-label={t("chat.thinkingLevel")}
-          className="combo-pop combo-pop--up combo-pop--list"
+          // 右锚同 ModelPicker:面板贴右缘,列表向左伸不越视口
+          className="combo-pop combo-pop--up combo-pop--up-right combo-pop--list"
         >
           {options.map((token) => {
             const selected = value === token;

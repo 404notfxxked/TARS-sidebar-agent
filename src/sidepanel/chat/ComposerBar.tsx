@@ -8,8 +8,7 @@ import type { ConfirmLevel, ProviderEntry } from "../../shared/configStore";
 import type { AgentStatus } from "./useAgentChannel";
 import type { PendingImage } from "./images";
 import ConfirmLevelPill from "./ConfirmLevelPill";
-import ModelPicker from "./ModelPicker";
-import ThinkingPicker from "./ThinkingPicker";
+import ModelThinkingBar from "./ModelThinkingBar";
 import SkillMenu from "./SkillMenu";
 import { ArrowUpIcon, ImageIcon, StopIcon } from "../ui/icons";
 import { useT } from "../ui/hooks";
@@ -130,13 +129,14 @@ export default function ComposerBar({
     el.style.overflowY = el.scrollHeight > 116 ? "auto" : "hidden";
   }, [input, chatInputRef]);
 
+  // composer 类是窄面板紧凑档的样式钩子(chat.css 媒体查询)
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit();
       }}
-      className="relative mx-auto mb-3 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
+      className="composer relative mx-auto mb-3 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high transition-colors duration-200 focus-within:bg-surface-container-highest"
     >
       {pendingImages.length > 0 && (
         <div className="flex flex-wrap gap-2 px-3.5 pt-2">
@@ -234,7 +234,9 @@ export default function ComposerBar({
           className="block w-full resize-none bg-transparent py-1 text-[13px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant"
         />
       </div>
-      <div className="flex items-center gap-2 px-2 pb-2 pt-0.5">
+      {/* 工具条永不折行:摘要栏别名可截断吸收挤压,最窄档位由紧凑档媒体
+          查询缩按钮保单行(composer-toolbar 是 chat.css 的样式钩子) */}
+      <div className="composer-toolbar flex items-center gap-2 px-2 pb-2 pt-0.5">
         <input
           ref={fileInputRef}
           type="file"
@@ -251,56 +253,51 @@ export default function ComposerBar({
           onClick={() => fileInputRef.current?.click()}
           aria-label={t("chat.addImage")}
           title={visionOk ? t("chat.addImage") : t("chat.visionOffTitle")}
-          className="icon-btn"
+          className="icon-btn shrink-0"
         >
           <ImageIcon />
         </button>
-        {providers.some((p) => p.models.length > 0) && (
-          <ModelPicker
+        <ConfirmLevelPill level={confirmLevel} pick={pickConfirmLevel} />
+        <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          {/* 模型/思考摘要栏(点开上方弹出选择面板);无可用模型时整区
+              不渲染,右簇只剩发送 */}
+          <ModelThinkingBar
             providers={providers}
             modelProvider={modelProvider}
             modelId={modelId}
-            onPick={pickModel}
+            onPickModel={pickModel}
+            showThinking={showThinking}
+            thinkingOptions={thinkingOptions}
+            thinkingDefault={thinkingDefault}
+            reasoningEffort={reasoningEffort}
+            onPickThinking={setThinkingEffort}
           />
-        )}
-        {showThinking && thinkingOptions && (
-          <ThinkingPicker
-            options={thinkingOptions}
-            value={
-              reasoningEffort ??
-              thinkingDefault ??
-              // 类型兜底:showThinking 已蕴含 options 非空,运行时不可达
-              (thinkingOptions.includes("off") ? "off" : thinkingOptions[0])
+          {/* 发送/停止是同一个按钮:状态切换不换元素,焦点不掉(键盘用户
+              停止后 space 仍是同一颗键)。36px 与 settings-btn 同高 —— M3
+              Expressive 的研究实测更大的主动作键命中更快;箭头用 SVG 不用
+              「↑」字形,字形光学尺寸随平台字体漂移。图标以 key 触发 msg-in
+              轻浮升过渡,状态翻转有 250ms emphasized 的完成感 */}
+          <button
+            type={status === "idle" ? "submit" : "button"}
+            onClick={status === "idle" ? undefined : onCancel}
+            disabled={
+              status === "idle" &&
+              !input.trim() &&
+              pendingImages.length === 0
             }
-            onPick={setThinkingEffort}
-          />
-        )}
-        <ConfirmLevelPill level={confirmLevel} pick={pickConfirmLevel} />
-        {/* 发送/停止是同一个按钮:状态切换不换元素,焦点不掉(键盘用户
-            停止后 space 仍是同一颗键)。36px 与 settings-btn 同高 —— M3
-            Expressive 的研究实测更大的主动作键命中更快;箭头用 SVG 不用
-            「↑」字形,字形光学尺寸随平台字体漂移。图标以 key 触发 msg-in
-            轻浮升过渡,状态翻转有 250ms emphasized 的完成感 */}
-        <button
-          type={status === "idle" ? "submit" : "button"}
-          onClick={status === "idle" ? undefined : onCancel}
-          disabled={
-            status === "idle" &&
-            !input.trim() &&
-            pendingImages.length === 0
-          }
-          aria-label={status === "idle" ? t("chat.send") : t("chat.stop")}
-          className={`icon-btn-filled ml-auto h-9 w-9 ${
-            status === "idle" ? "" : "error"
-          }`}
-        >
-          <span
-            key={status}
-            className="msg-in flex items-center justify-center"
+            aria-label={status === "idle" ? t("chat.send") : t("chat.stop")}
+            className={`icon-btn-filled h-9 w-9 shrink-0 ${
+              status === "idle" ? "" : "error"
+            }`}
           >
-            {status === "idle" ? <ArrowUpIcon /> : <StopIcon />}
-          </span>
-        </button>
+            <span
+              key={status}
+              className="msg-in flex items-center justify-center"
+            >
+              {status === "idle" ? <ArrowUpIcon /> : <StopIcon />}
+            </span>
+          </button>
+        </div>
       </div>
     </form>
   );

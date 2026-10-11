@@ -62,6 +62,8 @@ export const zhCN = {
     busySessionsHint: "当前回复结束后可查看历史会话",
     busyNewChatHint: "当前回复结束后可开始新对话",
     selectModel: "选择模型",
+    modelLabel: "模型",
+    modelThinkingAria: "模型与思考程度",
     thinkingLevel: "思考程度",
     thinking: "思考",
     thinkOn: "开",

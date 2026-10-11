@@ -1,13 +1,31 @@
-// 输入区的模型选择器:当前模型名 pill,点开按供应商分组的 listbox。
-// 自含开合状态与「点外/Esc 关闭」;↑↓/Home/End 键盘导航,Enter/Tab 选中
-// (焦点保持在触发钮上,高亮项经 aria-activedescendant 桥给读屏)。
-// 切换即写回 modelProvider + model 两字段(由 onPick 回调实现),
-// 后台每轮 run 重读配置,下一轮生效。
+// 输入区的模型选择器:标签左、值右的整行触发钮,点开按供应商分组的
+// listbox。自含开合状态与「点外/Esc 关闭」;↑↓/Home/End 键盘导航,
+// Enter/Tab 选中(焦点保持在触发钮上,高亮项经 aria-activedescendant
+// 桥给读屏)。切换即写回 modelProvider + model 两字段(由 onPick 回调
+// 实现),后台每轮 run 重读配置,下一轮生效。
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { TFn } from "../../shared/i18n";
 import type { ProviderEntry } from "../../shared/configStore";
 import { hostOf } from "../../shared/url";
 import { useT } from "../ui/hooks";
+
+/** 当前引用模型的显示名:alias 优先,引用失效退 modelId,空配置退引导文案。
+ *  触发行与折叠摘要栏共用,单一出处防措辞漂移 */
+export function currentModelAlias(
+  providers: ProviderEntry[],
+  modelProvider: string,
+  modelId: string,
+  t: TFn,
+): string {
+  const curProvider =
+    providers.find((p) => p.id === modelProvider) ?? providers[0];
+  return (
+    curProvider?.models.find((m) => m.id === modelId)?.alias ||
+    modelId ||
+    t("chat.selectModel")
+  );
+}
 
 export default function ModelPicker({
   providers,
@@ -116,25 +134,25 @@ export default function ModelPicker({
       ?.scrollIntoView({ block: "nearest" });
   }, [activeIdx, open]);
 
-  // 引用失效时退回第一个供应商(配置刚写入/被清空的过渡态)
-  const curProvider =
-    providers.find((p) => p.id === modelProvider) ?? providers[0];
-  const curModels = curProvider?.models ?? [];
+  // 引用失效时退回第一个供应商(过渡态):仅用于弹层里的选中标记判定
+  const curProviderId =
+    (providers.find((p) => p.id === modelProvider) ?? providers[0])?.id;
 
   return (
-    <div ref={popRef} className="relative min-w-0">
+    <div ref={popRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t("chat.selectModel")}
-        className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-on-surface-variant transition-colors duration-150 hover:bg-on-surface/8 hover:text-on-surface"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-[12px] transition-colors duration-150 hover:bg-on-surface/8"
       >
-        <span className="min-w-0 truncate">
-          {curModels.find((m) => m.id === modelId)?.alias ||
-            modelId ||
-            t("chat.selectModel")}
+        <span className="shrink-0 font-medium text-on-surface">
+          {t("chat.modelLabel")}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-right text-on-surface-variant">
+          {currentModelAlias(providers, modelProvider, modelId, t)}
         </span>
         <svg
           width="10"
@@ -158,7 +176,8 @@ export default function ModelPicker({
           aria-activedescendant={`mp-opt-${activeIdx}`}
           // tabindex:aria-activedescendant 的容器必须可聚焦(ARIA 规范要求)
           tabIndex={0}
-          className="combo-pop combo-pop--up combo-pop--list"
+          // 右锚:面板贴着工具条右缘,列表向左伸不越视口(左锚会顶出滚动条)
+          className="combo-pop combo-pop--up combo-pop--up-right combo-pop--list"
         >
           {groups.map(({ provider: p, start }) => (
             // biome-ignore lint/a11y/useSemanticElements: listbox 内的 option 分组无语义等价元素,fieldset 会破坏结构
@@ -171,7 +190,8 @@ export default function ModelPicker({
               </div>
               {p.models.map((m, mi) => {
                 const idx = start + mi;
-                const selected = p.id === curProvider?.id && m.id === modelId;
+                const selected =
+                  p.id === curProviderId && m.id === modelId;
                 return (
                   <button
                     key={`${p.id}/${m.id}`}

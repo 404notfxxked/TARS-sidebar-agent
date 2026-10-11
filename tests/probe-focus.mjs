@@ -187,15 +187,22 @@ await page.keyboard.press("Escape");
 await sleep(250);
 ok((await activeLabel()) === zh.chat.askInput, "关历史页后焦点回输入框");
 
-// ---- G. 模型选择键盘导航 ----
+// ---- G. 模型选择键盘导航(两级:摘要栏 → 面板 → 模型行 → 列表) ----
 console.log("\nG. 模型选择键盘导航");
 const desc = () =>
   page.evaluate(() =>
     document.querySelector('[role="listbox"]')?.getAttribute("aria-activedescendant"),
   );
-const pill_ = page.locator(`button[aria-label="${zh.chat.selectModel}"]`);
-await pill_.click();
-await sleep(150);
+// 摘要栏:面板收起态也存在(工具条右簇);模型行:只在面板展开时渲染
+const bar_ = page.locator(`button[aria-label="${zh.chat.modelThinkingAria}"]`);
+const modelRow = page.locator(`button[aria-label="${zh.chat.selectModel}"]`);
+const openList = async () => {
+  await bar_.click();
+  await sleep(150);
+  await modelRow.click();
+  await sleep(150);
+};
+await openList();
 ok((await desc()) === "mp-opt-0", "打开时高亮停在当前选中(m1)");
 await page.keyboard.press("ArrowDown");
 ok((await desc()) === "mp-opt-1", "↓ 移动高亮(m2)");
@@ -204,12 +211,12 @@ ok((await desc()) === "mp-opt-2", "End 跳到末项(n1)");
 await page.screenshot({ path: `${OUT}/5-model-kbd.png` });
 await page.keyboard.press("Enter");
 await sleep(200);
+// 选中即收起整个面板:模型行卸载,摘要栏显示新 alias
 ok(
-  (await pill_.innerText()).includes("Nice One"),
-  "Enter 选中高亮模型(显示 alias)",
+  (await bar_.innerText()).includes("Nice One"),
+  "Enter 选中高亮模型(摘要栏显示 alias)",
 );
-await pill_.click();
-await sleep(150);
+await openList();
 ok((await desc()) === "mp-opt-2", "重开高亮落在当前选中");
 await page.keyboard.press("ArrowUp");
 await page.keyboard.press("Tab");
@@ -219,16 +226,22 @@ ok(
   "Tab 选中并关闭弹层",
 );
 ok(
-  !(await pill_.innerText()).includes("Nice One"),
+  !(await bar_.innerText()).includes("Nice One"),
   "Tab 路径选中了 m2(alias 消失)",
 );
-await pill_.click();
-await sleep(150);
+// 两级 Esc:第一层只收列表(面板保持),第二层收面板
+await openList();
 await page.keyboard.press("Escape");
 await sleep(150);
 ok(
-  !(await page.evaluate(() => !!document.querySelector('[role="listbox"]'))),
-  "Esc 关闭弹层",
+  (await modelRow.count()) === 1,
+  "第一层 Esc 只收列表,面板保持(模型行仍在)",
+);
+await page.keyboard.press("Escape");
+await sleep(150);
+ok(
+  (await modelRow.count()) === 0,
+  "第二层 Esc 收起面板(模型行卸载)",
 );
 
 console.log("\n✅ VERDICT: PASS — 截图在 /tmp/tars-focus/");

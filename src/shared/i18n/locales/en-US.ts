@@ -66,6 +66,8 @@ export const enUS = {
     busySessionsHint: "You can view chat history once the current reply finishes",
     busyNewChatHint: "You can start a new chat once the current reply finishes",
     selectModel: "Select a model",
+    modelLabel: "Model",
+    modelThinkingAria: "Model and thinking level",
     thinkingLevel: "Thinking level",
     thinking: "Thinking",
     thinkOn: "On",

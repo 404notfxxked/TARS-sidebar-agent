@@ -159,7 +159,7 @@ e2e 套件先 `pnpm build` 再跑(dist 过期时 run.mjs 警告并置红退出�
 | `notify` | `verify-notify.mjs` | run 结束通知:开关关闭不通知/开启后按实测判据定期望(自洽断言:可见+持焦⇒抑制,否则⇒产生;getAll 可观测)/取消不打扰(基线相对)。焦点分支语义由 notify.test.ts 单测钉住 |
 | `confirm` | `verify-confirm.mjs` | 写操作确认门(安全 V1 + 三档 confirmLevel):确认卡内容(目标页/写入/回车/定位;记忆族/外链族标题与内容)/拒绝 declined 回给模型/允许放行到内容层/web_fetch 出口判定(私网必卡/白名单命中直抓/白名单外逐个出卡 + 批准后同域复用)/三档矩阵(off:click/fill/memory 全程无卡真实分发;auto:click 免门、memory 仍过门拒绝 declined)/composer 档位 pill(场景 9:存储跟随/菜单切 strict 后弹卡 declined/菜单三项含 off 三档同权/单击切 off 下一轮全程无卡)/设置页安全分节(站点授权在场,档位反向断言);断言用 readRunLogs(run 窗口),mock 环境整轮 <100ms 时间窗会串 |
 | `host-access` | `verify-host-access.mjs` | 权限拒绝路径与生产注入路径(zero/dynamic flavor):未授权工具给可行动指引且 run 正常收口(find_elements / web_fetch)/授权态无静态 content script 时按需注入真实执行(sendMessage 失败 → executeScript → 重试) |
-| `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),悬浮层硬规则的自动化防线 |
+| `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),悬浮层硬规则的自动化防线;composer 窄宽度回归(320/280/250px 工具条单行、摘要栏与弹出面板无变形无溢出、浮层不推挤表体) |
 | `locale` | `probe-locale.mjs` | 语言切换:整树刷新/回首页/重载持久化 |
 | `focus` | `probe-focus.mjs` | 焦点与滚动体验:面板 autofocus/悬浮层关闭焦点回归/运行中输入框可编辑/「回到最新」出现-回底-消失/模型选择键盘导航(↑↓/Home/End/Enter/Tab/Esc)/历史搜索 autofocus |
 | `tool-labels` | `probe-en-tools.mjs` | 英文界面下工具行/摘要走面板字典(SW 侧中文 displayName 不泄漏);内置工具名 = 字典键映射,MCP 回退「服务器 · 工具名」 |

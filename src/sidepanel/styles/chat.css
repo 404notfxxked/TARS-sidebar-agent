@@ -527,3 +527,35 @@
   width: 28px;
   height: 28px;
 }
+
+/* composer 窄面板紧凑档(<320px):缩图标钮(32→24)、发送键(36→32)、
+   收间距与 pill 内边距、档位 pill 暂藏箭头,保工具条任何宽度单行不折。
+   视口宽 = 侧栏宽,媒体查询即面板宽查询。写在 layers 之外 —— 要压过
+   发送键 h-9 w-9 等尺寸工具类(utilities 层) */
+@media (max-width: 319px) {
+  .composer .icon-btn {
+    width: 24px;
+    height: 24px;
+  }
+  .composer .icon-btn-filled {
+    width: 32px;
+    height: 32px;
+  }
+  .composer .composer-toolbar {
+    gap: 6px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .composer .composer-pill {
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+  .composer .composer-pill-chevron {
+    display: none;
+  }
+  .composer {
+    width: calc(100% - 12px);
+  }
+}
