@@ -41,9 +41,9 @@ export type TextSeg = { kind: "text"; text: string; t: number };
 export type RunSegment = ToolSeg | ReasoningSeg | TextSeg;
 export type ProcessSeg = ToolSeg | ReasoningSeg;
 
-// 展开预览的截断阈值(字符):回放投影里的单条工具结果上限 12k
-// (sessionHistory PROCESS_RESULT_CAP_CHARS);实况读页窗口更大,思考/文案整段也不短;
-// 展开区配「复制」按钮,完整内容可取出
+/** 展开预览的截断阈值(字符):回放投影里的单条工具结果上限 12k
+ *  (sessionHistory PROCESS_RESULT_CAP_CHARS);实况读页窗口更大,思考/文案整段也不短;
+ *  展开区配「复制」按钮,完整内容可取出 */
 const PREVIEW_CHARS = 500;
 const REASONING_MAX_CHARS = 2000;
 
@@ -124,8 +124,8 @@ export function RunZone({
     );
   }
 
-  // live:按到达顺序交错。文本段先按气泡流式(它是否「中间文案」要等后续过程段
-  // 到达才能确定,settled 时统一重排进卡);连续过程段聚卡,已收口的思考行保留可回看
+  /** live:按到达顺序交错。文本段先按气泡流式(它是否「中间文案」要等后续过程段
+   *  到达才能确定,settled 时统一重排进卡);连续过程段聚卡,已收口的思考行保留可回看 */
   const parts: ReactNode[] = [];
   let group: { s: ProcessSeg; i: number }[] = [];
   const closeGroup = (endT: number) => {
@@ -178,9 +178,9 @@ function ProcessCard({
   open: boolean;
   onToggle: () => void;
 }) {
-  // live→settled 的收拢动画:翻转瞬间先以展开态渲染一帧(无过渡),下一帧放行
-  // 默认的 0fr 过渡,让「过程收成摘要 chip」是一次可见的高度收拢而非硬切。
-  // settled 单卡复用 live 首卡的 key(g{firstIdx}),实例跨相位保留,ref 才有意义
+  /** live→settled 的收拢动画:翻转瞬间先以展开态渲染一帧(无过渡),下一帧放行
+   *  默认的 0fr 过渡,让「过程收成摘要 chip」是一次可见的高度收拢而非硬切。
+   *  settled 单卡复用 live 首卡的 key(g{firstIdx}),实例跨相位保留,ref 才有意义 */
   const t = useT();
   const locale = useLocale();
   const prevPhase = useRef(phase);
@@ -228,8 +228,8 @@ function ProcessCard({
     .filter((s): s is ToolSeg => s.kind === "tool");
   const hasError = tools.some((tl) => tl.status === "error");
   const totalMs = Math.max(0, endT - rows[0].s.t);
-  // 折叠摘要只报一个总时长 + 步数(业界惯例 "Thought for 5s"/"Worked for 2m"
-  // 一律单一时长);思考耗时明细在展开区的各行里,不进摘要
+  /** 折叠摘要只报一个总时长 + 步数(业界惯例 "Thought for 5s"/"Worked for 2m"
+   *  一律单一时长);思考耗时明细在展开区的各行里,不进摘要 */
   const meta = tools.length
     ? t("chat.trace.stepsMeta", { dur: fmtDur(totalMs, locale) })
     : t("chat.trace.thoughtMeta", { dur: fmtDur(totalMs, locale) });

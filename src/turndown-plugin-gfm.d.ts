@@ -1,5 +1,5 @@
-// turndown-plugin-gfm 无官方类型(@types/turndown-plugin-gfm 不存在于 npm)
-// 手写最小声明:导出的是 TurndownService.Plugin 类型的 plugin 函数。
+/** turndown-plugin-gfm 无官方类型(@types/turndown-plugin-gfm 不存在于 npm)
+ *  手写最小声明:导出的是 TurndownService.Plugin 类型的 plugin 函数。 */
 declare module "turndown-plugin-gfm" {
   import type TurndownService from "turndown";
 

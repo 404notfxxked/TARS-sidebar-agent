@@ -37,8 +37,8 @@ export default function SettingsView({
   onOpenSkills: () => void;
 }) {
   const t = useT();
-  // 配置读齐才渲染分节:避免「默认空态闪一帧」;模型服务域(providers +
-  // 当前引用)提升到这里,压缩用模型下拉要与它保持同源
+  /** 配置读齐才渲染分节:避免「默认空态闪一帧」;模型服务域(providers +
+   *  当前引用)提升到这里,压缩用模型下拉要与它保持同源 */
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [domain, setDomain] = useState<ModelDomain | null>(null);
   // ── 保存反馈 ──
@@ -52,9 +52,9 @@ export default function SettingsView({
     flashTimer.current = window.setTimeout(() => setSavedFlash(false), 1200);
   }, []);
 
-  // 配置读取失败也要有出口:此前 then 无 catch,存储异常时 config 恒 null,
-  // 整页只剩顶栏(看起来像永久空白)。失败态 + 手动重试;不做自动重试循环
-  // (真故障时会无限刷)。
+  /** 配置读取失败也要有出口:此前 then 无 catch,存储异常时 config 恒 null,
+   *  整页只剩顶栏(看起来像永久空白)。失败态 + 手动重试;不做自动重试循环
+   *  (真故障时会无限刷)。 */
   const [loadError, setLoadError] = useState(false);
   const reloadConfig = useCallback(() => {
     setLoadError(false);

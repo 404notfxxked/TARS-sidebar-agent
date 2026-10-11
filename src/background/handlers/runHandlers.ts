@@ -22,9 +22,9 @@ export async function handleRunMessage(
   const { port, activeRuns, preparingSessions, sessionBusy, launchRun } = ctx;
   switch (msg.type) {
     case MSG.USER_MESSAGE: {
-      // 会话级防重:同会话已有 run 在途时拒绝(双窗口同会话 / 面板异步
-      // 门控的竞窗都会打到这)。面板在提交时乐观置 thinking,拒绝必须
-      // 回包(AGENT_ERROR 会让面板归位 idle 并显示错误),否则卡死在思考态
+      /** 会话级防重:同会话已有 run 在途时拒绝(双窗口同会话 / 面板异步
+       *  门控的竞窗都会打到这)。面板在提交时乐观置 thinking,拒绝必须
+       *  回包(AGENT_ERROR 会让面板归位 idle 并显示错误),否则卡死在思考态 */
       const sessionId = msg.payload.sessionId ?? crypto.randomUUID();
       if (sessionBusy(sessionId)) {
         log.warn("agent", "user message ignored, run in progress", {
@@ -57,8 +57,8 @@ export async function handleRunMessage(
       // 防重等价):中途不留「登记空窗」,哪条退出路径都不会漏放
       preparingSessions.add(msg.sessionId);
       try {
-        // 截库失败同样要回包:面板已乐观截断本地消息并置 thinking,静默
-        // 静默返回会把面板卡死在思考态(切会话/新对话都被 idle 门控拦住)
+        /** 截库失败同样要回包:面板已乐观截断本地消息并置 thinking,静默
+         *  静默返回会把面板卡死在思考态(切会话/新对话都被 idle 门控拦住) */
         let prep: UserMessagePayload | null = null;
         try {
           prep = await prepareRegenerate(msg.sessionId);

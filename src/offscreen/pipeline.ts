@@ -189,8 +189,8 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
     total += unit.length;
     return true;
   };
-  // 单节上限兜底:截断必须记账(透出为 sections_truncated),不许静默;
-  // 同时在节内补省略量注记(模型在转写正文里就能看到缺了多少)
+  /** 单节上限兜底:截断必须记账(透出为 sections_truncated),不许静默;
+   *  同时在节内补省略量注记(模型在转写正文里就能看到缺了多少) */
   const capSection = (full: string): string => {
     if (full.length > SECTION_MAX_CHARS) truncatedSections = true;
     return truncateWithNote(full, SECTION_MAX_CHARS);
@@ -198,14 +198,14 @@ export function buildVirtualDoc(meta: CaptureMeta): VirtualDoc {
 
   if (heads.length === 0) {
     const full = turndown.turndown(root);
-    // 全文路径不加节级注记:全局帽截断已有 truncated_total 标记,不重复
-    // 处理;注记只服务每节 4k 截断(那一路径此前无任何信号)
+    /** 全文路径不加节级注记:全局帽截断已有 truncated_total 标记,不重复
+     *  处理;注记只服务每节 4k 截断(那一路径此前无任何信号) */
     const { text } = truncateMarkdown(full, DOC_MAX_CHARS);
     pushPart(text);
     truncatedTotal = full.length > DOC_MAX_CHARS;
   } else {
-    // 前置节:首个标题之前的内容不属于任何标题节,单独补一段,
-    // 否则页面头部信息(常是标题/价格/核心区)静默丢失
+    /** 前置节:首个标题之前的内容不属于任何标题节,单独补一段,
+     *  否则页面头部信息(常是标题/价格/核心区)静默丢失 */
     const preamble = preambleText(parsed, root, heads[0]);
     if (preamble.trim() !== "") pushPart(capSection(preamble));
     for (let i = 0; i < heads.length; i++) {
@@ -284,8 +284,8 @@ function collectHeadings(root: HTMLElement): HTMLElement[] {
 function headingLevel(el: HTMLElement): number {
   const m = /^h([1-6])$/i.exec(el.tagName);
   if (m) return Number(m[1]);
-  // aria-level 是开放属性:畸形值(-1/1e99/非数字)不钳制会让 "#".repeat
-  // 抛 RangeError,整页解析在同一位置反复炸死 —— 一律钳回 1-6 或默认档
+  /** aria-level 是开放属性:畸形值(-1/1e99/非数字)不钳制会让 "#".repeat
+   *  抛 RangeError,整页解析在同一位置反复炸死 —— 一律钳回 1-6 或默认档 */
   const lv = el.getAttribute("aria-level");
   const n = lv ? Number(lv) : NaN;
   return Number.isInteger(n) && n >= 1 && n <= 6 ? n : 2;

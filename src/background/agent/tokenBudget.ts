@@ -10,8 +10,8 @@ import { createLogger } from "../../shared/logger";
 
 const log = createLogger({ ctx: "bg" });
 
-// 每张图片的 token 估值(detail auto、1600px 长边压缩后约 3~4 个 512px 块,
-// 宁可高估防超窗);随请求发送的字节预算与上下文窗口估算都靠它兜底
+/** 每张图片的 token 估值(detail auto、1600px 长边压缩后约 3~4 个 512px 块,
+ *  宁可高估防超窗);随请求发送的字节预算与上下文窗口估算都靠它兜底 */
 export const IMAGE_TOKEN_ESTIMATE = 1500;
 
 // ---- 工具结果预算(run 内) ----
@@ -28,9 +28,9 @@ export function enforceToolResultBudget(messages: InternalMsg[], budgetChars: nu
   const totalChars = () =>
     messages.reduce((n, m) => (m.role === "tool" ? n + m.content.length : n), 0);
   if (totalChars() <= budgetChars) return;
-  // 最新一条 tool 消息保留不截(模型下一步就要读它)—— 但单条自身超预算时
-  // 例外:不截的话一条超大 MCP 结果就能让整个预算机制失效,请求体量失控。
-  // 按预算半数截断保留头部,注记里声明原始体量,模型需要时可重新调用
+  /** 最新一条 tool 消息保留不截(模型下一步就要读它)—— 但单条自身超预算时
+   *  例外:不截的话一条超大 MCP 结果就能让整个预算机制失效,请求体量失控。
+   *  按预算半数截断保留头部,注记里声明原始体量,模型需要时可重新调用 */
   let lastToolIdx = -1;
   messages.forEach((m, i) => {
     if (m.role === "tool") lastToolIdx = i;
@@ -100,8 +100,8 @@ export function estimateRange(history: InternalMsg[], from: number): number {
  *  ctx.rows = 测量时刻(run 收口)的库总行数:promptTokens 覆盖到当时的
  *  全部历史(压缩会话 = 摘要 + 尾部,普通会话 = 全量),新增部分只有之后
  *  追加的行,按 rows 切与压缩与否无关 —— 旧实现用 prompt 消息条数(msgs)
- *  当切分点,压缩过的会话把摘要已覆盖的行重复计入,基线系统性虚高
- *  (审计 §1.1)。旧行无 rows(或越界,如库被清理)回落全量估算:
+ *  当切分点,压缩过的会话把摘要已覆盖的行重复计入,基线系统性虚高。
+ *  旧行无 rows(或越界,如库被清理)回落全量估算:
  *  粗一点,但不继承错基线 */
 export function estimateBaselineTokens(
   ctx: { promptTokens: number; rows?: number } | undefined,
@@ -119,7 +119,7 @@ export function estimateBaselineTokens(
  *  模块、同一测试文件钉住。只认三个落盘锚点,用结构类型而故意**不收
  *  persistedSeqs**(未滤库行数,error 行也占 seq):含错误行的会话里它
  *  > 已滤行数,混进算式会超出消费端已滤 history 的长度,实测基线被整轮
- *  丢弃(审计 §1.1 的错误行残留,tokenBudget.test.ts 锁此契约) */
+ *  丢弃(错误行会话的口径陷阱,tokenBudget.test.ts 锁此契约) */
 export function coveredLibraryRows(loop: {
   libraryRowsAtStart: number;
   savedUpTo: number;
@@ -143,10 +143,10 @@ export function trimHistoryForWindow(
   const limit = usableTokens(contextTokens, maxTokens);
   const sum = (from: number) => opts.currentEstimate + estimateRange(history, from);
   if (sum(0) <= limit) return history;
-  // 每轮起始 = isTurnStart(与 compaction.pickSplit 共享同一判定函数,轮的
-  // 单位契约单点在 compaction.ts;本函数的输入是装配后的 DB 历史,本就不含
-  // 合成块,共享判定是防未来输入域变化时两处漂移);从最旧的一轮开始
-  // 整轮丢弃,直到塞得下或只剩最后一轮
+  /** 每轮起始 = isTurnStart(与 compaction.pickSplit 共享同一判定函数,轮的
+   *  单位契约单点在 compaction.ts;本函数的输入是装配后的 DB 历史,本就不含
+   *  合成块,共享判定是防未来输入域变化时两处漂移);从最旧的一轮开始
+   *  整轮丢弃,直到塞得下或只剩最后一轮 */
   const roundStarts: number[] = [];
   history.forEach((m, i) => {
     if (isTurnStart(m)) roundStarts.push(i);

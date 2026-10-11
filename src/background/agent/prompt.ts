@@ -21,9 +21,9 @@ export async function buildUserContent(
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const tabs = await chrome.tabs.query({ currentWindow: true });
-  // TODO(tab 上限):tab 很多时每轮全量注入清单 token 成本高。合理做法:
-  //   激活 tab 置顶 + 按 lastAccessed 降序,只列前 ~20 个,超出标注"…还有 X 个未列出";
-  //   更彻底:context 只注入激活 tab,完整清单靠 get_tabs 工具按需获取(渐进式披露)。
+  /** TODO(tab 上限):tab 很多时每轮全量注入清单 token 成本高。合理做法:
+   *    激活 tab 置顶 + 按 lastAccessed 降序,只列前 ~20 个,超出标注"…还有 X 个未列出";
+   *    更彻底:context 只注入激活 tab,完整清单靠 get_tabs 工具按需获取(渐进式披露)。 */
   const tabLines = tabs.map((t) => {
     const mark = t.active ? "* " : "  ";
     return `${mark}tabId ${t.id ?? "?"}: ${t.title ?? ""} | ${t.url ?? ""}`;

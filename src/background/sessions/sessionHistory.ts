@@ -107,9 +107,9 @@ export async function saveHistory(
   if (freshRaw.length === 0) return;
   const imageRows = collectImageRows(sessionId, freshRaw);
   const fresh = freshRaw.map(persistableMsg);
-  // 思考落盘计量:只记 turns 与字节数,不记原文(诊断导出判据,日志隐私纪律)。
-  // 用于评估全量落盘的真实存储分布(2026-09-18 决策:全量落盘试运行);
-  // 日志按类 400 条环形淘汰,重用会滚掉更早的条目
+  /** 思考落盘计量:只记 turns 与字节数,不记原文(诊断导出判据,日志隐私纪律)。
+   *  用于评估全量落盘的真实存储分布(2026-09-18 决策:全量落盘试运行);
+   *  日志按类 400 条环形淘汰,重用会滚掉更早的条目 */
   const reasoningTurns = freshRaw.filter(
     (m): m is Extract<InternalMsg, { role: "assistant" }> =>
       m.role === "assistant" && !!m.reasoning_content,
@@ -126,8 +126,8 @@ export async function saveHistory(
   }
   const now = Date.now();
   const prev = await db.getSession(sessionId).catch(() => undefined);
-  // 可见条数增量维护:新会话从 0 起步;旧版本会话行没有该字段时全量扫一次
-  // 作为基线(此后每轮追加都是增量,7 天短命数据很快自愈)
+  /** 可见条数增量维护:新会话从 0 起步;旧版本会话行没有该字段时全量扫一次
+   *  作为基线(此后每轮追加都是增量,7 天短命数据很快自愈) */
   const freshVisible = freshRaw.filter((m) => isVisibleBubbleMsg(m)).length;
   const visibleBase = prev
     ? (prev.visibleCount ?? (await displayRowCount(sessionId)))
@@ -298,8 +298,8 @@ export async function prepareRegenerate(
   }
   if (!lastUser) return null;
   const user = lastUser.msg as Extract<InternalMsg, { role: "user" }>;
-  // 截断段可见气泡数(列表条数缓存同步扣减)与图片字节先于截断处理:
-  // 级联删除会清掉截断段引用的图片行(含本条 user 自己的),必须先水合
+  /** 截断段可见气泡数(列表条数缓存同步扣减)与图片字节先于截断处理:
+   *  级联删除会清掉截断段引用的图片行(含本条 user 自己的),必须先水合 */
   const doomed = rows.filter((r) => r.seq >= lastUser.seq);
   const visibleDelta = doomed.filter((r) => {
     const m = r.msg as InternalMsg;
@@ -613,8 +613,8 @@ export function toChatRecords(msgs: InternalMsg[]): ChatRecord[] {
       return;
     }
     if (m.content) {
-      // 最终回答:思考进卡,答案气泡留在卡外(与实况 settled 布局一致)——
-      // 正文是气泡不是过程文案,故 keepText=false
+      /** 最终回答:思考进卡,答案气泡留在卡外(与实况 settled 布局一致)——
+       *  正文是气泡不是过程文案,故 keepText=false */
       const items = pending;
       pending = [];
       items.push(...assistantItems(m, false));

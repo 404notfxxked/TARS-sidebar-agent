@@ -72,7 +72,7 @@ export interface SessionCompaction {
  *  库总行数。下次 run 用它 + 估算新增部分,得到比纯估算准的压缩触发基线。
  *  rows(2026-09-21 起)是切分点:promptTokens 覆盖测量前的全部历史
  *  (压缩会话 = 摘要+尾部),新增只有之后追加的行 —— 旧字段 msgs 记的
- *  是 prompt 消息条数,压缩过的会话口径错位(基线系统性虚高,审计 §1.1),
+ *  是 prompt 消息条数,压缩过的会话口径错位(基线系统性虚高),
  *  保留只为兼容旧数据;消费端以 rows 为准,无 rows 回落全量估算 */
 export interface SessionCtx {
   promptTokens: number;
@@ -357,11 +357,11 @@ export async function clearAllRows(): Promise<void> {
   await settled(tx);
 }
 
-// 会话前缀范围删:上界必须是「数组天花板」而非 Infinity。messages 第二键是
-// 数字(seq),images 第二键是字符串(uuid),而 IDB 键序里 number < string ——
-// [id, Infinity] 罩不住 [id, "uuid…"](曾致删会话永远漏删图片字节);
-// [id, []] 比任何 [id, 二键] 都大
-// (同前缀时短数组在前),两类 store 通吃
+/** 会话前缀范围删:上界必须是「数组天花板」而非 Infinity。messages 第二键是
+ *  数字(seq),images 第二键是字符串(uuid),而 IDB 键序里 number < string ——
+ *  [id, Infinity] 罩不住 [id, "uuid…"](曾致删会话永远漏删图片字节);
+ *  [id, []] 比任何 [id, 二键] 都大
+ *  (同前缀时短数组在前),两类 store 通吃 */
 function sessionRange(id: string): IDBKeyRange {
   return IDBKeyRange.bound([id], [id, []]);
 }

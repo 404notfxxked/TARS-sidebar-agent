@@ -86,9 +86,9 @@ export default function SessionsView({
 }) {
   const t = useT();
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
-  // 列表读取失败(SESSIONS 回包带 error):显式错误态 + 重试,绝不复用
-  // 「还没有会话」空态文案 —— 存储异常呈现成数据消失是恐慌性误报
-  // (与记忆/技能页同口径;后台原文字段,语言切换展示后台原文,同 MEMORIES)
+  /** 列表读取失败(SESSIONS 回包带 error):显式错误态 + 重试,绝不复用
+   *  「还没有会话」空态文案 —— 存储异常呈现成数据消失是恐慌性误报
+   *  (与记忆/技能页同口径;后台原文字段,语言切换展示后台原文,同 MEMORIES) */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);

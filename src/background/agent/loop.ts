@@ -31,8 +31,8 @@ const MAX_TURNS = 10;
  *  compaction 的整轮切分靠这个前缀识别「附件延续,不是新的一轮」 */
 const SCREENSHOT_NOTE = `${SYSTEM_NOTE_PREFIX} the page screenshot for the previous tool result is attached to this message. Mark numbers on the image match the marks table in that result; use those selectors to act.]`;
 
-// 步数耗尽后的收尾指令:只随最后一次「无工具」请求发送,不写入持久化历史。
-// 目的:让模型向用户交代进展与剩余步骤,而不是被无声砍断在工具调用中间。
+/** 步数耗尽后的收尾指令:只随最后一次「无工具」请求发送,不写入持久化历史。
+ *  目的:让模型向用户交代进展与剩余步骤,而不是被无声砍断在工具调用中间。 */
 const WRAP_UP_NUDGE = `<system-note>本轮可用的推理步数已用完,工具调用已停用。请直接向用户说明:目前完成了什么、还剩什么没做。不要调用工具。用户发送「继续」后,你可以从当前进度接着做。</system-note>`;
 
 /** 空回答守卫:端点一个正文字符都没给时不许放行。
@@ -266,7 +266,7 @@ export async function runTurns(
     // 本次回答。rows 走 coveredLibraryRows(已滤口径,与消费端 history 同一
     // 索引空间)+ 本轮新落盘条数 —— 算式与消费端同在 tokenBudget.ts、由
     // tokenBudget.test.ts 锁契约;与 prompt 条数无关,压缩/裁剪只改本轮
-    // prompt 形状,切分点永远成立(审计 §1.1 及其错误行残留)。撞窗紧急
+    // prompt 形状,切分点永远成立(错误行也已按已滤口径计入)。撞窗紧急
     // 压缩发生过的轮次例外:promptTokens 是「摘要 + 尾部投影」的实测,
     // 与库行覆盖对不上,宁可弃测回落纯估算,也不落一个错基线
     if (loop.lastUsage && !loop.emergency) {

@@ -41,8 +41,8 @@ export function useProviderFetch(
   const [fixTo, setFixTo] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => () => abortRef.current?.abort(), []);
-  // entry 的 ref 镜像:fetchList 在途期间用户可继续增删模型行,resolve 后
-  // 必须合并进「最新」的 entry.models,而不是闭包里的过期快照(失更新)
+  /** entry 的 ref 镜像:fetchList 在途期间用户可继续增删模型行,resolve 后
+   *  必须合并进「最新」的 entry.models,而不是闭包里的过期快照(失更新) */
   const entryRef = useRef(entry);
   entryRef.current = entry;
 
@@ -62,8 +62,8 @@ export function useProviderFetch(
       setFetchError(t("settings.baseUrlRequired"));
       return;
     }
-    // 按域授权:端点 origin 未授权时借本次点击发起授权请求;拒绝则不白打
-    // 一次注定 CORS 失败的请求(聊天用的同一授权,点击即生效)
+    /** 按域授权:端点 origin 未授权时借本次点击发起授权请求;拒绝则不白打
+     *  一次注定 CORS 失败的请求(聊天用的同一授权,点击即生效) */
     const endpoint = entry.baseUrl.trim();
     if (!(await ensureOriginAuthorized(endpoint))) {
       setFetchState("error");
@@ -83,9 +83,9 @@ export function useProviderFetch(
         ctl.signal,
         entryRef.current.kind,
       );
-      // 新增条目用 models.dev 快照 + 启发式预填;已有条目回填「从未设置」的
-      // 缺失字段——手动设置过/清空过的一律不碰。合并基线取 ref 镜像
-      // (fetch 在途时的手动增删已在最新 entry 里)
+      /** 新增条目用 models.dev 快照 + 启发式预填;已有条目回填「从未设置」的
+       *  缺失字段——手动设置过/清空过的一律不碰。合并基线取 ref 镜像
+       *  (fetch 在途时的手动增删已在最新 entry 里) */
       const cat = await loadCatalog();
       const map = new Map(entryRef.current.models.map((m) => [m.id, m]));
       for (const id of list) {

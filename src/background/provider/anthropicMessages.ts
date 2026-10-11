@@ -132,10 +132,10 @@ type SSEEvent = {
   error?: { message?: string };
 };
 
-// 内容块聚合状态(按 wire 下标):text / thinking / redacted_thinking /
-// tool_use / 服务端工具块。思考明文与签名各有 start 帧与 delta 两个来源,
-// 两者都留到收流时再定(见 resolveThinkingText/resolveSignature):
-// 桥接端点可能只给其中一路,同时给时以 delta 为准(避免拼接成双倍值)
+/** 内容块聚合状态(按 wire 下标):text / thinking / redacted_thinking /
+ *  tool_use / 服务端工具块。思考明文与签名各有 start 帧与 delta 两个来源,
+ *  两者都留到收流时再定(见 resolveThinkingText/resolveSignature):
+ *  桥接端点可能只给其中一路,同时给时以 delta 为准(避免拼接成双倍值) */
 type OpenBlock =
   | { kind: "text"; text: string; raw: Record<string, unknown>; citations: unknown[] }
   | { kind: "thinking"; startText: string; startSig: string; deltaText: string; deltaSig: string }
@@ -187,16 +187,16 @@ export class AnthropicMessagesAdapter implements ChatProvider {
       ...toWireTools(req.tools, this.cfg.serverWebSearch === true),
       stream: true,
     };
-    // 回传口径按端点类别一次判定(见 isNativeAnthropicEndpoint):官方端点原样
-    // 回传签名思考块与服务端工具块;兼容端点降形状。不做「先送、撞 400、再剥」
-    // 的补救 —— 那条路每轮都要重付一次必然失败的请求,且报错文案是「thinking
-    // 未回传」,会把归因指向错误的方向(2026-09 修正;已开始的流本就禁止重放,
-    // 这里连补救的余地都不留)
+    /** 回传口径按端点类别一次判定(见 isNativeAnthropicEndpoint):官方端点原样
+     *  回传签名思考块与服务端工具块;兼容端点降形状。不做「先送、撞 400、再剥」
+     *  的补救 —— 那条路每轮都要重付一次必然失败的请求,且报错文案是「thinking
+     *  未回传」,会把归因指向错误的方向(2026-09 修正;已开始的流本就禁止重放,
+     *  这里连补救的余地都不留) */
     const policy: ReplayPolicy = {
       native: isNativeAnthropicEndpoint(this.cfg.baseUrl),
     };
-    // 回传材料形状入日志:只记块类型与签名长度,不记正文(日志隐私判据)——
-    // 验证端点行为时导出诊断即可看到实际送出去的块
+    /** 回传材料形状入日志:只记块类型与签名长度,不记正文(日志隐私判据)——
+     *  验证端点行为时导出诊断即可看到实际送出去的块 */
     const shape = assistantEchoShape(req.messages, policy);
     if (shape) {
       log.debug("provider", "assistant wire blocks", {
@@ -351,13 +351,13 @@ export class AnthropicMessagesAdapter implements ChatProvider {
       .map(resolveThinkingText);
     const hasThinking = thinkingTexts.some((t) => t.length > 0);
 
-    // 回传材料:非 tool_use 块**按 wire 原序**收进 wireBlocks(本地 tool_use 由
-    // agent 侧从 toolCalls 重建,不在此列)。顺序必须保真 —— 服务端工具轮里思考
-    // 块会在搜索结果之后再次出现,回传形状由 toEchoBlock 按端点类别决定
-    // (native 原序原样;bridge 保序降形状,见 ReplayPolicy)。
-    // 纯文本轮不产 wireBlocks:正文已由 content 承载,回传侧按 content 重建单个
-    // 文本块(零额外存储);有思考/服务端块时才把文本块一并纳入,连 citations
-    // 这类附加字段与它的相对位置一起保住。
+    /** 回传材料:非 tool_use 块**按 wire 原序**收进 wireBlocks(本地 tool_use 由
+     *  agent 侧从 toolCalls 重建,不在此列)。顺序必须保真 —— 服务端工具轮里思考
+     *  块会在搜索结果之后再次出现,回传形状由 toEchoBlock 按端点类别决定
+     *  (native 原序原样;bridge 保序降形状,见 ReplayPolicy)。
+     *  纯文本轮不产 wireBlocks:正文已由 content 承载,回传侧按 content 重建单个
+     *  文本块(零额外存储);有思考/服务端块时才把文本块一并纳入,连 citations
+     *  这类附加字段与它的相对位置一起保住。 */
     const hasOpaque = ordered.some(
       (b) => b.kind !== "text" && b.kind !== "tool_use",
     );
@@ -491,8 +491,8 @@ function toWireMessages(msgs: InternalMsg[], policy: ReplayPolicy): WireMessage[
         break;
       }
       case "tool": {
-        // Anthropic 语义:tool_result 是 user 消息里的 block,连续 tool 消息
-        // 聚成一条 user 消息(恰在 assistant 的 tool_use 轮之后)
+        /** Anthropic 语义:tool_result 是 user 消息里的 block,连续 tool 消息
+         *  聚成一条 user 消息(恰在 assistant 的 tool_use 轮之后) */
         const block = toWireToolResult(message);
         const last = out[out.length - 1];
         if (
@@ -747,8 +747,8 @@ function assistantEchoShape(msgs: InternalMsg[], policy: ReplayPolicy): string {
     if (m.role !== "assistant") continue;
     if (!m.wireBlocks?.length && !m.reasoning_content) continue;
     const wire = m.wireBlocks ?? [];
-    // 合成块与「桥接端点本就缺签名」的原生块形状相同,只能从来源判:
-    // 没有任何思考块而又合成了,首块就是合成的
+    /** 合成块与「桥接端点本就缺签名」的原生块形状相同,只能从来源判:
+     *  没有任何思考块而又合成了,首块就是合成的 */
     const synthesized =
       !policy.native && !wire.some(isThinkingWireBlock) && !!m.reasoning_content;
     const shape = composeAssistantBlocks(m, policy).map((b, i) =>

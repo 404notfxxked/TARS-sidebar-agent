@@ -109,8 +109,8 @@ export default function AppearanceSection({
           aria-label={t("settings.accent")}
           className="flex flex-wrap items-center gap-2.5"
           onKeyDown={(e) => {
-            // 方向键移选(native radio 惯例,同 Segmented 的契约):移动即选中,
-            // 焦点跟到新选中色块;roving tabindex 由下方 tabIndex 渲染
+            /** 方向键移选(native radio 惯例,同 Segmented 的契约):移动即选中,
+             *  焦点跟到新选中色块;roving tabindex 由下方 tabIndex 渲染 */
             const d =
               e.key === "ArrowLeft" || e.key === "ArrowUp"
                 ? -1

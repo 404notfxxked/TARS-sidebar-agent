@@ -30,8 +30,8 @@ export default function DataSection({
   const [usage, setUsage] = useState<string | null>(null);
   const [confirmClear, armConfirmClear, resetConfirmClear] =
     useConfirmReset<true>();
-  // 清空回执:消息即发即断无回执,这里确认「已派出」并短暂亮出,失败无通道
-  // 可知(SW 是唯一读写方,派单即视为完成;占用数字随后刷新佐证)
+  /** 清空回执:消息即发即断无回执,这里确认「已派出」并短暂亮出,失败无通道
+   *  可知(SW 是唯一读写方,派单即视为完成;占用数字随后刷新佐证) */
   const [justCleared, setJustCleared] = useState(false);
 
   /** 历史库占用(IDB 属整个扩展 origin,此值含日志等其他 local 数据,看个量级) */

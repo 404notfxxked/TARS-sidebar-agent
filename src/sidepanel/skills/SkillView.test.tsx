@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// SkillView 编辑器新鲜度守卫回归(审计 §1.4):SKILL_RAW 是异步回包,
+// SkillView 编辑器新鲜度守卫回归:SKILL_RAW 是异步回包,
 // 连点两条技能时先点的请求可能后回 —— 迟到的原文若仍回填编辑器,
 // 「点 A → 点 B → A 的原文后到」会让 editor.id=B 而 draft=A,
 // 点保存即把 A 的内容写进 B,静默写坏用户数据。
@@ -61,7 +61,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("SkillView 编辑器新鲜度守卫(审计 §1.4 回归)", () => {
+describe("SkillView 编辑器新鲜度守卫回归", () => {
   it("连点两条技能且先点的后回包:编辑器内容始终属于 editor.id 指向的那条", async () => {
     const user = userEvent.setup();
     render(<SkillView onBack={() => {}} />);

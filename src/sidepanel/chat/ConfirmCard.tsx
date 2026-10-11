@@ -67,9 +67,9 @@ export function ConfirmCard({
     req.name === "memory_delete" && typeof args.match === "string"
       ? args.match.slice(0, 80)
       : "";
-  // 链接行只展示 host + 路径:这族门的意义是「看清将要外发什么」,而外泄
-  // 负载恰好藏在长查询串里 —— 查询串不逐字展示,另起一行只报长度,让
-  // 「截断」本身成为信号
+  /** 链接行只展示 host + 路径:这族门的意义是「看清将要外发什么」,而外泄
+   *  负载恰好藏在长查询串里 —— 查询串不逐字展示,另起一行只报长度,让
+   *  「截断」本身成为信号 */
   const fetchRawUrl =
     req.name === "web_fetch" && typeof args.url === "string" ? args.url : "";
   const fetchTarget = (() => {
@@ -87,13 +87,13 @@ export function ConfirmCard({
   const fetchTruncated =
     !fetchTarget || fetchTarget.search.length > 1 || fetchPathRaw.length > 80;
   const fetchQueryChars = fetchTarget ? fetchTarget.search.length - 1 : 0;
-  // MCP 族:调用的是外部服务器而非本机页面,页签信息无意义不上卡;目标行
-  // 显示服务器名(displayName「服务器 · 工具」前段,mcpManager 构造),缺
-  // displayName 就整行不渲染 —— wire 名拆不出可靠服务器名,宁缺勿错
+  /** MCP 族:调用的是外部服务器而非本机页面,页签信息无意义不上卡;目标行
+   *  显示服务器名(displayName「服务器 · 工具」前段,mcpManager 构造),缺
+   *  displayName 就整行不渲染 —— wire 名拆不出可靠服务器名,宁缺勿错 */
   const isMcp = req.name.startsWith("mcp_");
   const mcpServer = isMcp ? req.displayName?.split(" · ")[0] : undefined;
-  // MCP 入参即外发负载,与记忆族同一条「操作对象上卡」纪律;超 80 截断,
-  // 让「截断」本身成为信号(与 web_fetch 查询串同款)
+  /** MCP 入参即外发负载,与记忆族同一条「操作对象上卡」纪律;超 80 截断,
+   *  让「截断」本身成为信号(与 web_fetch 查询串同款) */
   const mcpArgsRaw =
     isMcp &&
     typeof req.args === "object" &&

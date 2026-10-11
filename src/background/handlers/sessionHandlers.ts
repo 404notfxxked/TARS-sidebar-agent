@@ -75,8 +75,8 @@ export async function handleSessionMessage(
       return true;
     }
     case MSG.GET_IMAGE: {
-      // 历史气泡渲染图片:字节单独走这条通道(消息列表只带元数据)。
-      // base64 传输 —— port 消息是 JSON 语义,TypedArray 过不去
+      /** 历史气泡渲染图片:字节单独走这条通道(消息列表只带元数据)。
+       *  base64 传输 —— port 消息是 JSON 语义,TypedArray 过不去 */
       const img = await loadImage(msg.id).catch(() => undefined);
       try {
         port.postMessage({

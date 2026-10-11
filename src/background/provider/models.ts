@@ -158,8 +158,8 @@ export async function fetchModels(
 ): Promise<FetchModelsResult> {
   const base = baseUrl.trim().replace(/\/+$/, "");
   const anthropic = kind === "anthropic-messages";
-  // origin 解析失败(用户手填裸域名等)时白名单与 origin 根探测静默缺席,
-  // 退回纯 base 域候选
+  /** origin 解析失败(用户手填裸域名等)时白名单与 origin 根探测静默缺席,
+   *  退回纯 base 域候选 */
   let origin = "";
   try {
     origin = new URL(base).origin;

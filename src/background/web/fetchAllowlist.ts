@@ -26,8 +26,8 @@ export function deriveFetchAllowlist(
   currentUserText = "",
 ): Set<string> {
   const allow = new Set<string>();
-  // tool 消息只带 toolCallId:先建 id → 工具名索引,才知道哪条 tool 消息
-  // 是搜索结果 / 抓取结果。页面读取结果(page_*)因此被天然排除
+  /** tool 消息只带 toolCallId:先建 id → 工具名索引,才知道哪条 tool 消息
+   *  是搜索结果 / 抓取结果。页面读取结果(page_*)因此被天然排除 */
   const toolNameById = new Map<string, string>();
   const addFrom = (text: string) => {
     for (const u of text.matchAll(URL_RE)) {

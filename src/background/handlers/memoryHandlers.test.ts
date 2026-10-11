@@ -1,4 +1,4 @@
-// memory 域 port handler 的兜底契约(审计 §1.3):存储操作抛错(如指向
+// memory 域 port handler 的兜底契约:存储操作抛错(如指向
 // 不存在/已删条目的 id)时,handler 仍必须回 MEMORIES 包(全量列表 +
 // error),否则面板 await 永久挂起,只能重载。协议对照:SKILLS 早已带
 // 可选 error,MEMORIES 此前没有 —— 挂死 = 无回包而非错误回包。
@@ -22,7 +22,7 @@ beforeEach(async () => {
   await addMemory("种子记忆", "user");
 });
 
-describe("handleMemoryMessage 兜底契约(审计 §1.3 回归)", () => {
+describe("handleMemoryMessage 兜底契约回归", () => {
   it("MEM_PIN 指向不存在的 id:仍回 MEMORIES 包(列表 + error)", async () => {
     const handled = await handleMemoryMessage(
       { type: MSG.MEM_PIN, id: "ghost-id", pinned: true },

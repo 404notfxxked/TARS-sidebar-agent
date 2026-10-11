@@ -37,8 +37,8 @@ export default function CompactionSection({
   const [compact, setCompact] = useState<CompactLevel>(initialCompact);
   const [compactRef, setCompactRef] = useState(initialRef);
 
-  // 下拉的扁平选项表:<option> 的 value 用表内索引,不自制字符串编码
-  // (旧实现用 "providerId||modelId" 复合串传值再 indexOf 拆回,易碎)
+  /** 下拉的扁平选项表:<option> 的 value 用表内索引,不自制字符串编码
+   *  (旧实现用 "providerId||modelId" 复合串传值再 indexOf 拆回,易碎) */
   const selectableProviders = providers.filter(
     (p) => p.apiKey && p.models.length > 0,
   );

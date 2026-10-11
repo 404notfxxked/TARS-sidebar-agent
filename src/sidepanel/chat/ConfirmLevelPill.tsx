@@ -61,8 +61,8 @@ export default function ConfirmLevelPill({
    *  右缘贴视口(留 8px),左缘不低于 8px。0 = 不收(空间充足时维持左对齐) */
   const [shiftX, setShiftX] = useState(0);
 
-  // document 级监听读最新状态走 ref(含键盘高亮项),监听器只随开关注册
-  // (照 ModelPicker:Enter 读取的是重渲染后同步的最新高亮)
+  /** document 级监听读最新状态走 ref(含键盘高亮项),监听器只随开关注册
+   *  (照 ModelPicker:Enter 读取的是重渲染后同步的最新高亮) */
   const stateRef = useRef({ level, pick, activeIdx });
   stateRef.current = { level, pick, activeIdx };
 

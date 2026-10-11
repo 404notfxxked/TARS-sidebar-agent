@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// MemoryView 列表新鲜度守卫回归(审计 §1.4):MEM_* 写动作的回包是
+// MemoryView 列表新鲜度守卫回归:MEM_* 写动作的回包是
 // 「全量列表快照」,两个在途写请求的回包乱序时,迟到的旧快照若仍整体
 // 替换列表,会让置顶/删除/新增互相回滚(已删的行复活、新加的行消失)。
 // 守卫语义(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):每次请求取
@@ -51,7 +51,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("MemoryView 列表新鲜度守卫(审计 §1.4 回归)", () => {
+describe("MemoryView 列表新鲜度守卫回归", () => {
   it("两个在途写请求回包乱序:迟到的旧快照不得覆盖更新的列表", async () => {
     const user = userEvent.setup();
     render(<MemoryView onBack={() => {}} />);

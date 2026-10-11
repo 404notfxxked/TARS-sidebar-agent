@@ -30,9 +30,9 @@ export default function SkillView({
 }) {
   const t = useT();
   const [skills, setSkills] = useState<SkillInfo[] | null>(null);
-  // 列表读取失败(传输级 reject / SKILL_LIST 回包带 error):显式错误态 + 重试,
-  // 绝不复用「还没有技能」空态文案。判别联合让 transport 的标题
-  // 渲染时经 t() 现取,语言切换不冻结
+  /** 列表读取失败(传输级 reject / SKILL_LIST 回包带 error):显式错误态 + 重试,
+   *  绝不复用「还没有技能」空态文案。判别联合让 transport 的标题
+   *  渲染时经 t() 现取,语言切换不冻结 */
   const [listLoadError, setListLoadError] = useState<
     { kind: "transport" } | { kind: "backend"; message: string } | null
   >(null);
@@ -43,10 +43,10 @@ export default function SkillView({
   // 编辑态原文经 SKILL_RAW 异步取回,取回前 textarea 呈加载态(不留空窗闪帧)
   const [editLoading, setEditLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  // 请求序号守卫(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):连点两条
-  // 技能时先点的请求可能后回,迟到的原文若仍回填,会把 A 的内容存进 B
-  // (save 用 editor.id + 当前 draft)。每次 startEdit 取递增序号,回包
-  // 过期即丢弃;关闭/切添加同样递增,作废全部在途请求。渲染期不写 ref
+  /** 请求序号守卫(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):连点两条
+   *  技能时先点的请求可能后回,迟到的原文若仍回填,会把 A 的内容存进 B
+   *  (save 用 editor.id + 当前 draft)。每次 startEdit 取递增序号,回包
+   *  过期即丢弃;关闭/切添加同样递增,作废全部在途请求。渲染期不写 ref */
   const editSeqRef = useRef(0);
 
   // 列表读取(重试复用)

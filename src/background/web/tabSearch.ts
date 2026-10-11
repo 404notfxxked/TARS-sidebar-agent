@@ -124,14 +124,14 @@ export async function runTabSearch(args: TabSearchArgs): Promise<WebSearchResult
       log.info("search", "引擎冷却中,跳过", { engine: engine.id, error: msg });
       continue;
     }
-    // openTab 也在 try 内:tabs.create 抛错(窗口正在关闭等时序)按引擎失败
-    // 换下一家,与逐引擎降级的设计一致;finally 对无 tab 的 remove 走 catch no-op
+    /** openTab 也在 try 内:tabs.create 抛错(窗口正在关闭等时序)按引擎失败
+     *  换下一家,与逐引擎降级的设计一致;finally 对无 tab 的 remove 走 catch no-op */
     let tabId: number | undefined;
     try {
       tabId = await openTab();
       await pace(engine.id);
-      // 监听先就位、再发导航:target 一创建就带 URL 的话,首航请求可能在
-      // 任何监听方(含测试的拦截层)就绪前已经发车,两段式保证确定性
+      /** 监听先就位、再发导航:target 一创建就带 URL 的话,首航请求可能在
+       *  任何监听方(含测试的拦截层)就绪前已经发车,两段式保证确定性 */
       const loaded = waitForTabComplete(tabId, cancelSignal);
       await chrome.tabs.update(tabId, { url: engine.buildUrl(query) });
       await loaded;

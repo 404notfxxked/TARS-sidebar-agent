@@ -83,10 +83,10 @@ export async function runPageScreenshot(
     throw new Error(pageAccessHint(origin));
   }
 
-  // 目标 ≠ 活动时先激活再截(模型显式传 tabId、用户中途切页、多窗口时
-  // 必然走到这里):不激活会把另一个 tab 的画面连同本页的编号表一起发给
-  // 模型 —— 视觉结论系统性错误,还顺带外带别的标签页内容。
-  // 激活失败(参数竞态/无权限)明确报错,不静默退化成「截错页」
+  /** 目标 ≠ 活动时先激活再截(模型显式传 tabId、用户中途切页、多窗口时
+   *  必然走到这里):不激活会把另一个 tab 的画面连同本页的编号表一起发给
+   *  模型 —— 视觉结论系统性错误,还顺带外带别的标签页内容。
+   *  激活失败(参数竞态/无权限)明确报错,不静默退化成「截错页」 */
   const [activeTab] = await chrome.tabs.query({
     active: true,
     windowId: tab.windowId,

@@ -9,9 +9,9 @@ import { useEffect, useRef, useState } from "react";
 import type { TFn } from "../../shared/i18n";
 import { useT } from "../ui/hooks";
 
-// 键位表必须写字面量:check-i18n 只收集键形字面量,模板拼键直接 FAIL。
-// t 由调用方传入(useT 产物):render 期辅助函数自读模块态会被 React
-// Compiler 按参数记忆化,语言切换后返回旧文案(先例 toolNames)。
+/** 键位表必须写字面量:check-i18n 只收集键形字面量,模板拼键直接 FAIL。
+ *  t 由调用方传入(useT 产物):render 期辅助函数自读模块态会被 React
+ *  Compiler 按参数记忆化,语言切换后返回旧文案(先例 toolNames)。 */
 const EFFORT_KEYS: Record<string, string> = {
   off: "chat.thinkOff",
   on: "chat.thinkOn",

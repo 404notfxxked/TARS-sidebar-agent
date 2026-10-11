@@ -61,22 +61,22 @@ export default function MessageList({
   onJumpLatest: () => void;
 }) {
   const t = useT();
-  // 注入的伪 user 消息(截图附件注记)只属于模型管线,对话流不渲染
-  // —— 实况视图本来就不显示它,回放对齐;落盘仍全量(synthetic 行
-  // 留在库与 messages 态里,只是不进消息流)
+  /** 注入的伪 user 消息(截图附件注记)只属于模型管线,对话流不渲染
+   *  —— 实况视图本来就不显示它,回放对齐;落盘仍全量(synthetic 行
+   *  留在库与 messages 态里,只是不进消息流) */
   const visible = messages.filter(
     (m) => m.sessionId === currentSession && !m.synthetic,
   );
-  // 轨迹插在最后一条 user 消息之后:它是「当前这轮」的过程,
-  // 本轮流式答案(assistant 气泡)自然排在轨迹后面;历史回放时 trace 为空不渲染
+  /** 轨迹插在最后一条 user 消息之后:它是「当前这轮」的过程,
+   *  本轮流式答案(assistant 气泡)自然排在轨迹后面;历史回放时 trace 为空不渲染 */
   const lastUserIdx = visible.reduce(
     (acc, m, i) => (m.role === "user" ? i : acc),
     -1,
   );
-  // 重新生成的挂点:本轮答案在 RunZone(settled 收尾气泡)由它自己挂;
-  // 无本轮答案时,只有当可见消息的最后一条就是普通 assistant 气泡
-  // (历史回放/上一轮归档后)才挂——重答截到末条 user,挂中间气泡会误导。
-  // processOnly 纯过程行不是答案,排除
+  /** 重新生成的挂点:本轮答案在 RunZone(settled 收尾气泡)由它自己挂;
+   *  无本轮答案时,只有当可见消息的最后一条就是普通 assistant 气泡
+   *  (历史回放/上一轮归档后)才挂——重答截到末条 user,挂中间气泡会误导。
+   *  processOnly 纯过程行不是答案,排除 */
   let lastAssistantIdx = -1;
   if (runSegs.length === 0 && status === "idle") {
     const last = visible[visible.length - 1];
@@ -90,10 +90,10 @@ export default function MessageList({
       lastAssistantIdx = visible.length - 1;
     }
   }
-  // 错误重试挂点:与 lastAssistantIdx 同规则,只有末条就是错误气泡
-  // 才挂 —— 重试 = regenerate(截到末条 user 重跑),挂在中间错误上
-  // 会让重试范围看起来比实际大。历史读取失败气泡不在此列:它的重试
-  // 语义是重新拉历史(onRetryLoadHistory),截库重跑上一问是灾难
+  /** 错误重试挂点:与 lastAssistantIdx 同规则,只有末条就是错误气泡
+   *  才挂 —— 重试 = regenerate(截到末条 user 重跑),挂在中间错误上
+   *  会让重试范围看起来比实际大。历史读取失败气泡不在此列:它的重试
+   *  语义是重新拉历史(onRetryLoadHistory),截库重跑上一问是灾难 */
   let lastErrorIdx = -1;
   if (runSegs.length === 0 && status === "idle") {
     const last = visible[visible.length - 1];
@@ -101,8 +101,8 @@ export default function MessageList({
       lastErrorIdx = visible.length - 1;
     }
   }
-  // 压缩分隔条插在第一条 seq 超过压缩点的记录之前;历史消息按 seq
-  // 升序,所以命中第一条之后不再重复插
+  /** 压缩分隔条插在第一条 seq 超过压缩点的记录之前;历史消息按 seq
+   *  升序,所以命中第一条之后不再重复插 */
   let dividerPlaced = false;
   // 上翻回看后流式仍在推进/内容很长时,给一个单跳回底的入口
   const hasContent =

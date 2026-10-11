@@ -88,8 +88,8 @@ export function useAgentChannel({
   resumeSessionId: string | null;
   onResumeDone: () => void;
 }) {
-  // 事件闭包经 ref 读最新状态,本 hook 的文案只有 regenerate 失败气泡一处,
-  // 随渲染闭包现取(React Compiler 把 useT 的 t 身份当依赖,语言切换即重算)
+  /** 事件闭包经 ref 读最新状态,本 hook 的文案只有 regenerate 失败气泡一处,
+   *  随渲染闭包现取(React Compiler 把 useT 的 t 身份当依赖,语言切换即重算) */
   const t = useT();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   // 当前会话的压缩点(存在 = 更早的历史已压成摘要,列表里渲染分隔条)
@@ -110,15 +110,15 @@ export function useAgentChannel({
     statusRef.current = s;
     setStatus(s);
   };
-  // ---- 断连重同步:run 期间 port 断过 = 后台被杀过,本地视图可能停在
-  // 截断处,而库里有完整落盘(每轮收口即存)。下次 connect()(用户的下一
-  // 个动作必然触发)时带 resync 拉库,空闲且期间无本地动作才按库替换。
-  // actionSeq 本地动作计数:断连时刻快照基线,回包时比对 —— 断连后发生过
-  // 提交/重答等本地动作 → 本地更新鲜,迟到的重同步响应作废。
-  // 快照必须在断连时采,不能在发送 resync 时采:触发 connect 的那个动作
-  // (提交/重答)本身就是本地变更,发送时采快照会把它算进基线,守卫恒通过
-  // resyncSessionRef:断连时的会话。期间切过会话则整个 resync 作废
-  // (新会话的历史由 openSession 正常拉取,不需要也不该按旧会话对账)
+  /** ---- 断连重同步:run 期间 port 断过 = 后台被杀过,本地视图可能停在
+   *  截断处,而库里有完整落盘(每轮收口即存)。下次 connect()(用户的下一
+   *  个动作必然触发)时带 resync 拉库,空闲且期间无本地动作才按库替换。
+   *  actionSeq 本地动作计数:断连时刻快照基线,回包时比对 —— 断连后发生过
+   *  提交/重答等本地动作 → 本地更新鲜,迟到的重同步响应作废。
+   *  快照必须在断连时采,不能在发送 resync 时采:触发 connect 的那个动作
+   *  (提交/重答)本身就是本地变更,发送时采快照会把它算进基线,守卫恒通过
+   *  resyncSessionRef:断连时的会话。期间切过会话则整个 resync 作废
+   *  (新会话的历史由 openSession 正常拉取,不需要也不该按旧会话对账) */
   const resyncPendingRef = useRef(false);
   const actionSeqRef = useRef(0);
   const resyncSeqRef = useRef(-1);
@@ -137,9 +137,9 @@ export function useAgentChannel({
     ]);
   });
 
-  // ---- port 事件的 case 正文(拆自 connect 的 switch,语义逐字不变)。
-  //  监听器只注册一次、闭包停留在首帧:这些函数访问的 setter 均稳定、
-  //  可变状态一律经 ref(与拆分前的内联 case 同一约束,见文件头注) ----
+  /** ---- port 事件的 case 正文(拆自 connect 的 switch,语义逐字不变)。
+   *   监听器只注册一次、闭包停留在首帧:这些函数访问的 setter 均稳定、
+   *   可变状态一律经 ref(与拆分前的内联 case 同一约束,见文件头注) ---- */
   const applyStarted = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_STARTED }>) => {
     sessionRef.current = evt.sessionId;
     updateStatus("thinking");
@@ -314,8 +314,8 @@ export function useAgentChannel({
     portRef.current = null;
     // 在途图片字节请求随连接死亡:按缺失收场,不让骨架屏永久转圈
     failPendingImages();
-    // run 在途时断连 = 后台被杀,事件不会再来了:落袋为安 + 明示,
-    // 不让用户盯着无声截断的回答。空闲时断连(后台闲置被回收)无感
+    /** run 在途时断连 = 后台被杀,事件不会再来了:落袋为安 + 明示,
+     *  不让用户盯着无声截断的回答。空闲时断连(后台闲置被回收)无感 */
     const runWasActive = statusRef.current !== "idle";
     run.onPortDisconnected();
     updateStatus("idle");
@@ -423,16 +423,16 @@ export function useAgentChannel({
     return { tabId: tabId ?? undefined, sessionId: sessionRef.current };
   };
 
-  // 加载某会话历史到面板(去重:同一会话不重复请求)。
-  // 发送失败不挂失败态:端口断开 = 面板自身难保,且下次任何动作都会重连重拉
+  /** 加载某会话历史到面板(去重:同一会话不重复请求)。
+   *  发送失败不挂失败态:端口断开 = 面板自身难保,且下次任何动作都会重连重拉 */
   const loadSessionHistory = (sessionId: string) => {
     if (sessionId === lastLoadedSessionRef.current) return;
     lastLoadedSessionRef.current = sessionId;
     safeSend({ type: MSG.LOAD_HISTORY, sessionId });
   };
 
-  // 从历史列表切回某会话:清空本地视图后向后端拉消息。
-  // 空串 = 「新对话」入口:回到空白会话态,不发 LOAD_HISTORY,游标一并重置
+  /** 从历史列表切回某会话:清空本地视图后向后端拉消息。
+   *  空串 = 「新对话」入口:回到空白会话态,不发 LOAD_HISTORY,游标一并重置 */
   const openSession = (sessionId: string) => {
     if (status !== "idle") {
       log.warn("chat", "switch session ignored, run in progress", { sessionId });
@@ -501,12 +501,12 @@ export function useAgentChannel({
     safeSend({ type: MSG.CANCEL_RUN, sessionId: sessionRef.current });
   };
 
-  // 重新生成:末条答案退场,同问重答。后台负责截库(自末条 user 行含)
-  // 并以原内容重跑;技能 /name 原文随库重走解析。
-  // 发送顺序有意「先发后截」(与提交路径相反):重生成的本地动作是破坏性的
-  // (截掉旧答案),postMessage 抛错 = 后台根本没收到、库未截 —— 此时本地
-  // 截断就丢了视图还无从恢复;发送失败改为落一条错误气泡,原视图不动。
-  // 同步窗口内无事件可插(单线程),发送成功后立刻乐观截断没有竞态
+  /** 重新生成:末条答案退场,同问重答。后台负责截库(自末条 user 行含)
+   *  并以原内容重跑;技能 /name 原文随库重走解析。
+   *  发送顺序有意「先发后截」(与提交路径相反):重生成的本地动作是破坏性的
+   *  (截掉旧答案),postMessage 抛错 = 后台根本没收到、库未截 —— 此时本地
+   *  截断就丢了视图还无从恢复;发送失败改为落一条错误气泡,原视图不动。
+   *  同步窗口内无事件可插(单线程),发送成功后立刻乐观截断没有竞态 */
   const regenerate = () => {
     if (status !== "idle") return;
     const sid = sessionRef.current;
@@ -531,8 +531,8 @@ export function useAgentChannel({
     // (断连兜底与 resync 门控都读 ref,只 setStatus 会让 ref 停留在 idle)
     updateStatus("thinking");
     setMessages((ms) => {
-      // 截断点 = 末条「真实」user:后台注入的截图注记行不算提问,
-      // 否则重答会把系统注记文本当用户问题重发(与后台 prepareRegenerate 同规则)
+      /** 截断点 = 末条「真实」user:后台注入的截图注记行不算提问,
+       *  否则重答会把系统注记文本当用户问题重发(与后台 prepareRegenerate 同规则) */
       let lastUser = -1;
       ms.forEach((m, i) => {
         if (m.sessionId === sid && m.role === "user" && !m.synthetic) {
@@ -543,8 +543,8 @@ export function useAgentChannel({
     });
   };
 
-  // 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)。
-  // 失败不自挂失败态:端口断开 = 后台 run 已被 abort,确认对象已不存在,自愈
+  /** 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)。
+   *  失败不自挂失败态:端口断开 = 后台 run 已被 abort,确认对象已不存在,自愈 */
   const answerConfirm = (approved: boolean) => {
     if (!confirmReq) return;
     log.info("chat", "confirm answered", { approved, name: confirmReq.name });
@@ -556,8 +556,8 @@ export function useAgentChannel({
     setConfirmReq(null);
   };
 
-  // 开始新对话:只清本地视图。旧会话原样留在历史列表(多会话语义,
-  // 不再通知后台删除);下次提交才会生成新的会话 id
+  /** 开始新对话:只清本地视图。旧会话原样留在历史列表(多会话语义,
+   *  不再通知后台删除);下次提交才会生成新的会话 id */
   const resetConversation = () => {
     if (status !== "idle") return; // 运行中不允许打断
     log.debug("chat", "new conversation", { old: sessionRef.current });
@@ -588,8 +588,8 @@ export function useAgentChannel({
       w,
       h,
     }));
-    // 乐观回显气泡自建对象:发送失败时按对象身份精确转「未送达」,
-    // 不靠「末条一定是它」的位置推断(并发追加不会误伤别的消息)
+    /** 乐观回显气泡自建对象:发送失败时按对象身份精确转「未送达」,
+     *  不靠「末条一定是它」的位置推断(并发追加不会误伤别的消息) */
     const bubble: ChatMsg = {
       role: "user",
       content: opts.text,

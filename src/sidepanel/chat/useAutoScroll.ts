@@ -20,8 +20,8 @@ export function useAutoScroll(
   const { messages, runSegs, status } = follow;
   const pinnedRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
-  // 「回到最新」点击后的跟随意图:平滑滚动途中内容继续增长时,平滑重定标到
-  // 新底而不是停在点击时刻的旧底;到底即清,用户主动上滚(scrollTop 回退)也清
+  /** 「回到最新」点击后的跟随意图:平滑滚动途中内容继续增长时,平滑重定标到
+   *  新底而不是停在点击时刻的旧底;到底即清,用户主动上滚(scrollTop 回退)也清 */
   const followIntentRef = useRef(0);
   const lastTopRef = useRef(0);
   useEffect(() => {

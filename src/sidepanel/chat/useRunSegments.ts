@@ -36,8 +36,8 @@ export function useRunSegments(
 
   const [runSegs, setRunSegs] = useState<RunSegment[]>([]);
   const runSegsRef = useRef<RunSegment[]>([]);
-  // streamingRef:正文段是否在流式中。appendTextDelta 以它区分「续段」与「开新段」,
-  // AGENT_THINKING / 工具开始把它切断,下一个文本 delta 自然开新段
+  /** streamingRef:正文段是否在流式中。appendTextDelta 以它区分「续段」与「开新段」,
+   *  AGENT_THINKING / 工具开始把它切断,下一个文本 delta 自然开新段 */
   const streamingRef = useRef(false);
   const applySegs = (next: RunSegment[]) => {
     runSegsRef.current = next;
@@ -54,11 +54,11 @@ export function useRunSegments(
   /** 已展开回看的过程卡(以卡内首段在 segs 中的下标为 key,段序列只追加、下标即稳定身份) */
   const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
 
-  // ---- 流式缓冲:思考流/正文流各一套,按 kind 参数化成一组原语 ----
-  // delta 先进缓冲,按固定节拍(~10Hz)合入状态:流式期间只渲染单行
-  // ticker(思考),正文避免「每 delta 全量重解析 markdown」的 O(n²) 重复
-  // 解析,合帧后重解析频率与段长解耦。两套的差异只在合入条件:
-  // 思考缓冲要求末段是「活跃思考段」,正文缓冲只要求末段是文本段
+  /** ---- 流式缓冲:思考流/正文流各一套,按 kind 参数化成一组原语 ----
+   *  delta 先进缓冲,按固定节拍(~10Hz)合入状态:流式期间只渲染单行
+   *  ticker(思考),正文避免「每 delta 全量重解析 markdown」的 O(n²) 重复
+   *  解析,合帧后重解析频率与段长解耦。两套的差异只在合入条件:
+   *  思考缓冲要求末段是「活跃思考段」,正文缓冲只要求末段是文本段 */
   const reasoningBufRef = useRef("");
   const reasoningFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textBufRef = useRef("");

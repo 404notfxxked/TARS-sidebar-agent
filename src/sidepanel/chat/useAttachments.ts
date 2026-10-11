@@ -18,8 +18,8 @@ export function useAttachments(visionOk: boolean) {
   const [attachHint, setAttachHint] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hintTimer = useRef<number | null>(null);
-  // 附件的准入判定镜(ref):压缩/提交/清空都经这里同步,异步粘贴并发下
-  // 余量判定才有最新值(state 闭包只反映上次渲染)
+  /** 附件的准入判定镜(ref):压缩/提交/清空都经这里同步,异步粘贴并发下
+   *  余量判定才有最新值(state 闭包只反映上次渲染) */
   const pendingImagesRef = useRef<PendingImage[]>([]);
   const commitPendingImages = (next: PendingImage[]) => {
     pendingImagesRef.current = next;
@@ -64,8 +64,8 @@ export function useAttachments(visionOk: boolean) {
       flashHint(t("chat.visionOffToast"));
       return;
     }
-    // 余量判定读 ref 镜像(压缩前后各查一次):压缩是几十毫秒的异步,两次
-    // 快速粘贴若各按调用时的 state 闭包算余量,会一起通过门控突破上限
+    /** 余量判定读 ref 镜像(压缩前后各查一次):压缩是几十毫秒的异步,两次
+     *  快速粘贴若各按调用时的 state 闭包算余量,会一起通过门控突破上限 */
     const added: PendingImage[] = [];
     let dropped = 0;
     for (const file of images) {
@@ -106,9 +106,9 @@ export function useAttachments(visionOk: boolean) {
     }));
   };
 
-  // 粘贴监听只在挂载时注册一次,addAttachments 闭包随渲染刷新 → ref 转发。
-  // 监听在 document 级:用户截完图焦点常不在输入框。只在剪贴板真有图片时
-  // preventDefault,普通文字粘贴不受影响
+  /** 粘贴监听只在挂载时注册一次,addAttachments 闭包随渲染刷新 → ref 转发。
+   *  监听在 document 级:用户截完图焦点常不在输入框。只在剪贴板真有图片时
+   *  preventDefault,普通文字粘贴不受影响 */
   const addAttachmentsRef = useRef(addAttachments);
   addAttachmentsRef.current = addAttachments;
   useEffect(() => {

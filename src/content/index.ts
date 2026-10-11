@@ -12,11 +12,11 @@ import type {
 } from "../shared/contentTools";
 import { log } from "./log";
 
-// 协议消息类型:与 shared/contentTools.ts 的导出保持一致。
-// 这里必须用本地字面量而非运行时导入:content 入口一旦与 background 共享运行时模块,
-// Rollup 会拆出共享 chunk,content.js 顶部出现 import 语句;
-// 而浏览器以经典脚本执行 content script(manifest 注入与 executeScript 皆然),
-// 顶层 import 直接 SyntaxError,listener 注册不上。
+/** 协议消息类型:与 shared/contentTools.ts 的导出保持一致。
+ *  这里必须用本地字面量而非运行时导入:content 入口一旦与 background 共享运行时模块,
+ *  Rollup 会拆出共享 chunk,content.js 顶部出现 import 语句;
+ *  而浏览器以经典脚本执行 content script(manifest 注入与 executeScript 皆然),
+ *  顶层 import 直接 SyntaxError,listener 注册不上。 */
 const CONTENT_TOOL_MESSAGE = "execute_tool";
 const CONTENT_TOOL_RESULT = "tool_result";
 import {
@@ -31,10 +31,10 @@ import {
 } from "./interact";
 import { clearMarks, drawMarks } from "./screenshot";
 
-// 防重复注入:本脚本经 chrome.scripting.executeScript 按需注入(manifest 无
-// 静态注入),同一次 run 里多个工具并发首调都会走「发送失败 → 注入 → 重试」,
-// 可能对同一文档注入多次;重复注册 listener 会让一次调用产生多份响应。
-// ISOLATED world 的 window 按扩展隔离,标记互不污染。
+/** 防重复注入:本脚本经 chrome.scripting.executeScript 按需注入(manifest 无
+ *  静态注入),同一次 run 里多个工具并发首调都会走「发送失败 → 注入 → 重试」,
+ *  可能对同一文档注入多次;重复注册 listener 会让一次调用产生多份响应。
+ *  ISOLATED world 的 window 按扩展隔离,标记互不污染。 */
 const WIN = window as { __tarsContentReady?: boolean };
 if (!WIN.__tarsContentReady) {
   WIN.__tarsContentReady = true;
@@ -60,8 +60,8 @@ if (!WIN.__tarsContentReady) {
         sendResponse(response);
       })
       .catch((err: unknown) => {
-        // 不用 shared/errors 的 errText:content 入口不可有运行时 shared 依赖
-        // (Rollup 会拆共享 chunk → content.js 顶层 import → 经典脚本 SyntaxError,见文件头注)
+        /** 不用 shared/errors 的 errText:content 入口不可有运行时 shared 依赖
+         *  (Rollup 会拆共享 chunk → content.js 顶层 import → 经典脚本 SyntaxError,见文件头注) */
         const error = err instanceof Error ? err.message : String(err);
         log.error("tool", `${name} 失败`, {
           ms: Date.now() - startedAt,
@@ -80,8 +80,8 @@ if (!WIN.__tarsContentReady) {
   });
 }
 
-// 工具结果进日志前先摘要:capture_doc 的 html、find_elements 的元素数组只记体量,
-// 避免把整页快照写进日志缓冲
+/** 工具结果进日志前先摘要:capture_doc 的 html、find_elements 的元素数组只记体量,
+ *  避免把整页快照写进日志缓冲 */
 function summarizeResult(name: string, result: unknown): unknown {
   switch (name) {
     case "capture_doc": {
@@ -113,9 +113,9 @@ async function runTool(name: string, args: unknown): Promise<unknown> {
     case "capture_doc": {
       // 采样根选择器与 offscreen/pipeline.ts 的解析根是跨边界镜像,改动须两处同步
       const root = (document.querySelector("main, article") ?? document.body) as HTMLElement;
-      // 入口上界:无限流 SPA/巨型表格页的 outerHTML 可达数十 MB,无上界
-      // 会在 SW↔offscreen 两次拷贝 + DOMParser 再拷贝处打出内存峰值。
-      // 截断只丢尾部标记之后的 DOM,解析侧本就有 DOC_MAX_CHARS 的正文截断
+      /** 入口上界:无限流 SPA/巨型表格页的 outerHTML 可达数十 MB,无上界
+       *  会在 SW↔offscreen 两次拷贝 + DOMParser 再拷贝处打出内存峰值。
+       *  截断只丢尾部标记之后的 DOM,解析侧本就有 DOC_MAX_CHARS 的正文截断 */
       const rawHtml = root.outerHTML;
       const html =
         rawHtml.length > CAPTURE_HTML_MAX_CHARS

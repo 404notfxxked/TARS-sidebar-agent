@@ -71,8 +71,8 @@ export function createCallChat(
         error: errText(err),
       });
       try {
-        // 压缩输入去掉 system(下标整体 −1),产出的 uptoSeq 也是 −1 系,
-        // 转回 messages 下标要 +2(system 偏移 + slice 端点转开区间)
+        /** 压缩输入去掉 system(下标整体 −1),产出的 uptoSeq 也是 −1 系,
+         *  转回 messages 下标要 +2(system 偏移 + slice 端点转开区间) */
         const outcome = await compactHistory(
           cfg.summarizer,
           loop.messages.slice(1),

@@ -50,8 +50,9 @@ chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
   return false;
 });
 
-/** 清理内容脚本日志 key:已关闭 tab 的 log:tab:<id>,以及握手切走后遗留的
- *  回退键 log:cs(日志本体有环形上限,key 本身不限;判定纯函数见 shared/logger) */
+/** 清理内容脚本日志 key:已关闭 tab 的 log:tab:<id>,以及回退键 log:cs
+ *  (握手前日志暂存于此,报到后改走 per-tab key,旧键可能遗留;日志内容
+ *  有环形上限,key 不随之清理,判定纯函数见 shared/logger) */
 async function pruneDeadTabLogKeys(): Promise<void> {
   try {
     const bag = await chrome.storage.local.get(null);
@@ -68,7 +69,7 @@ async function pruneDeadTabLogKeys(): Promise<void> {
 }
 void pruneDeadTabLogKeys();
 
-// 引擎健康表:缺失/超龄(>6h)时探测一次网络环境可达性(SW fetch 各引擎
+// 引擎健康表:缺失或过期(>6h)时探测一次各引擎可达性(SW fetch 引擎
 // 首页,4s 超时),供搜索引擎动态排序;fire-and-forget,不阻塞启动
 void maybeProbeEngines();
 
@@ -76,15 +77,16 @@ void maybeProbeEngines();
 // (都有内部捕获,失败只记日志,不阻塞 SW 启动)
 void migrateLegacySessionStorage().then(() => pruneExpiredSessions());
 
-// 每个运行中的 agent 会话 → 取消句柄(以 sessionId 为 key)
-// 注意:SW 休眠时此 Map 会被清空(内存态,本就不该跨唤醒存活);
-// 需跨唤醒存活的持久数据走 IndexedDB(见 sessions/sessionHistory.ts),不在这里。
+/** 每个运行中的 agent 会话 → RunState(AbortController + 归属 port,以 sessionId 为 key)
+ *  注意:SW 休眠时此 Map 会被清空(内存态,本就不该跨唤醒存活);
+ *  需跨唤醒存活的持久数据走 IndexedDB(见 sessions/sessionHistory.ts),不在这里。 */
 const activeRuns = new Map<string, RunState>();
 
-// REGENERATE 的 prepareRegenerate(读库 + 截库)是跨 await 的窗口:防重若等到
-// launchRun 才登记,窗口内到达的同会话请求会通过检查并与截库并发跑同一条会话
-// (写库 seq 互踩)。这里为那个窗口补一段占位登记,与 activeRuns 一起构成
-// 「会话忙」判据 —— SW 休眠清空同 activeRuns,本就不该跨唤醒存活
+/** REGENERATE 在 prepareRegenerate(读库 + 截库)期间,run 还没进 activeRuns:
+ *  「会话忙」若只查 activeRuns,这段窗口里同会话再来一条请求就会通过检查,
+ *  与截库并发操作同一条会话(两边写库,seq 互相踩踏)。因此在准备期先在此
+ *  占位登记,与 activeRuns 合起来构成「会话忙」判据;SW 休眠时与 activeRuns
+ *  一起被清空 —— 内存态本就不该跨唤醒存活 */
 const preparingSessions = new Set<string>();
 
 /** 会话是否已有在途任务(含 REGENERATE 的截库窗口) */
@@ -92,8 +94,8 @@ function sessionBusy(sessionId: string): boolean {
   return activeRuns.has(sessionId) || preparingSessions.has(sessionId);
 }
 
-// 面板可见性(每个窗口的侧栏实例各一份):任务完成通知据此判断
-// 「这个 run 的主人是否正看着」。面板不可见 = 收到通知才有意义
+/** 面板可见性(每个窗口的侧栏实例各一份):任务完成通知据此判断
+ *  「这个 run 的主人是否正看着」。面板不可见 = 收到通知才有意义 */
 const panels = new Map<chrome.runtime.Port, PanelState>();
 
 /**
@@ -109,7 +111,7 @@ async function maybeNotifyRunEnd(opts: {
 }): Promise<void> {
   try {
     const config = await loadConfig();
-    // 焦点判定留 IO 口;面板自报可见才查窗口焦点(隐藏时无须查询)
+    // 窗口焦点要查 API 才知道:面板自报可见才查(自报隐藏时无须查询)
     const win = opts.hidden
       ? null
       : await chrome.windows.getLastFocused().catch(() => null);
@@ -167,7 +169,7 @@ async function launchRun(
   };
   activeRuns.set(sessionId, run);
   // run 档案首条(e2e 以此为 run 边界):sessionId/tabId + 用户原文,
-  // 复盘搜索质量时串「用户问了什么 → 模型提了什么词」用
+  // 复盘搜索质量时用来把「用户问了什么」与「模型提了什么词」串起来
   log.info("agent", "run started", {
     sessionId,
     tabId: payload.tabId,
@@ -243,7 +245,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
       if (await handleMemoryMessage(msg, ctx)) return;
       if (await handleSkillMessage(msg, ctx)) return;
       if (await handleMcpMessage(msg, ctx)) return;
-      // 未知类型:原 switch 无 default(静默忽略),保持现状 —— 不要加日志
+      // 未知类型:静默忽略(既有行为,刻意如此)—— 不要加日志
     } catch (e) {
       // 分发层兜底:各域 handler 自带 try/catch 兜底回包,这里只接它们漏出的
       // 意外抛错 —— async 监听器的 rejection 无人接就是 unhandled rejection,

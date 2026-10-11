@@ -137,9 +137,9 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
           "只能读取网页文本,PDF/图片/下载文件等请直接打开链接",
       );
     }
-    // 重定向复核:响应头已到手、正文一个字节未读 —— 落点换 host 就重跑
-    // 私网判定(私网落点抛错,公开落点放行但不回填最终 URL),并留一条
-    // 只含 host 的日志(不带完整 URL,查询串可能是模型编码的外泄负载)
+    /** 重定向复核:响应头已到手、正文一个字节未读 —— 落点换 host 就重跑
+     *  私网判定(私网落点抛错,公开落点放行但不回填最终 URL),并留一条
+     *  只含 host 的日志(不带完整 URL,查询串可能是模型编码的外泄负载) */
     const finalUrl = reviewRedirectTarget(url, res.url || url);
     if (finalUrl !== (res.url || url)) {
       log.info("webfetch", "redirect host changed", {
@@ -148,8 +148,8 @@ async function fetchHtml(url: string): Promise<{ html: string; finalUrl: string 
       });
     }
     const buf = await (async () => {
-      // 下载阶段(响应头之后)的错误单独包装:中止/超时给可读文案,
-      // 不让裸 Chrome 错误直穿;Content-Length 超限时先拒,不吃满下载
+      /** 下载阶段(响应头之后)的错误单独包装:中止/超时给可读文案,
+       *  不让裸 Chrome 错误直穿;Content-Length 超限时先拒,不吃满下载 */
       const declared = Number(res.headers.get("content-length"));
       if (Number.isFinite(declared) && declared > MAX_HTML_BYTES) {
         throw new Error(`Page too large (~${Math.round(declared / 1024)} KB, limit 2 MB)`);

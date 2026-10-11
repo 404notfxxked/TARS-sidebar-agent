@@ -130,10 +130,10 @@ export function buildSelector(el: Element): string {
   return path.join(" > ");
 }
 
-// role 归一表:页面冗余 role 属性归一到闭集,同时是 find_elements 的
-// role 过滤参数校验表——模型会回显结果字段里的 role 值来查询,所以闭集
-// 本身必须逐值可直行(下面前 9 行),ARIA 别名只是额外便利;否则就会出现
-// 「报错说支持 input、传 input 却被拒」的自相矛盾(2026-09-17 真机踩中)
+/** role 归一表:页面冗余 role 属性归一到闭集,同时是 find_elements 的
+ *  role 过滤参数校验表——模型会回显结果字段里的 role 值来查询,所以闭集
+ *  本身必须逐值可直行(下面前 9 行),ARIA 别名只是额外便利;否则就会出现
+ *  「报错说支持 input、传 input 却被拒」的自相矛盾(2026-09-17 真机踩中) */
 const ROLE_ALIAS: Record<string, RoleName> = {
   button: "button",
   link: "link",
@@ -297,12 +297,12 @@ function getVisibility(el: Element): VisibilityInfo {
     return { visible: false, hidden: "zero-size" };
   }
 
-  // visibility:hidden 不脱布局,元素仍有渲染盒 —— 有盒路径必须补查 visibility,
-  // 否则 find_elements 误报可见、click 在错误坐标报遮挡。
-  // 只查自身:visibility 是继承属性,computed style 里已是继承后的结果,祖先链
-  // 只是多走一遍 style 计算;而且它会把「祖先 hidden + 自身 visibility:visible」
-  // 的合法写法误判成不可见(实测该子元素 computed 为 visible、elementFromPoint
-  // 命中它、click 正常派发),findInteractive 恰会丢弃 ancestor-hidden 一类
+  /** visibility:hidden 不脱布局,元素仍有渲染盒 —— 有盒路径必须补查 visibility,
+   *  否则 find_elements 误报可见、click 在错误坐标报遮挡。
+   *  只查自身:visibility 是继承属性,computed style 里已是继承后的结果,祖先链
+   *  只是多走一遍 style 计算;而且它会把「祖先 hidden + 自身 visibility:visible」
+   *  的合法写法误判成不可见(实测该子元素 computed 为 visible、elementFromPoint
+   *  命中它、click 正常派发),findInteractive 恰会丢弃 ancestor-hidden 一类 */
   const cs = getComputedStyle(el);
   if (cs.visibility === "hidden") {
     return { visible: false, hidden: "visibility-hidden" };

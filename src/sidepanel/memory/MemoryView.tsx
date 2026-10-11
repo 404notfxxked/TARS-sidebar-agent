@@ -36,9 +36,9 @@ export default function MemoryView({
 }) {
   const t = useT();
   const [memories, setMemories] = useState<MemoryItem[] | null>(null);
-  // 列表读取失败(传输级 reject / MEM_LIST 回包带 error):显式错误态 + 重试,
-  // 绝不复用「还没有记忆」空态文案 —— 存储异常呈现成数据消失是恐慌性误报。
-  // 判别联合而非直接存文案:transport 的标题渲染时经 t() 现取,语言切换不冻结
+  /** 列表读取失败(传输级 reject / MEM_LIST 回包带 error):显式错误态 + 重试,
+   *  绝不复用「还没有记忆」空态文案 —— 存储异常呈现成数据消失是恐慌性误报。
+   *  判别联合而非直接存文案:transport 的标题渲染时经 t() 现取,语言切换不冻结 */
   const [listLoadError, setListLoadError] = useState<
     { kind: "transport" } | { kind: "backend"; message: string } | null
   >(null);
@@ -51,10 +51,10 @@ export default function MemoryView({
   // 右上溢出菜单:清空全部记忆(菜单内两段确认,关菜单即复位)
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-  // 列表回填序号守卫(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):写动作
-  // 回包是全量快照,两个在途请求的回包乱序时,迟到的旧快照若仍整体替换,
-  // 置顶/删除/新增会互相回滚。每次请求取递增序号,回包过期即丢弃;
-  // 乐观本地变更(删除/清空)取新序号,天然作废此前在途请求。渲染期不写 ref
+  /** 列表回填序号守卫(回填新鲜度守卫,同 useAgentChannel 的 actionSeq):写动作
+   *  回包是全量快照,两个在途请求的回包乱序时,迟到的旧快照若仍整体替换,
+   *  置顶/删除/新增会互相回滚。每次请求取递增序号,回包过期即丢弃;
+   *  乐观本地变更(删除/清空)取新序号,天然作废此前在途请求。渲染期不写 ref */
   const listSeqRef = useRef(0);
   // 后台兜底回包携带的操作错误(MEMORIES.error),就地展示不挂起
   const [listError, setListError] = useState<string | null>(null);
@@ -164,8 +164,8 @@ export default function MemoryView({
       .catch(() => {});
   };
 
-  // 副标:每轮实际注入 token 估算 + 超预算提示(与后台同一套规划函数,
-  // 预算按当前模型 contextTokens 动态缩放)
+  /** 副标:每轮实际注入 token 估算 + 超预算提示(与后台同一套规划函数,
+   *  预算按当前模型 contextTokens 动态缩放) */
   const plan = useMemo(
     () => (memories ? planMemoryInjection(memories, contextTokens) : null),
     [memories, contextTokens],
@@ -410,9 +410,9 @@ function MemoryRow({
   onRemove: () => void;
 }) {
   const t = useT();
-  // 行内编辑框:textarea 自适应高度(ref + scrollHeight,manifest 声明的
-  // minimum_chrome_version 116 不支持 field-sizing)—— 记忆最长 200 字,
-  // 单行 input 只能横向滚动,改前看不到全文;高度封顶后内部滚动
+  /** 行内编辑框:textarea 自适应高度(ref + scrollHeight,manifest 声明的
+   *  minimum_chrome_version 116 不支持 field-sizing)—— 记忆最长 200 字,
+   *  单行 input 只能横向滚动,改前看不到全文;高度封顶后内部滚动 */
   const editRef = useRef<HTMLTextAreaElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: 高度跟着 DOM 内容走,editText 经受控 value 落到 DOM 后才可重测 scrollHeight
   useEffect(() => {

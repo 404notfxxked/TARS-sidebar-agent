@@ -1,4 +1,4 @@
-// 压缩触发基线的口径回归(审计 §1.1):基线 = 实测 promptTokens +
+// 压缩触发基线的口径回归:基线 = 实测 promptTokens +
 // 「测量之后新增的库行」估算 + 固定开销。旧实现用 prompt 消息条数(msgs)
 // 当切分点 —— 一旦上一轮压缩过,prompt 里的合成消息(摘要)与被裁前缀
 // 让 msgs ≠ 库行口径,estimateRange 从过早的下标起算,把摘要已覆盖的行
@@ -31,7 +31,7 @@ function newRows(n: number): InternalMsg[] {
   }));
 }
 
-describe("estimateBaselineTokens 压缩基线口径(审计 §1.1 回归)", () => {
+describe("estimateBaselineTokens 压缩基线口径回归", () => {
   it("压缩过的会话:全库已被上一轮实测覆盖,基线不再计入任何库行", () => {
     const ctx = { promptTokens: 2000, msgs: 6, rows: 20 };
     // rows = 20 = history.length → 测量后新增 0 行;正确基线 = 2000 + 100
@@ -65,7 +65,7 @@ describe("estimateBaselineTokens 压缩基线口径(审计 §1.1 回归)", () =>
     expect(estimateBaselineTokens(ctx, history, FIXED)).toBe(2100);
   });
 
-  it("含错误行的会话:rows 存已滤计数,实测基线仍被采用(审计 §1.1 残留)", () => {
+  it("含错误行的会话:rows 存已滤计数,实测基线仍被采用", () => {
     // 会话 22 条落库行,其中 2 条 error 行不回灌模型;上一轮实测覆盖全部
     // 20 行有效历史,之后又落 1 条新行(最终回答)。消费端拿到的是已滤
     // history = 21 行;若生产端按未滤库行数存 rows(22+1=23),
@@ -79,7 +79,7 @@ describe("estimateBaselineTokens 压缩基线口径(审计 §1.1 回归)", () =>
     expect(estimateBaselineTokens(ctx, filtered, FIXED)).toBe(2100);
   });
 
-  it("生产者契约 coveredLibraryRows:只认已滤起点,退回未滤口径即红(§1.1)", () => {
+  it("生产者契约 coveredLibraryRows:只认已滤起点,退回未滤口径即红", () => {
     // 同一含错误行场景,这次钉**生产端**:runSetup 会同时记下
     // persistedSeqs=22(未滤,error 行也占 seq)与 libraryRowsAtStart=20
     // (已滤)。coveredLibraryRows 的算式只准用后者 —— persistedSeqs 一旦

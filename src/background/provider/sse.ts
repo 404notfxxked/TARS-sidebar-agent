@@ -7,10 +7,10 @@ import { createLogger } from "../../shared/logger";
 
 const log = createLogger({ ctx: "bg" });
 
-// 流式期间的不活动看门狗:client 层超时只护到响应头,流中途断流
-// (代理静默吞连接/端点挂起)会让 read() 永久悬挂。窗口取 120s ——
-// 思考型模型两个 delta 之间可以很久,但不会久到两分钟收不到任何字节
-// (连心跳注释帧都算字节,正常端点撑不满这个窗口)
+/** 流式期间的不活动看门狗:client 层超时只护到响应头,流中途断流
+ *  (代理静默吞连接/端点挂起)会让 read() 永久悬挂。窗口取 120s ——
+ *  思考型模型两个 delta 之间可以很久,但不会久到两分钟收不到任何字节
+ *  (连心跳注释帧都算字节,正常端点撑不满这个窗口) */
 const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 /**
@@ -47,9 +47,9 @@ export async function* readSSE<T>(
   let buffer = "";
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // 读一块字节,同时挂 120s 看门狗:窗口内没有任何字节到达(连注释
-  // 心跳帧都算)即 abort。为什么不自动重试:流已开始,重放会重复
-  // 已经发出去的 delta(UI 打字机与落库都接不上),只能报错交给人
+  /** 读一块字节,同时挂 120s 看门狗:窗口内没有任何字节到达(连注释
+   *  心跳帧都算)即 abort。为什么不自动重试:流已开始,重放会重复
+   *  已经发出去的 delta(UI 打字机与落库都接不上),只能报错交给人 */
   const readOrIdle = () =>
     Promise.race([
       reader.read().then((r) => {

@@ -144,10 +144,10 @@ export function toTranscript(prefix: InternalMsg[]): string {
     return { text: "", toolChars: -1 }; // system 不会出现在前缀里
   });
 
-  // 从最新往回累计预算;放不下的更旧 tool 正文打桩(保留行结构,
-  // summarizer 仍知道「这里有过一次工具调用及其体量」)。
-  // 严格预算:某条放不下就打桩,转写总量才有上界 —— 保证压缩请求
-  // 本身不再撞 summarizer 的窗口
+  /** 从最新往回累计预算;放不下的更旧 tool 正文打桩(保留行结构,
+   *  summarizer 仍知道「这里有过一次工具调用及其体量」)。
+   *  严格预算:某条放不下就打桩,转写总量才有上界 —— 保证压缩请求
+   *  本身不再撞 summarizer 的窗口 */
   let remaining = TRANSCRIPT_BUDGET_CHARS;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
@@ -159,17 +159,17 @@ export function toTranscript(prefix: InternalMsg[]): string {
     }
   }
 
-  // 总量硬预算兜底:tool 打桩只约束工具正文,超长 user/assistant 行不在此列。
-  // 仍超预算时从最旧的行截起(带省略注记)—— 摘要输入宁可丢最旧的原文,
-  // 也不能让压缩请求整体撞窗后静默回落 trim
+  /** 总量硬预算兜底:tool 打桩只约束工具正文,超长 user/assistant 行不在此列。
+   *  仍超预算时从最旧的行截起(带省略注记)—— 摘要输入宁可丢最旧的原文,
+   *  也不能让压缩请求整体撞窗后静默回落 trim */
   const JOIN_OVERHEAD = 2; // 行间 "\n\n"
   const TRUNC_NOTE = "\n[truncated to fit the summarizer window]";
   const DROP_NOTE_RESERVE = 72; // 省略注记 + 行间开销的最大占位
   const totalOf = (from: number) =>
     lines.slice(from).reduce((n, l) => n + l.text.length + JOIN_OVERHEAD, 0);
   if (totalOf(0) > TRANSCRIPT_BUDGET_CHARS) {
-    // 只丢到「剩最新一条」为止:尾部全丢会让摘要输入只剩一句省略注记,
-    // 压缩等于静默失忆 —— 这正是预算兜底要防的事
+    /** 只丢到「剩最新一条」为止:尾部全丢会让摘要输入只剩一句省略注记,
+     *  压缩等于静默失忆 —— 这正是预算兜底要防的事 */
     let drop = 0;
     while (
       drop < lines.length - 1 &&
@@ -178,9 +178,9 @@ export function toTranscript(prefix: InternalMsg[]): string {
       drop++;
     }
     lines.splice(0, drop);
-    // 注记 + 保留行仍超预算(单条自身就超长):截断最旧一条的尾部而不是
-    // 丢掉它 —— 尾部截断注记声明此处被削过,模型知道读到的不是全文。
-    // 截断必须在注记入列之前做,否则削的是注记自己
+    /** 注记 + 保留行仍超预算(单条自身就超长):截断最旧一条的尾部而不是
+     *  丢掉它 —— 尾部截断注记声明此处被削过,模型知道读到的不是全文。
+     *  截断必须在注记入列之前做,否则削的是注记自己 */
     const room = TRANSCRIPT_BUDGET_CHARS - (drop > 0 ? DROP_NOTE_RESERVE : 0);
     const over = totalOf(0) - room;
     if (over > 0) {

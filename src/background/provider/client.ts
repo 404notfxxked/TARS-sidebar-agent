@@ -101,8 +101,8 @@ export async function apiFetch(opts: ApiFetchOptions): Promise<Response> {
 
       if (res.ok) return res;
 
-      // 尽量拿错误体用于报错;读 body 本身也可能失败(连接中断等),
-      // 兜底为空串,不让次要的读取失败掩盖真正要抛出的 HTTP 错误
+      /** 尽量拿错误体用于报错;读 body 本身也可能失败(连接中断等),
+       *  兜底为空串,不让次要的读取失败掩盖真正要抛出的 HTTP 错误 */
       const errBody = await res.text().catch(() => "");
       // 临时错误且未到重试上限 → 退避后重试
       if (RETRYABLE_STATUS.has(res.status) && attempt < maxRetry) {

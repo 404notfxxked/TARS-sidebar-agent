@@ -121,9 +121,9 @@ export function fillElement(el: Element, text: string): void {
     el.getAttribute("contenteditable") === "true" ||
     el.getAttribute("contenteditable") === ""
   ) {
-    // 富文本标准手法:先全选再插入。execCommand 虽 deprecated,Chrome 仍可用(无等价替代)。
-    // execCommand 成功时浏览器自己派发 input 事件(inputType=insertText,React 原生感知),
-    // 不能再手动补发 —— 双发会让计数/防抖型监听器行为失真
+    /** 富文本标准手法:先全选再插入。execCommand 虽 deprecated,Chrome 仍可用(无等价替代)。
+     *  execCommand 成功时浏览器自己派发 input 事件(inputType=insertText,React 原生感知),
+     *  不能再手动补发 —— 双发会让计数/防抖型监听器行为失真 */
     const range = document.createRange();
     range.selectNodeContents(el);
     const sel = window.getSelection();

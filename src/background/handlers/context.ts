@@ -1,4 +1,4 @@
-// port 消息分发上下文(S4 从 index.ts 拆出):RunState / PanelState 两个
+// port 消息分发上下文(从 index.ts 拆出):RunState / PanelState 两个
 // 类型随拆分迁入并导出;PortCtx 把 index.ts 独有的单例借给各域 handler
 // —— 单例的所有权与生命周期仍归 index.ts,此处只声明形状,不出现第二个所有者。
 import type { UserMessagePayload } from "../../shared/messages";

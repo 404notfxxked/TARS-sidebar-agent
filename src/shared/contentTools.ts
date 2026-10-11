@@ -9,8 +9,8 @@ import {
   pageAccessHint,
 } from "./hostAccess";
 
-// 本模块在 SW(无 window)与 offscreen 页面(有 window)里都会执行,
-// 日志按宿主上下文归档,便于导出合并时分清来源
+/** 本模块在 SW(无 window)与 offscreen 页面(有 window)里都会执行,
+ *  日志按宿主上下文归档,便于导出合并时分清来源 */
 const log = createLogger({ ctx: typeof window === "undefined" ? "bg" : "off" });
 
 const CONTENT_TOOL_MESSAGE = "execute_tool";

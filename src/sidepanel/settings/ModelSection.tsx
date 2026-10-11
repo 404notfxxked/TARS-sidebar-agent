@@ -356,8 +356,8 @@ function ProviderCard({
   const [openModelId, setOpenModelId] = useState<string | null>(null);
   // API Key 明文回显(核对已存 Key 用;缺省 password 形态,不因卡片展开泄漏)
   const [showKey, setShowKey] = useState(false);
-  // 模型筛选(>12 才出现:一屏放得下的量不用筛;拉取列表动辄上百条,
-  // 靠它定位模型 —— 同 MCP 工具清单筛选的先例,语义取 id/别名包含)
+  /** 模型筛选(>12 才出现:一屏放得下的量不用筛;拉取列表动辄上百条,
+   *  靠它定位模型 —— 同 MCP 工具清单筛选的先例,语义取 id/别名包含) */
   const [modelQuery, setModelQuery] = useState("");
   const [confirmModelId, armConfirmModel, resetConfirmModel] =
     useConfirmReset<string>();
@@ -454,8 +454,8 @@ function ProviderCard({
           value={entry.baseUrl}
           onChange={(e) => onPatch({ baseUrl: e.target.value })}
           onBlur={(e) => {
-            // 失焦即归一(去首尾空白与尾斜杠)—— 粘贴带 / 的地址不归一
-            // 会拼出 //chat/completions;client.ts 另有兜底,这里是输入侧
+            /** 失焦即归一(去首尾空白与尾斜杠)—— 粘贴带 / 的地址不归一
+             *  会拼出 //chat/completions;client.ts 另有兜底,这里是输入侧 */
             const normalized = e.target.value.trim().replace(/\/+$/, "");
             if (normalized !== entry.baseUrl) onPatch({ baseUrl: normalized });
             onCommit();

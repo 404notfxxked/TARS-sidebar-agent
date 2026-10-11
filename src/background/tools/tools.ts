@@ -47,8 +47,8 @@ export function getTool(name: string): Tool | undefined {
   return getMcpTool(name);
 }
 
-// 导出为 provider 需要的 function calling schema
-// Tool 继承了 ToolSchema,直接返回即可(多余的 execute 字段对消费方无影响)
+/** 导出为 provider 需要的 function calling schema
+ *  Tool 继承了 ToolSchema,直接返回即可(多余的 execute 字段对消费方无影响) */
 export function toProviderToolSchemas(): ToolSchema[] {
   return registry;
 }
@@ -90,8 +90,8 @@ registerTool<
     "List all tabs in the current window (tabId, title, URL), marking each tab as the default target for page tools when tabId is omitted (default: the page at submit time) or the currently active tab (active). The tab list in <context> is a submit-time snapshot and goes stale as tabs open / close / switch during the run; when a tool reports \"tab not found\" or \"failed to inject content script\", call this tool first for a fresh list, then retry with the right tabId.",
   parameters: { type: "object", properties: {} },
   execute: async () => {
-    // ctx 读取必须在同步开头(并发纪律见 toolContext 头注),先 query 后读
-    // 会跨 await,并发 run 覆盖单槽时读到别人的 tabId
+    /** ctx 读取必须在同步开头(并发纪律见 toolContext 头注),先 query 后读
+     *  会跨 await,并发 run 覆盖单槽时读到别人的 tabId */
     const ctx = getToolExecutionContext();
     const defaultTabId = ctx?.tabId ?? null;
     const tabs = await chrome.tabs.query({ currentWindow: true });
@@ -442,7 +442,6 @@ registerTool<
   name: "scroll_page",
   // 非破坏性页面状态变更(改的是视图滚动位置,刷新即还原),有意不过确认门、
   // 显式标 write: false —— 门是给「替用户动手/持久写」的,滚动不属此列
-  // (审计 §9.1 待定夺项的表态,2026-09-21)
   write: false,
   description:
     "Scroll the page, or bring an element into view. Without selector: scrolls the window by `pages` viewport-heights in `direction` (down/up, or top/bottom to jump to the very start/end). With `selector`: scrolls that element into view instead.\nWhen to use: (1) triggering lazy-loaded / infinite-feed content, then re-reading or re-shooting; (2) bringing a below-the-fold element into the viewport right before page_screenshot — screenshot marks only cover the visible viewport; (3) checking whether more content remains (at_bottom in the result).\nWhen NOT to use: reading content — page_read / page_find work on the fully extracted document and are NOT affected by scrolling; acting on an off-screen element is also fine — click_element / fill_input scroll it into view automatically. Do not scroll just to \"look around\": page_outline maps the whole page without scrolling.\nReturns the resulting geometry: scroll_y / scroll_height / viewport_height / at_bottom.",

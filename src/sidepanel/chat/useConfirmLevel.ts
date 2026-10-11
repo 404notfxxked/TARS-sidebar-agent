@@ -42,11 +42,11 @@ export function useConfirmLevel(): {
       chrome.storage.onChanged.removeListener(onStorage);
     };
   }, []);
-  // 点选即落档(双写 legacy 键走 saveConfirmLevel);三档同权经此路径,
-  // 含 off(2026-10-04 决策,off 以 pill 的 warning 色常驻标示)。
-  // 先落库、后改本地态:pill 文案得是「存储已改」的判据 —— UI 抢在写前面
-  // 跳时,用户点完立刻发消息,后台 run 快照可能仍读到旧档(旧档是 strict
-  // 就等于把这条消息的门又关上了),e2e 也拿不到稳定的同步点
+  /** 点选即落档(双写 legacy 键走 saveConfirmLevel);三档同权经此路径,
+   *  含 off(2026-10-04 决策,off 以 pill 的 warning 色常驻标示)。
+   *  先落库、后改本地态:pill 文案得是「存储已改」的判据 —— UI 抢在写前面
+   *  跳时,用户点完立刻发消息,后台 run 快照可能仍读到旧档(旧档是 strict
+   *  就等于把这条消息的门又关上了),e2e 也拿不到稳定的同步点 */
   const pick = async (next: ConfirmLevel) => {
     await saveConfirmLevel(next);
     setLevel(next);

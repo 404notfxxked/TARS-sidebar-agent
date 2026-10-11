@@ -269,9 +269,9 @@ function McpServerCard({
     else next.add(toolName);
     onPatch({ disabledTools: next.size > 0 ? [...next] : undefined }, true);
   };
-  // url 的「提交后快照」:url 输入是每键 onChange(不落盘),失焦才提交。
-  // 工具清单的重拉必须跟随提交值 —— 跟随 entry.url 的话每敲一键都会对
-  // 半截 URL 发起一次真实 MCP 连接(同 headersKey 对鉴权头的处理)
+  /** url 的「提交后快照」:url 输入是每键 onChange(不落盘),失焦才提交。
+   *  工具清单的重拉必须跟随提交值 —— 跟随 entry.url 的话每敲一键都会对
+   *  半截 URL 发起一次真实 MCP 连接(同 headersKey 对鉴权头的处理) */
   const [committedUrl, setCommittedUrl] = useState(entry.url);
 
   const displayName = entry.name || hostOf(entry.url) || t("settings.serverUnnamed");

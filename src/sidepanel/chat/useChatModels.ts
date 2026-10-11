@@ -30,8 +30,8 @@ export function useChatModels() {
   /** 当前模型是否支持视觉:图片入口的门控依据 */
   const visionOk = !!curModels.find((m) => m.id === modelId)?.vision;
 
-  // ---- 思考程度:条目被标记为推理模型且目录给出档位时,输入行出选择器
-  // (设置页已无推理总开关) ----
+  /** ---- 思考程度:条目被标记为推理模型且目录给出档位时,输入行出选择器
+   *  (设置页已无推理总开关) ---- */
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   useEffect(() => {
     loadCatalog()

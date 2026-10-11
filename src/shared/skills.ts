@@ -44,9 +44,9 @@ export function parseSkillMarkdown(raw: string): ParsedSkill {
   const close = lines.findIndex((l) => l.trimEnd() === "---");
   if (close === -1) error("Frontmatter is not closed (missing closing ---)");
 
-  // 最小 frontmatter 解析:顶层 `key: value` + 一层两空格缩进的嵌套 map
-  // (metadata)+ 块标量(| 逐行保留 / > 折叠为空格,社区 skill 的多行
-  // description 常用)。值去成对单/双引号;空行与 # 注释跳过
+  /** 最小 frontmatter 解析:顶层 `key: value` + 一层两空格缩进的嵌套 map
+   *  (metadata)+ 块标量(| 逐行保留 / > 折叠为空格,社区 skill 的多行
+   *  description 常用)。值去成对单/双引号;空行与 # 注释跳过 */
   const fmLines = lines.slice(0, close);
   const map = new Map<string, string | Map<string, string>>();
   let nested: { key: string; map: Map<string, string> } | null = null;
@@ -58,9 +58,9 @@ export function parseSkillMarkdown(raw: string): ParsedSkill {
     const key = kv[1].trim();
     const rawValue = (kv[2] ?? "").trim();
 
-    // 块标量:`key: |` / `>`(可带 chomping +- )。收集缩进比 key 深的
-    // 后续行;遇到同级/更浅的非空行(下一个顶层键)即止。
-    // chomping 简化:一律 trimEnd(尾部空行对 description 无意义)
+    /** 块标量:`key: |` / `>`(可带 chomping +- )。收集缩进比 key 深的
+     *  后续行;遇到同级/更浅的非空行(下一个顶层键)即止。
+     *  chomping 简化:一律 trimEnd(尾部空行对 description 无意义) */
     const block = /^([|>])[+-]?$/.exec(rawValue);
     if (block) {
       const keyIndent = line.length - line.trimStart().length;

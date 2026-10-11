@@ -4,8 +4,8 @@
 export function oneLine(s: string, max: number): string {
   const flat = s.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
-  // UTF-16 下标截断会劈开代理对(emoji 等 astral 字符):切点落在码元中间
-  // 会把孤立半字喂给模型(搜索标题/摘要可见);末位是高代理时回退一位保住整对
+  /** UTF-16 下标截断会劈开代理对(emoji 等 astral 字符):切点落在码元中间
+   *  会把孤立半字喂给模型(搜索标题/摘要可见);末位是高代理时回退一位保住整对 */
   const cut = flat.slice(0, max);
   const last = cut.charCodeAt(cut.length - 1);
   const safe = last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;

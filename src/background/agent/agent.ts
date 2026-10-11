@@ -73,8 +73,8 @@ export async function runAgentLoop(
     sessionId: payload.sessionId ?? "",
   });
 
-  // 一个 run 的可变状态全部收进 loop(接口 RunLoopState 见上):这里只放
-  // 占位初值,try 内构建出真实值后就地写回;catch/finally 拿到的也是同一引用
+  /** 一个 run 的可变状态全部收进 loop(接口 RunLoopState 见上):这里只放
+   *  占位初值,try 内构建出真实值后就地写回;catch/finally 拿到的也是同一引用 */
   const loop: RunLoopState = {
     messages: [],
     persistedSeqs: 0,
@@ -92,11 +92,11 @@ export async function runAgentLoop(
     persistFailure: null,
   };
 
-  // 工具执行上下文:整 run 一个对象,提交时捕获 tabId / 会话 / 取消信号。
-  // dispatchToolCall 执行前重复 set 是并发 run 下重申归属(同一对象,
-  // lastOperatedTabId 的跨轮记忆不丢);清理只在 run 收口统一做 ——
-  // 1.2.0 只读工具并行后,per-call finally 置 null 会让先完成的工具
-  // 砸掉兄弟工具的后置读取(get_tabs 的 defaultTabId、确认门的 tabId 解析)
+  /** 工具执行上下文:整 run 一个对象,提交时捕获 tabId / 会话 / 取消信号。
+   *  dispatchToolCall 执行前重复 set 是并发 run 下重申归属(同一对象,
+   *  lastOperatedTabId 的跨轮记忆不丢);清理只在 run 收口统一做 ——
+   *  1.2.0 只读工具并行后,per-call finally 置 null 会让先完成的工具
+   *  砸掉兄弟工具的后置读取(get_tabs 的 defaultTabId、确认门的 tabId 解析) */
   const toolCtx: ToolExecutionContext = {
     tabId: payload.tabId,
     sessionId: payload.sessionId ?? "",
@@ -114,14 +114,14 @@ export async function runAgentLoop(
     // 首保存即落用户提问:第一轮请求挂起期间关面板/杀 SW,问题也不丢
     await persistNewMessages(loop, payload.sessionId);
 
-    // 工具分发:注册表里的工具统一在这里执行。
-    // 执行上下文在「真正执行前」重申归属:确认等待是跨 await 窗口,并发 run
-    // 可能在窗口内覆盖全局单槽,确认返回后才 set 会砸不中 —— 所以 set 紧贴
-    // execute(工具对 ctx 的读取都发生在自己执行体的同步开头,窗口内读不到别人的)。
-    // 执行后不清理:并行批次下兄弟工具可能仍在读全局 ctx,清理由 run 收口的
-    // finally 统一做
-    // 共享确认门闭包:批次屏障(loop)与 dispatch 的门判定必须同源(契约点 1)
-    // —— 在这里建一次,两处以同一实例消费,不许各自展开成 needsConfirmation(...)
+    /** 工具分发:注册表里的工具统一在这里执行。
+     *  执行上下文在「真正执行前」重申归属:确认等待是跨 await 窗口,并发 run
+     *  可能在窗口内覆盖全局单槽,确认返回后才 set 会砸不中 —— 所以 set 紧贴
+     *  execute(工具对 ctx 的读取都发生在自己执行体的同步开头,窗口内读不到别人的)。
+     *  执行后不清理:并行批次下兄弟工具可能仍在读全局 ctx,清理由 run 收口的
+     *  finally 统一做
+     *  共享确认门闭包:批次屏障(loop)与 dispatch 的门判定必须同源(契约点 1)
+     *  —— 在这里建一次,两处以同一实例消费,不许各自展开成 needsConfirmation(...) */
     const confirmGate: ConfirmGate = (name, args) =>
       needsConfirmation(name, args, cfg.confirmLevel, fetchAllowlist);
     const dispatchToolCall = createDispatchToolCall(

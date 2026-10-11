@@ -43,8 +43,8 @@ import {
 } from "../ui/icons";
 import { peekImgUrl, requestImgUrl } from "./images";
 
-// markdown 渲染配置:引用保持稳定——模块级常量让编译器记忆化生效,
-// 历史消息不因无关状态重渲染/重解析(手写 memo 已删,见头注)
+/** markdown 渲染配置:引用保持稳定——模块级常量让编译器记忆化生效,
+ *  历史消息不因无关状态重渲染/重解析(手写 memo 已删,见头注) */
 const MD_REMARK: NonNullable<MarkdownOptions["remarkPlugins"]> = [remarkGfm];
 const MD_REHYPE: NonNullable<MarkdownOptions["rehypePlugins"]> = [
   [
@@ -214,8 +214,8 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(() => peekImgUrl(meta.id));
   const [failed, setFailed] = useState(false);
-  // 展示盒按 meta 比例预留(meta 是入库时的真实尺寸):加载占位与成图同
-  // 尺寸,字节到位不推挤消息列表(CLS);高封顶 192 与既有 max-h-48 一致
+  /** 展示盒按 meta 比例预留(meta 是入库时的真实尺寸):加载占位与成图同
+   *  尺寸,字节到位不推挤消息列表(CLS);高封顶 192 与既有 max-h-48 一致 */
   const scale = Math.min(1, 192 / meta.h);
   const dispW = Math.round(meta.w * scale);
   const dispH = Math.round(meta.h * scale);

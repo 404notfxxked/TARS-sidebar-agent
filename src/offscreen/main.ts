@@ -60,8 +60,8 @@ function requestCaptureDoc(tabId: number): Promise<unknown> {
   });
 }
 
-// 缓存/单飞合并/LRU 全在 SnapshotPool(并发语义可单测);这里只负责采集
-// 动作本身:向 content 索取 HTML → 构建虚拟文档 → 记录重建诊断
+/** 缓存/单飞合并/LRU 全在 SnapshotPool(并发语义可单测);这里只负责采集
+ *  动作本身:向 content 索取 HTML → 构建虚拟文档 → 记录重建诊断 */
 const pool = new SnapshotPool<VirtualDoc>(async (tabId, refresh) => {
   const startedAt = Date.now();
   const meta = await requestCaptureDoc(tabId);
@@ -128,9 +128,9 @@ async function handleDocTool(name: string, args: unknown, targetTabId: number, r
 // 与 DOC_TOOL_CALL 的区别:数据由 SW 随消息自带(web_fetch 抓到的网页 HTML),
 // 不需要先向某个 tab 索取快照
 
-// async:内部 throw 必须变成 rejected promise —— 同步 throw 会逃出
-// Promise.resolve(...) 成为 listener 未捕获异常,SW 侧拿到的是被 Chrome
-// 包装过的错误文本(如 "Uncaught Error: ..."),协议约定的错误前缀会失效
+/** async:内部 throw 必须变成 rejected promise —— 同步 throw 会逃出
+ *  Promise.resolve(...) 成为 listener 未捕获异常,SW 侧拿到的是被 Chrome
+ *  包装过的错误文本(如 "Uncaught Error: ..."),协议约定的错误前缀会失效 */
 async function handleParse(kind: string, payload: unknown): Promise<unknown> {
   switch (kind) {
     case "search": {

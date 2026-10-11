@@ -302,9 +302,9 @@ async function callTool(rec: McpToolRecord, args: unknown): Promise<string> {
   for (const { path, header } of rec.headerParams) {
     const v = valueAtPath(a, path);
     if (v === undefined || v === null) continue; // 缺参省略头,规范同款
-    // 头名来自服务器 schema 的 x-mcp-header 注解(外部输入):非法 token
-    // 字符会让 fetch 抛 TypeError,被误译成「网络不可达」误导排查 —— 跳过
-    // 并留日志,不让单个坏注解炸掉整次调用
+    /** 头名来自服务器 schema 的 x-mcp-header 注解(外部输入):非法 token
+     *  字符会让 fetch 抛 TypeError,被误译成「网络不可达」误导排查 —— 跳过
+     *  并留日志,不让单个坏注解炸掉整次调用 */
     const headerName = `Mcp-Param-${header}`;
     if (!isHttpToken(headerName)) {
       log.warn("mcp", "x-mcp-header 注解含非法头名字符,已跳过", {

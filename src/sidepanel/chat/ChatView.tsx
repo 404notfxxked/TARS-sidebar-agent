@@ -162,8 +162,8 @@ export default function ChatView({
     });
     // 本地回显:预览 url 先入气泡缓存,渲染无需再向后台取字节
     for (const p of pendingImages) cacheImgUrl(p.id, p.url);
-    // 送达回执决定草稿去留:发送失败时输入框与待发附件原样
-    // 保留,消息流里以「未送达 + 重试」呈现;成功才清空(原行为)
+    /** 送达回执决定草稿去留:发送失败时输入框与待发附件原样
+     *  保留,消息流里以「未送达 + 重试」呈现;成功才清空(原行为) */
     const delivered = chat.submitUserMessage({
       sessionId,
       tabId,
@@ -176,9 +176,9 @@ export default function ChatView({
     }
   };
 
-  // 重试未送达的提交(评审修正):成功后只有「草稿仍等于原文本 ∧ 待发附件
-  // 与原附件一致」才清空输入区 —— 重发的内容已在对话里,留着会诱导二次
-  // 发送;但用户失败后可能已改写草稿,不能吞掉新内容
+  /** 重试未送达的提交(评审修正):成功后只有「草稿仍等于原文本 ∧ 待发附件
+   *  与原附件一致」才清空输入区 —— 重发的内容已在对话里,留着会诱导二次
+   *  发送;但用户失败后可能已改写草稿,不能吞掉新内容 */
   const retrySend = (args: Parameters<typeof chat.retrySubmit>[0]) => {
     if (!chat.retrySubmit(args)) return;
     const sentImageIds = new Set((args.images ?? []).map((a) => a.id));
