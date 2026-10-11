@@ -72,7 +72,9 @@ export function useCopyFlash(ms = 1600) {
   const copy = useCallback(
     async (text: string) => {
       try {
-        await navigator.clipboard.writeText(text);
+        // 模型原文常带尾部换行/空白:markdown 渲染下不可见,原样进剪贴板
+        // 会让粘贴端多出空行;代码块围栏自带的收尾换行同理。写入前统一截掉
+        await navigator.clipboard.writeText(text.trimEnd());
         setCopied(true);
         if (timer.current !== null) window.clearTimeout(timer.current);
         timer.current = window.setTimeout(() => setCopied(false), ms);

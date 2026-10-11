@@ -80,8 +80,13 @@ export function UserBubble({
   text: string;
   images?: ImageMeta[];
 }) {
+  // 动作行文案走字典:同 AssistantBubble,useT 订阅 locale(编译器把 t 身份当依赖)
+  const t = useT();
+  const [copied, copy] = useCopyFlash();
   return (
-    <div className="msg-in ml-auto flex w-fit max-w-[86%] flex-col items-end gap-1.5">
+    // msg-bubble 只是动作行悬停显形的锚点类(见 chat.css),本身无样式;
+    // 动作行挂在气泡下方右对齐,不撑高彩色气泡本体
+    <div className="msg-bubble msg-in ml-auto flex w-fit max-w-[86%] flex-col items-end gap-1.5">
       {images && images.length > 0 && (
         <div className="flex max-w-full flex-wrap justify-end gap-1.5">
           {images.map((im) => (
@@ -92,6 +97,18 @@ export function UserBubble({
       {text && (
         <div className="whitespace-pre-wrap break-words rounded-md rounded-br-sm bg-primary-container px-3.5 py-2 text-[13px] leading-relaxed text-on-primary-container">
           {text}
+        </div>
+      )}
+      {text && (
+        <div className={`msg-actions${copied ? " is-copied" : ""}`}>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={copied ? t("common.copied") : t("common.copy")}
+            onClick={() => copy(text)}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </button>
         </div>
       )}
     </div>
