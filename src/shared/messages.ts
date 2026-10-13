@@ -168,7 +168,8 @@ export interface ChatRecord {
 }
 
 /** 会话压缩元数据(面板展示用):seq ≤ uptoSeq 的消息已压缩为摘要,
- *  摘要文本本身留在后台(会话行),面板只需要压缩点位置来渲染分隔条 */
+ *  摘要文本本身留在后台(会话行),面板只需要压缩点位置来渲染分隔条。
+ *  uptoSeq 是库 seq(与 ChatRecord.seq 同空间,后台落库前已换算) */
 export interface CompactionMark {
   uptoSeq: number;
   at: number;

@@ -71,19 +71,25 @@ export async function loadHistory(sessionId: string): Promise<InternalMsg[]> {
  *  行还带着 wireBlocks,同样跨 run 原样落盘、随适配器口径回传。
  *  回放投影(toChatRecords)读同一个字段展示过程卡,两层同源不同用途。
  *
- *  返回两个口径(同一次读取给全,调用方两者都要):
+ *  返回三个口径(同一次读取给全,调用方各取所需):
  *  - prompt = 上面这套收窄后的历史(发给模型);
  *  - rows = 库里的真实消息行数 —— **追加写盘的 seq 锚点必须用它**。被滤掉的
  *    行同样占着 seq,拿 prompt 长度当锚点会让新一轮从更低的 seq 起写,把
- *    它们覆写掉(2026-09 审计实测:失败轮同会话追问把 error 行写没了) */
+ *    它们覆写掉(2026-09 审计实测:失败轮同会话追问把 error 行写没了);
+ *  - seqs = prompt 各行对应的库 seq(与 prompt 等长)—— 压缩点(pickSplit
+ *    的产出)是 prompt 下标,落库前须经它映射回库 seq(saveCompaction) */
 export async function loadTranscript(
   sessionId: string,
-): Promise<{ prompt: InternalMsg[]; rows: number }> {
+): Promise<{ prompt: InternalMsg[]; rows: number; seqs: number[] }> {
   const msgs = await loadHistory(sessionId);
-  return {
-    rows: msgs.length,
-    prompt: msgs.filter((m) => !(m.role === "assistant" && m.error)),
-  };
+  const prompt: InternalMsg[] = [];
+  const seqs: number[] = [];
+  msgs.forEach((m, i) => {
+    if (m.role === "assistant" && m.error) return;
+    prompt.push(m);
+    seqs.push(i);
+  });
+  return { prompt, seqs, rows: msgs.length };
 }
 
 /** 追加保存:只落本轮新增的消息。
@@ -196,12 +202,23 @@ export async function getCompactionMark(
   return compaction ? { uptoSeq: compaction.uptoSeq, at: compaction.at } : null;
 }
 
-/** 写入压缩元数据(压缩发生在 run 开始,与消息追加解耦) */
+/** 写入压缩元数据(压缩发生在 run 开始,与消息追加解耦)。
+ *  uptoSeq 进来时是**已滤错误行的 prompt 下标**(pickSplit 的产出空间),
+ *  落库前经 promptSeqs 映射回库 seq —— 落库值必须与消费端同空间:面板拿
+ *  未滤的 ChatRecord.seq 直接比对画分隔条,含错误行的会话两个空间差着
+ *  被滤行数,原样落库会把分隔条画偏(契约锚在 sessionHistory.test.ts
+ *  「压缩点落库口径」) */
 export function saveCompaction(
   sessionId: string,
   compaction: db.SessionCompaction,
+  promptSeqs: number[],
 ): Promise<void> {
-  return db.saveSessionInfo(sessionId, { compaction });
+  return db.saveSessionInfo(sessionId, {
+    compaction: {
+      ...compaction,
+      uptoSeq: promptSeqs[compaction.uptoSeq],
+    },
+  });
 }
 
 /** 写入实测 token 基线(run 结束,供下次 run 算压缩触发基线) */

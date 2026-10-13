@@ -236,7 +236,9 @@ export function summaryToMsg(
 export interface CompactionOutcome {
   /** 新摘要文本(已并入旧摘要,若有) */
   summary: string;
-  /** 摘要覆盖的最后一条消息 seq;prompt 保留 history.slice(uptoSeq + 1) */
+  /** 摘要覆盖的最后一条消息在 history(**已滤错误行的 prompt**)里的
+   *  下标;prompt 保留 history.slice(uptoSeq + 1)。注意这不是库 seq ——
+   *  落库须经 saveCompaction 映射回库 seq,面板比对的是后者 */
   uptoSeq: number;
 }
 

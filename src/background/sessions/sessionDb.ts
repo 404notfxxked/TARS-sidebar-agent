@@ -61,7 +61,9 @@ export interface SkillRow {
 }
 
 /** 会话压缩元数据:seq ≤ uptoSeq 的消息已压缩为 summary 文本。
- *  压缩只改「发给模型的 prompt」,消息行不动 —— 库里保持全量历史 */
+ *  压缩只改「发给模型的 prompt」,消息行不动 —— 库里保持全量历史。
+ *  uptoSeq 是库 seq(未滤错误行的稠密下标),与面板 ChatRecord.seq 同
+ *  空间;写入方 saveCompaction 负责从已滤 prompt 下标换算 */
 export interface SessionCompaction {
   summary: string;
   uptoSeq: number;

@@ -13,10 +13,12 @@ import {
   loadMessageRows,
 } from "./sessionDb";
 import {
+  getCompactionMark,
   listSessions,
   loadHistory,
   loadTranscript,
   prepareRegenerate,
+  saveCompaction,
   saveHistory,
   toChatRecords,
 } from "./sessionHistory";
@@ -552,6 +554,56 @@ describe("损坏行保序(数组下标 = seq 的地基)", () => {
     expect(
       toChatRecords(rows).some((r) => r.role === "assistant" && r.error === true),
     ).toBe(true);
+  });
+});
+
+describe("压缩点落库口径(uptoSeq 的两个空间)", () => {
+  // 契约:压缩点生产端(pickSplit 在已滤错误行的 prompt 上选点)与消费端
+  // (面板拿未滤的 ChatRecord.seq 比对画分隔条)分属两个索引空间,靠
+  // loadTranscript.seqs + saveCompaction 的落库映射钉在同一处 —— 口径
+  // 上下文与 tokenBudget 的 coveredLibraryRows 同族(错误行会话的口径陷阱)
+  const errorSession = (): InternalMsg[] => [
+    { role: "user", content: "<user-request>\n问一\n</user-request>" },
+    { role: "assistant", content: "答一" },
+    { role: "assistant", content: "Error: quota", error: true },
+    { role: "user", content: "<user-request>\n问二\n</user-request>" },
+    { role: "assistant", content: "答二" },
+  ];
+
+  it("loadTranscript.seqs:prompt 各行带库 seq,错误行造成的错位可见", async () => {
+    await saveHistory("s20", errorSession(), 0, 0);
+    const { prompt, rows, seqs } = await loadTranscript("s20");
+    expect(rows).toBe(5); // 错误行照样占 seq
+    expect(prompt).toHaveLength(4); // prompt 滤掉错误行
+    // 问二在 prompt 里是下标 2,在库里是 seq 3 —— 两个空间差 1
+    expect(seqs).toEqual([0, 1, 3, 4]);
+  });
+
+  it("saveCompaction 落库前映射回库 seq:已滤下标不直通存储", async () => {
+    await saveHistory("s21", errorSession(), 0, 0);
+    const { seqs } = await loadTranscript("s21");
+    // pickSplit 若选中 prompt 下标 2(问二),落库必须是库 seq 3 ——
+    // 原样落 2 会让面板分隔条画在问二之前(把已压缩的问二划进未压缩侧)
+    await saveCompaction("s21", { summary: "摘要", uptoSeq: 2, at: 1 }, seqs);
+    expect((await getCompactionMark("s21"))?.uptoSeq).toBe(3);
+  });
+
+  it("无错误行的会话两个空间重合:映射恒等,既有行为不变", async () => {
+    await saveHistory(
+      "s22",
+      [
+        { role: "user", content: "<user-request>\n问\n</user-request>" },
+        { role: "assistant", content: "答" },
+        { role: "user", content: "<user-request>\n再问\n</user-request>" },
+        { role: "assistant", content: "再答" },
+      ],
+      0,
+      0,
+    );
+    const { seqs } = await loadTranscript("s22");
+    expect(seqs).toEqual([0, 1, 2, 3]);
+    await saveCompaction("s22", { summary: "摘要", uptoSeq: 1, at: 1 }, seqs);
+    expect((await getCompactionMark("s22"))?.uptoSeq).toBe(1);
   });
 });
 

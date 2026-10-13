@@ -26,6 +26,7 @@ const baseMsg = (over: Partial<ChatMsg> = {}): ChatMsg => ({
 function renderList(
   messages: ChatMsg[],
   handlers: { regenerate: () => void; retryLoad: (sessionId: string) => void },
+  compaction: { uptoSeq: number } | null = null,
 ) {
   const listRef: RefObject<HTMLDivElement | null> = { current: null };
   return render(
@@ -34,7 +35,7 @@ function renderList(
       messages={messages}
       currentSession="s1"
       status="idle"
-      compaction={null}
+      compaction={compaction}
       runSegs={[]}
       runPhase="live"
       runEndedAt={null}
@@ -78,5 +79,40 @@ describe("MessageList 错误气泡的两种重试语义", () => {
     await user.click(screen.getByRole("button", { name: zhCN.chat.retry }));
     expect(regenerate).toHaveBeenCalledTimes(1);
     expect(retryLoad).not.toHaveBeenCalled();
+  });
+});
+
+describe("压缩分隔条落点(库 seq 口径)", () => {
+  // 契约的消费端一半:落库的 uptoSeq 是库 seq(未滤错误行),面板拿
+  // ChatRecord.seq 直接比对。生产端的映射锚在 sessionHistory.test.ts
+  // (saveCompaction 落库前换算),两半钉的是同一份口径
+  it("含错误行的回放:分隔条画在库 seq 超过压缩点的首条之前,不被错误行挤偏", () => {
+    // seq 2 是失败轮错误行(prompt/压缩空间滤掉它);压缩点落在「答一」
+    // (库 seq 1)时,首条 seq > 1 的记录是错误行自己
+    const messages: ChatMsg[] = [
+      { role: "user", content: "问一", sessionId: "s1", seq: 0 },
+      { role: "assistant", content: "答一", sessionId: "s1", seq: 1 },
+      {
+        role: "assistant",
+        content: "Error: quota",
+        sessionId: "s1",
+        seq: 2,
+        error: true,
+      },
+      { role: "user", content: "问二", sessionId: "s1", seq: 3 },
+      { role: "assistant", content: "答二", sessionId: "s1", seq: 4 },
+    ];
+    renderList(messages, { regenerate: () => {}, retryLoad: () => {} }, {
+      uptoSeq: 1,
+    });
+
+    const divider = screen.getByRole("note", {
+      name: zhCN.chat.compactionNote,
+    });
+    const kids = [...divider.parentElement!.children];
+    const di = kids.indexOf(divider);
+    // 前一段是最后一条被压缩的消息(答一),后一段是压缩点后首条(错误行)
+    expect(kids[di - 1].textContent).toContain("答一");
+    expect(kids[di + 1].textContent).toContain("quota");
   });
 });

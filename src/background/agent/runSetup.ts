@@ -305,7 +305,7 @@ export async function assemblePrompt(
    *  rows 是库里的真实行数,做落盘 seq 锚点 —— 被滤掉的行(错误行、损坏
    *  占位行)同样占着 seq,锚点若取 prompt 长度会从更低的 seq 起写,把
    *  它们覆写掉(2026-09 审计:失败轮同会话追问把 error 行写没了) */
-  const { prompt: history, rows } = await loadTranscript(
+  const { prompt: history, rows, seqs } = await loadTranscript(
     payload.sessionId ?? "",
   );
   loop.persistedSeqs = rows;
@@ -392,11 +392,16 @@ export async function assemblePrompt(
         sessionInfo.compaction?.summary ?? "",
         { signal },
       );
-      await saveCompaction(payload.sessionId ?? "", {
-        summary: compaction.summary,
-        uptoSeq: compaction.uptoSeq,
-        at: Date.now(),
-      });
+      await saveCompaction(
+        payload.sessionId ?? "",
+        {
+          summary: compaction.summary,
+          uptoSeq: compaction.uptoSeq,
+          at: Date.now(),
+        },
+        // uptoSeq 此刻还是已滤下标,saveCompaction 落库前映射回库 seq
+        seqs,
+      );
     } catch (err) {
       // 摘要失败退回溢出裁剪;用户取消则继续上抛(外层静默退出)
       if (signal?.aborted) throw err;
