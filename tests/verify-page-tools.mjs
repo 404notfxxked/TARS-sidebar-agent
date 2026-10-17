@@ -9,6 +9,12 @@
 //   PT2 截断标记回归:单节超 4000 上限的页面 → outline/read
 //      带 sections_truncated + 指引点名 web_fetch(且不指 refresh —— 重建
 //      快照对单节上限无效);被裁内容确实不在快照里
+//   PT3 navigate_tab 端到端:navigate(确认卡放行)→ tabs.onUpdated 快照自动
+//      失效 → page_find 不带 refresh 直接命中新页;断言 loaded=true 与目标 tab
+//   PT4 tab_activate / close_tab:激活不过门、关闭过门;关闭后 get_tabs 无该
+//      tab;get_tabs 每项带 status 字段
+//   PT5 守卫与参数闸:独立单标签页窗口的 close_tab 被最后标签页守卫拒绝;
+//      navigate_tab 拒绝 javascript: 等非 http/https URL
 //   说明:content 侧采样截断(source_truncated,CAPTURE_HTML_MAX_CHARS=1M)
 //   的透出由 pipeline 单测覆盖 —— e2e 造 1M 字节夹具不成比例,不在此重复。
 //
@@ -17,6 +23,7 @@
 
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { zh } from "./lib-i18n.mjs";
 import {
   launchWithCdp,
   ask,
@@ -244,6 +251,156 @@ console.log("\nPT2 单节截断不再静默(sections_truncated + web_fetch 指�
     `len=${read.text?.length}`,
   );
   await page.close();
+}
+
+// ---- PT3 navigate_tab 端到端(navigate → 快照自动失效 → find 命中)----
+// 确认门:strict 下 navigate_tab(page-nav)过门,卡上展示目标 URL,放行后执行
+console.log("\nPT3 navigate_tab 端到端(navigate → 快照自动失效 → page_find)");
+{
+  const sendBtn = `button[aria-label="${zh.chat.send}"]`;
+  const inputSel = `textarea[aria-label="${zh.chat.askInput}"]`;
+  const allowBtn = `button[aria-label="${zh.chat.confirmAllow}"]`;
+  const sendOnly = async (text) => {
+    const input = sidepanel.locator(inputSel);
+    await input.waitFor({ timeout: 5000 });
+    await input.fill(text);
+    await sidepanel.locator(sendBtn).click();
+  };
+  const waitIdle = () =>
+    sidepanel.locator(sendBtn).waitFor({ state: "visible", timeout: 30000 });
+
+  // 先开「doc-big」页,再让模型 navigate 到「doc」夹具:跳转触发 tabs.onUpdated
+  // → docBridge 快照自动失效,后续 page_find 不带 refresh 也应重建并命中
+  const { page, tabId } = await openTarget("doc-big");
+  chain = [
+    { name: "navigate_tab", args: { tabId, url: "https://mock.test/doc" } },
+    { name: "page_find", args: { tabId, query: "夜航船" } },
+  ];
+  await sendOnly("把当前页跳到测试文档页,找找夜航船");
+  await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(allowBtn).click();
+  await waitIdle();
+
+  const tools = toolMessagesOf(lastRequest);
+  check(tools.length === 2, "navigate → find 两跳按脚本执行", `n=${tools.length}`);
+  const nav = JSON.parse(tools[0]?.content ?? "{}");
+  check(
+    nav.loaded === true && nav.tabId === tabId && nav.url === "https://mock.test/doc",
+    "navigate_tab 等到 complete(loaded=true)并返回目标 tab",
+    JSON.stringify(nav),
+  );
+  const find = JSON.parse(tools[1]?.content ?? "{}");
+  check(
+    (find.matches?.length ?? 0) >= 1 && JSON.stringify(find).includes("夜航船"),
+    "跳转后 page_find 不带 refresh 直接命中(快照自动失效生效)",
+    JSON.stringify(find.matches)?.slice(0, 120),
+  );
+  await page.close();
+}
+
+// ---- PT4 tab_activate / close_tab(确认卡放行 + get_tabs status)----
+console.log("\nPT4 tab_activate / close_tab");
+{
+  const sendBtn = `button[aria-label="${zh.chat.send}"]`;
+  const inputSel = `textarea[aria-label="${zh.chat.askInput}"]`;
+  const allowBtn = `button[aria-label="${zh.chat.confirmAllow}"]`;
+  const sendOnly = async (text) => {
+    const input = sidepanel.locator(inputSel);
+    await input.waitFor({ timeout: 5000 });
+    await input.fill(text);
+    await sidepanel.locator(sendBtn).click();
+  };
+  const waitIdle = () =>
+    sidepanel.locator(sendBtn).waitFor({ state: "visible", timeout: 30000 });
+
+  const p2 = await browser.newPage();
+  await p2.goto("https://mock.test/doc-big", { waitUntil: "load" });
+  const tabId2 = await sidepanel.evaluate(
+    () =>
+      new Promise((resolve) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) =>
+          resolve(tabs[0]?.id ?? -1),
+        );
+      }),
+  );
+  check(tabId2 > 0, "第二页已打开且拿到 tabId", `tabId2=${tabId2}`);
+
+  chain = [
+    { name: "tab_activate", args: { tabId: tabId2 } },
+    { name: "close_tab", args: { tabId: tabId2 } },
+    { name: "get_tabs", args: {} },
+  ];
+  await sendOnly("切到第二个标签页,然后把它关掉,再列一下标签页");
+  // tab_activate 不过门;close_tab(page-write)strict 下弹卡 → 放行
+  await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(allowBtn).click();
+  await waitIdle();
+
+  const tools = toolMessagesOf(lastRequest);
+  check(tools.length === 3, "activate → close → get_tabs 三跳按脚本执行", `n=${tools.length}`);
+  const act = JSON.parse(tools[0]?.content ?? "{}");
+  check(act.active === true && act.tabId === tabId2, "tab_activate 激活目标 tab", JSON.stringify(act));
+  const closed = JSON.parse(tools[1]?.content ?? "{}");
+  check(closed.closed === tabId2, "close_tab 关闭目标 tab", JSON.stringify(closed));
+  const list = JSON.parse(tools[2]?.content ?? "{}");
+  check(
+    !(list.tabs ?? []).some((t) => t.tabId === tabId2),
+    "get_tabs 已无被关 tab",
+    JSON.stringify((list.tabs ?? []).map((t) => t.tabId)),
+  );
+  check(
+    (list.tabs ?? []).every((t) => typeof t.status === "string"),
+    "get_tabs 每项带 status 字段",
+    JSON.stringify((list.tabs ?? [])[0]),
+  );
+  await p2.close().catch(() => {});
+}
+
+// ---- PT5 守卫与参数闸(最后标签页拒绝 / 非 http 拒绝)----
+console.log("\nPT5 守卫与参数闸");
+{
+  const sendBtn = `button[aria-label="${zh.chat.send}"]`;
+  const inputSel = `textarea[aria-label="${zh.chat.askInput}"]`;
+  const allowBtn = `button[aria-label="${zh.chat.confirmAllow}"]`;
+  const sendOnly = async (text) => {
+    const input = sidepanel.locator(inputSel);
+    await input.waitFor({ timeout: 5000 });
+    await input.fill(text);
+    await sidepanel.locator(sendBtn).click();
+  };
+  const waitIdle = () =>
+    sidepanel.locator(sendBtn).waitFor({ state: "visible", timeout: 30000 });
+
+  // 独立窗口 + 单标签页:close_tab 的最后标签页守卫应拒绝
+  const win = await sidepanel.evaluate(() => chrome.windows.create({ url: "https://mock.test/doc" }));
+  const soloTabId = win.tabs?.[0]?.id ?? -1;
+  check(soloTabId > 0, "独立单标签页窗口已建", `soloTabId=${soloTabId}`);
+
+  chain = [{ name: "close_tab", args: { tabId: soloTabId } }];
+  await sendOnly("把刚才新窗口里的标签页关掉");
+  await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(allowBtn).click();
+  await waitIdle();
+  let tools = toolMessagesOf(lastRequest);
+  check(
+    (tools[0]?.content ?? "").includes("last tab"),
+    "最后标签页守卫:拒绝并语义化报错",
+    tools[0]?.content?.slice(0, 120),
+  );
+
+  chain = [{ name: "navigate_tab", args: { url: "javascript:alert(1)" } }];
+  await sendOnly("跳到 javascript:alert(1)");
+  await sidepanel.locator(allowBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(allowBtn).click();
+  await waitIdle();
+  tools = toolMessagesOf(lastRequest);
+  check(
+    (tools[0]?.content ?? "").includes("http/https"),
+    "非 http/https URL 拒绝并语义化报错",
+    tools[0]?.content?.slice(0, 120),
+  );
+
+  await sidepanel.evaluate((id) => chrome.windows.remove(id), win.id);
 }
 
 console.log(`\n结果: ${check.failures.length} 条断言失败`);
