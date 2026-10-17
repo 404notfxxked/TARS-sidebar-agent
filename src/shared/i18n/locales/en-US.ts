@@ -85,7 +85,7 @@ export const enUS = {
     confirmPillOff: "All auto",
     confirmPillStrictDesc: "TARS asks before each write action.",
     confirmPillAutoDesc:
-      "Page actions run without asking. Memory writes, tool calls to MCP servers and reads of unseen links still ask.",
+      "Page actions run without asking. Page navigations, tab closes, memory writes, tool calls to MCP servers and reads of unseen links still ask.",
     confirmPillOffDesc:
       "Everything runs without asking: page actions, memory writes, MCP tool calls and reads of unseen links.",
     confirmPillAria: "Confirmation level: {level}",
@@ -124,6 +124,9 @@ export const enUS = {
     confirmMemorySaveTitle: "wants to save a long-term memory",
     confirmMemoryDeleteTitle: "wants to delete long-term memories",
     confirmWebFetchTitle: "wants to read an external link",
+    confirmNavigateTitle: "wants to navigate the page",
+    confirmCloseTabTitle: "wants to close a tab",
+    confirmNavigateUrl: "Will navigate to: {url}",
     confirmMemorySaveText: "Will remember: {text}",
     confirmMemoryDeleteText: "Will delete memories matching \"{match}\"",
     confirmWebFetchUrl: "Link: {url}",
@@ -161,6 +164,9 @@ export const enUS = {
       fillInput: "Fill input",
       memorySave: "Save memory",
       memoryDelete: "Delete memory",
+      navigateTab: "Open page",
+      tabActivate: "Switch tab",
+      closeTab: "Close tab",
     },
     code: {
       copy: "Copy",

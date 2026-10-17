@@ -81,7 +81,7 @@ export const zhCN = {
     confirmPillOff: "全部放行",
     confirmPillStrictDesc: "每个写操作都先问一声",
     confirmPillAutoDesc:
-      "点击、填写不再询问。记忆写入、MCP 调用、私网与陌生链接仍会问。",
+      "点击、填写不再询问。页面跳转、关闭标签页、记忆写入、MCP 调用、私网与陌生链接仍会问。",
     confirmPillOffDesc:
       "一切自动执行：页面操作、记忆读写、MCP 调用与陌生链接都不再询问。",
     confirmPillAria: "确认档位：{level}",
@@ -117,6 +117,9 @@ export const zhCN = {
     confirmMemorySaveTitle: "请求写入长期记忆",
     confirmMemoryDeleteTitle: "请求删除长期记忆",
     confirmWebFetchTitle: "请求读取外部链接",
+    confirmNavigateTitle: "请求跳转页面",
+    confirmCloseTabTitle: "请求关闭标签页",
+    confirmNavigateUrl: "将跳转：{url}",
     confirmMemorySaveText: "将记住：{text}",
     confirmMemoryDeleteText: "将删除匹配「{match}」的记忆",
     confirmWebFetchUrl: "链接：{url}",
@@ -153,6 +156,9 @@ export const zhCN = {
       fillInput: "填写输入",
       memorySave: "保存记忆",
       memoryDelete: "删除记忆",
+      navigateTab: "打开页面",
+      tabActivate: "切换标签",
+      closeTab: "关闭标签",
     },
     code: {
       copy: "复制",

@@ -12,7 +12,7 @@ type ConfirmRequest = Extract<
   { type: typeof MSG.AGENT_CONFIRM_REQUEST }
 >;
 
-/** 按工具族取卡片标题键:页面动作/记忆/外链/MCP 各自有更贴题的说法 */
+/** 按工具族取卡片标题键:页面动作/记忆/外链/MCP/标签页各自有更贴题的说法 */
 function confirmTitleKey(name: string): string {
   if (name.startsWith("mcp_")) return "chat.confirmMcpTitle";
   switch (name) {
@@ -22,6 +22,10 @@ function confirmTitleKey(name: string): string {
       return "chat.confirmMemoryDeleteTitle";
     case "web_fetch":
       return "chat.confirmWebFetchTitle";
+    case "navigate_tab":
+      return "chat.confirmNavigateTitle";
+    case "close_tab":
+      return "chat.confirmCloseTabTitle";
     default:
       return "chat.confirmTitle";
   }
@@ -92,6 +96,10 @@ export function ConfirmCard({
    *  displayName 就整行不渲染 —— wire 名拆不出可靠服务器名,宁缺勿错 */
   const isMcp = req.name.startsWith("mcp_");
   const mcpServer = isMcp ? req.displayName?.split(" · ")[0] : undefined;
+  /** 页面跳转族:操作对象是目标 URL 而不是当前标签页(尤其 newTab 场景),
+   *  页签信息行不上卡,只展示要跳去的地方 */
+  const isNavigate = req.name === "navigate_tab";
+  const navUrl = isNavigate && typeof args.url === "string" ? args.url : "";
   /** MCP 入参即外发负载,与记忆族同一条「操作对象上卡」纪律;超 80 截断,
    *  让「截断」本身成为信号(与 web_fetch 查询串同款) */
   const mcpArgsRaw =
@@ -114,9 +122,15 @@ export function ConfirmCard({
         <ConfirmIcon />
         {toolLabel(t, req.name, req.displayName)} · {t(titleKey)}
       </p>
-      {!isMcp && targetLabel && (
+      {!isMcp && !isNavigate && targetLabel && (
         <p className="mt-1 truncate text-[12px] text-on-surface-variant">
           {t("chat.confirmTarget", { title: targetLabel })}
+        </p>
+      )}
+      {navUrl && (
+        <p className="mt-1 break-all font-mono text-[11.5px] text-on-surface-variant">
+          {t("chat.confirmNavigateUrl", { url: navUrl.slice(0, 120) })}
+          {navUrl.length > 120 ? "…" : ""}
         </p>
       )}
       {isMcp && mcpServer && (

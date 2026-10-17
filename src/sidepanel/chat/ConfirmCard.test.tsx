@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// ConfirmCard 组件单测:确认卡内容组装(目标页/写入/回车提示/定位)与
-// 允许/拒绝出口。此前只有 e2e 慢链路覆盖。
+// ConfirmCard 组件单测:确认卡内容组装(目标页/写入/回车提示/定位/跳转 URL/
+// 标签页族)与允许/拒绝出口。此前只有 e2e 慢链路覆盖。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -213,5 +213,42 @@ describe("ConfirmCard MCP 族", () => {
     expect(
       screen.queryByText(zhCN.chat.confirmMcpArgs.split("{")[0], { exact: false }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ConfirmCard 标签页族", () => {
+  it("navigate_tab:专属标题 + 目标 URL 行,不渲染页签信息行", () => {
+    renderCard({
+      name: "navigate_tab",
+      args: { url: "https://www.bilibili.com" },
+    });
+    expect(
+      screen.getByRole("alertdialog", { name: zhCN.chat.confirmNavigateTitle }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        zhCN.chat.confirmNavigateUrl.replace("{url}", "https://www.bilibili.com"),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(zhCN.chat.confirmTarget.split("{")[0], { exact: false }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("close_tab:专属标题,页签信息行展示被关 tab", () => {
+    renderCard({
+      name: "close_tab",
+      args: { tabId: 7 },
+      tabTitle: "要关的页",
+      tabUrl: "https://www.example.com/toclose",
+    });
+    expect(
+      screen.getByRole("alertdialog", { name: zhCN.chat.confirmCloseTabTitle }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        zhCN.chat.confirmTarget.replace("{title}", "要关的页（www.example.com）"),
+      ),
+    ).toBeInTheDocument();
   });
 });
