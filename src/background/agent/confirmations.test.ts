@@ -43,6 +43,18 @@ describe("三档 × 判定矩阵", () => {
       want: [true, false, false],
     },
     {
+      category: "标签页关闭(page-nav:auto 档仍过门,不可逆且不受授权约束)",
+      name: "close_tab",
+      args: { tabId: 3 },
+      want: [true, true, false],
+    },
+    {
+      category: "页面跳转(page-nav:auto 档仍过门,可达集=全网络)",
+      name: "navigate_tab",
+      args: { url: "https://example.com" },
+      want: [true, true, false],
+    },
+    {
       category: "记忆持久写",
       name: "memory_save",
       args: { content: "x" },
