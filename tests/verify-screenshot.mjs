@@ -34,16 +34,20 @@ const USER_DATA_DIR = `/tmp/verify-screenshot-profile-${Date.now()}`;
 const check = makeChecker();
 
 // 目标页:顶部/中部/底部三个按钮(给 SoM 编号)。中部按钮的位置要让
-// scroll 2 个视口后正好落在第二个截图的视口里(viewport 900)
+// scroll 2 个视口后正好落在第二个截图的视口里(viewport 900)。
+// 两段占位区铺灰度噪声:近乎全白的页 jpeg 只压出 ~10KB,体积类断言没有
+// 余量(2026-10 nightly 实锤漂过线);噪声不可压缩,真截图稳定几十 KB 起。
+// 灰度是刻意选的——SS3 诱饵蓝判据是 b>180 && r<120 && g<120,彩色噪声
+// 中心像素有小概率撞形,灰度 r=g=b 从根上不可能命中
 const SHOT_HTML = `<html><head><meta charset="utf-8"></head>
 <body style="margin:0;font-family:sans-serif">
   <div style="height:80px;padding:8px">
     <button>顶部按钮 Top Button</button>
     <a href="#">顶部链接 Link</a>
   </div>
-  <div style="height:1900px">占位 1</div>
+  <div style="height:1900px;position:relative">占位 1<svg style="position:absolute;inset:0;width:100%;height:100%"><filter id="n1"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7"/><feColorMatrix type="saturate" values="0"/></filter><rect width="100%" height="100%" filter="url(#n1)"/></svg></div>
   <div style="padding:8px"><button>中部按钮 Mid Button</button></div>
-  <div style="height:2400px">占位 2</div>
+  <div style="height:2400px;position:relative">占位 2<svg style="position:absolute;inset:0;width:100%;height:100%"><filter id="n2"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="13"/><feColorMatrix type="saturate" values="0"/></filter><rect width="100%" height="100%" filter="url(#n2)"/></svg></div>
   <div style="padding:8px"><button>底部按钮 Bottom Button</button></div>
   <div style="height:200px">end</div>
 </body></html>`;
@@ -212,9 +216,26 @@ await ask(sidepanel, "看看这个页面长什么样");
       partsUser.content[0].text.includes("System note") &&
       partsUser.content[0].text.includes("marks"), "附件注记文本在图片之前且说明 marks 对应关系", 
   );
+  // 「真实非空」以解码维度为准:jpeg 字节数随 runner 字体/光栅化漂移
+  // (2026-10 nightly 实锤:真截图 9719B 漂过 10KB 线),维度才是环境不变量。
+  // 下界 800×400——lib 视口 1400×900 降采样后为 1280 宽,对 1px 空图有
+  // 数量级区分度,又留足环境容差
+  const wireDims = imgPart
+    ? await sidepanel.evaluate(async (url) => {
+        try {
+          const blob = await (await fetch(url)).blob();
+          const bmp = await createImageBitmap(blob);
+          const out = { size: blob.size, w: bmp.width, h: bmp.height };
+          bmp.close();
+          return out;
+        } catch {
+          return { size: -1, w: -1, h: -1 };
+        }
+      }, imgPart.image_url.url)
+    : { size: -1, w: -1, h: -1 };
   check(
-    (imgPart?.image_url?.url?.length ?? 0) > 10_000, "截图真实非空(data URL 超 10KB,排除 1px 空图)", 
-    `len=${imgPart?.image_url?.url?.length ?? 0}`, 
+    wireDims.size > 0 && wireDims.w >= 800 && wireDims.h >= 400, "截图附件真实非空(解码达视口维度,排除 1px 空图)", 
+    JSON.stringify(wireDims), 
   );
 
   // 落库:消息行只有元数据,字节进 images store
@@ -227,12 +248,35 @@ await ask(sidepanel, "看看这个页面长什么样");
           const tx = db.transaction(["messages", "images"]);
           const m = tx.objectStore("messages").getAll();
           const i = tx.objectStore("images").getAll();
-          tx.oncomplete = () => {
+          tx.oncomplete = async () => {
             db.close();
-            resolve({
-              messages: m.result,
-              images: i.result.map((r) => ({ ...r, byteLen: r.bytes?.length ?? -1 })),
-            });
+            // 维度在页面内解码得出(与 SS3 像素断言同机制):「真截图而非
+            // 空图」以维度为准,字节数只做 >0 粗门(会随环境光栅化漂移)
+            const images = [];
+            for (const r of i.result) {
+              let w = -1;
+              let h = -1;
+              try {
+                const bmp = await createImageBitmap(
+                  new Blob([r.bytes], { type: r.mime }),
+                );
+                w = bmp.width;
+                h = bmp.height;
+                bmp.close();
+              } catch {
+                // 解码失败维度保持 -1,交给断言报出
+                w = -1;
+                h = -1;
+              }
+              images.push({
+                id: r.id,
+                mime: r.mime,
+                byteLen: r.bytes?.length ?? -1,
+                w,
+                h,
+              });
+            }
+            resolve({ messages: m.result, images });
           };
           tx.onerror = () => reject(tx.error);
         };
@@ -247,8 +291,10 @@ await ask(sidepanel, "看看这个页面长什么样");
     JSON.stringify(shotUserMsg?.images)?.slice(0, 100), 
   );
   check(
-    snap.images.length === 1 && snap.images[0].byteLen > 10_000 && snap.images[0].mime === "image/jpeg", "images store 有截图字节(jpeg)", 
-    `n=${snap.images.length} len=${snap.images[0]?.byteLen}`, 
+    snap.images.length === 1 && snap.images[0].byteLen > 0 &&
+      snap.images[0].mime === "image/jpeg" &&
+      snap.images[0].w >= 800 && snap.images[0].h >= 400, "images store 截图字节可解码且达视口维度(jpeg)", 
+    JSON.stringify(snap.images[0] ?? {}), 
   );
 
   // 注记行的投影:全量落盘的伪 user 消息必须标 synthetic,面板据此不作

@@ -338,9 +338,22 @@ async function runSom(browser, extId, mock) {
     !!wireImage && wireImage.startsWith("data:image/jpeg;base64,"),
     "wire 上有带图 user 消息",
   );
+  // 「真实非空」以解码维度为准(与 verify-screenshot 同机制):jpeg 字节数
+  // 随 runner 字体/光栅化漂移,曾以 >10KB 设线被真截图漂穿(2026-10)
+  const wireDims = await page.evaluate(async (url) => {
+    try {
+      const blob = await (await fetch(url)).blob();
+      const bmp = await createImageBitmap(blob);
+      const out = { kb: Math.round(blob.size / 1024), w: bmp.width, h: bmp.height };
+      bmp.close();
+      return out;
+    } catch {
+      return { kb: -1, w: -1, h: -1 };
+    }
+  }, wireImage);
   ok(
-    wireImage.length > 10_000,
-    `截图附件非空(data URL ${Math.round(wireImage.length / 1024)}KB)`,
+    wireDims.w >= 800 && wireDims.h >= 400,
+    `截图附件真实非空(解码 ${wireDims.w}×${wireDims.h},${wireDims.kb}KB jpeg)`,
   );
 
   const B64_PREFIX = "data:image/jpeg;base64,";
