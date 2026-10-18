@@ -20,6 +20,9 @@ const TOOL_KEYS: Record<string, string> = {
   fill_input: "chat.tool.fillInput",
   memory_save: "chat.tool.memorySave",
   memory_delete: "chat.tool.memoryDelete",
+  navigate_tab: "chat.tool.navigateTab",
+  tab_activate: "chat.tool.tabActivate",
+  close_tab: "chat.tool.closeTab",
 };
 
 /** 工具显示名:内置工具走字典,外部工具回退 displayName,最后退原名 */

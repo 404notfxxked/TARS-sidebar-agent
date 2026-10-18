@@ -21,6 +21,7 @@ import {
   memoryShortId,
 } from "../../shared/memory";
 import type { ToolSchema } from "../../shared/toolTypes";
+import { grantableOriginOf } from "../../shared/hostAccess";
 import { getMcpTool } from "../mcp/mcpManager";
 
 /** 工具定义:注册表条目 = 共享的 ToolSchema(纯 schema)+ 可执行的 execute */
@@ -75,6 +76,49 @@ async function resolveTargetTabId(args?: { tabId?: number }): Promise<number> {
   return tabId;
 }
 
+// ---- 标签页生命周期工具(navigate_tab / tab_activate / close_tab)----
+// 门控分类见 confirmations.ts 的 TOOL_CATEGORY:navigate_tab 与 close_tab 都
+// 归 page-nav(auto 档仍过门——跳转可达集=全网络,关闭不可逆且不受授权约束,
+// 评审修订),tab_activate 视图态变更不过门。读页快照失效不在这里处理:
+// navigate 触发 tabs.onUpdated,docBridge 的既有监听自动作废该 tab 快照
+// (零新增管线)。
+
+/** navigate 后的有界加载等待上限(ms):document 级 complete 而非内容渲染完
+ *  (SPA 的 feed 晚于 complete,惰性内容靠 scroll_page + refresh) */
+const NAV_WAIT_MS = 15_000;
+/** 描述与 hint 里的秒数由此派生,改 NAV_WAIT_MS 不同步改文案 */
+const NAV_WAIT_SECS = NAV_WAIT_MS / 1000;
+/** 连续 get 失败多少次判「tab 已死」早退(轮询间隔 150ms,3 次 ≈ 450ms):
+ *  死 tab 白等满 15s 只会空耗 MAX_TURNS 预算,早退让错误语义早点回模型 */
+const NAV_GET_FAIL_LIMIT = 3;
+
+export type TabWaitOutcome = "complete" | "timeout" | "gone";
+
+/** 有界等待标签页 status === "complete"。轮询 tabs.get,同 activateTab
+ *  (screenshot.ts)的 deadline+轮询模式;感知取消信号(取消即抛,由 loop 的
+ *  abort 分支静默退出);超时返回 "timeout"、连续 get 失败判死返回 "gone",
+ *  由调用方决定注记或报错——tabs.update 回调立即返回、status 几乎恒为
+ *  "loading",没有这个等待,模型没有任何手段知道页面何时加载完(工具集无
+ *  wait 原语)。轮询优于 onUpdated 监听:与既有先例一致、无 listener
+ *  注册/清理生命周期 */
+export async function waitForTabComplete(
+  tabId: number,
+  signal: AbortSignal | undefined,
+  timeoutMs = NAV_WAIT_MS,
+): Promise<TabWaitOutcome> {
+  const deadline = Date.now() + timeoutMs;
+  let fails = 0;
+  for (;;) {
+    if (signal?.aborted) throw new Error("cancelled");
+    const t = await chrome.tabs.get(tabId).catch(() => null);
+    if (t?.status === "complete") return "complete";
+    fails = t === null ? fails + 1 : 0;
+    if (fails >= NAV_GET_FAIL_LIMIT) return "gone";
+    if (Date.now() >= deadline) return "timeout";
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+
 // 标签页清单:<context> 里的 tab 列表是提交时快照,运行中会过期;
 // 工具报「tab 不存在 / 无法注入」时,LLM 靠它拿最新清单重新选 tabId
 registerTool<
@@ -87,7 +131,7 @@ registerTool<
   type: "function",
   name: "get_tabs",
   description:
-    "List all tabs in the current window (tabId, title, URL), marking each tab as the default target for page tools when tabId is omitted (default: the page at submit time) or the currently active tab (active). The tab list in <context> is a submit-time snapshot and goes stale as tabs open / close / switch during the run; when a tool reports \"tab not found\" or \"failed to inject content script\", call this tool first for a fresh list, then retry with the right tabId.",
+    "List all tabs in the current window (tabId, title, URL, status), marking each tab as the default target for page tools when tabId is omitted (default: the page at submit time) or the currently active tab (active). status is \"loading\" or \"complete\" (Chrome's document-level load state) — useful to see whether a tab opened earlier has finished loading. The tab list in <context> is a submit-time snapshot and goes stale as tabs open / close / switch during the run; when a tool reports \"tab not found\" or \"failed to inject content script\", call this tool first for a fresh list, then retry with the right tabId.",
   parameters: { type: "object", properties: {} },
   execute: async () => {
     /** ctx 读取必须在同步开头(并发纪律见 toolContext 头注),先 query 后读
@@ -101,10 +145,171 @@ registerTool<
         tabId: t.id ?? -1,
         title: t.title,
         url: t.url,
+        status: t.status,
         active: t.active,
         default: t.id === defaultTabId,
       })),
     };
+  },
+});
+
+// ---- 标签页生命周期工具注册 ----
+// 见上文「标签页生命周期工具」分节头注:门控分类、快照失效协同都在那里。
+
+// 动作:跳转(或新开)标签页。write = true,TOOL_CATEGORY 归 page-nav
+registerTool<
+  { url: string; tabId?: number; newTab?: boolean },
+  {
+    url: string;
+    tabId: number;
+    title?: string;
+    status?: string;
+    loaded: boolean;
+    newTab?: boolean;
+    hint?: string;
+  }
+>({
+  type: "function",
+  name: "navigate_tab",
+  write: true,
+  description:
+    `Navigate a browser tab to a URL, or open the URL in a new tab (newTab=true, which becomes the active tab). Only http/https URLs are allowed (javascript:/file:/chrome:// and built-in pages are rejected). Waits up to ${NAV_WAIT_SECS} seconds for the page to finish document loading before returning; on timeout the result has loaded=false with a hint — the page may still be loading (slow network or continuously-loading pages), so retry reading shortly instead of assuming failure. The read-page snapshot of that tab is invalidated automatically; page_read / page_find / page_outline then see the new page.\nWhen to use: the user asks to open / go to / visit a page ("open Bilibili", "go to the PR page") or to open a URL in a new tab (newTab=true); before reading or acting on a different site. tabId navigates that existing tab; omit it to navigate the tab these tools last operated on in this run. newTab and tabId are mutually exclusive — when opening a new tab, do not pass tabId.\nWhen NOT to use: reading a page without opening it in the browser → web_fetch; in-page navigation (SPA links) → click_element. Never navigate away from a page the user is still using unless they asked to go somewhere. Acting on the new page still requires the site's page-access permission — the permission gate is not skipped.`,
+  parameters: {
+    type: "object",
+    properties: {
+      url: {
+        type: "string",
+        description: "Full http/https URL to open",
+      },
+      tabId: {
+        type: "number",
+        description: "Existing tab to navigate (from get_tabs); omit to use the tab these tools last operated on in this run. Mutually exclusive with newTab",
+      },
+      newTab: {
+        type: "boolean",
+        description: "true = open the URL in a NEW tab (which becomes active); default false. Mutually exclusive with tabId",
+      },
+    },
+    required: ["url"],
+  },
+  execute: async (args) => {
+    const ctx = getToolExecutionContext();
+    if (!grantableOriginOf(args.url)) {
+      throw new Error(
+        `navigate_tab: only http/https URLs are supported (received: ${args.url.slice(0, 80)})`,
+      );
+    }
+    if (args.newTab === true && typeof args.tabId === "number") {
+      throw new Error(
+        "navigate_tab: newTab and tabId are mutually exclusive; omit tabId when opening a new tab",
+      );
+    }
+    let tabId: number;
+    if (args.newTab === true) {
+      const t = await chrome.tabs.create({ url: args.url });
+      tabId = t.id ?? -1;
+      if (ctx && tabId >= 0) ctx.lastOperatedTabId = tabId;
+    } else {
+      tabId = await resolveTargetTabId({ tabId: args.tabId });
+      await chrome.tabs.update(tabId, { url: args.url });
+    }
+    const outcome = await waitForTabComplete(tabId, ctx?.signal);
+    if (outcome === "gone") {
+      throw new Error(
+        `navigate_tab: tab ${tabId} was closed while waiting for it to load; call get_tabs for a fresh list`,
+      );
+    }
+    const loaded = outcome === "complete";
+    const t = await chrome.tabs.get(tabId).catch(() => null);
+    return {
+      url: args.url,
+      tabId,
+      title: t?.title,
+      status: t?.status,
+      loaded,
+      ...(args.newTab === true ? { newTab: true } : {}),
+      ...(!loaded
+        ? {
+            hint: `The page did not finish loading within ${NAV_WAIT_SECS}s (slow network or a continuously-loading page). Retry reading shortly; if it still fails, tell the user honestly.`,
+          }
+        : {}),
+    };
+  },
+});
+
+// 动作:切换活动标签页。视图态变更(可逆、不动页面内容),有意不过确认门
+// 显式标 write: false(同 scroll_page 先例:门是给「替用户动手/持久写」的)
+registerTool<{ tabId: number }, { tabId: number; active: true }>({
+  type: "function",
+  name: "tab_activate",
+  write: false,
+  description:
+    "Bring a tab to the front (make it the active tab). Does not change page content; after this call, page tools called without tabId operate on this tab.\nWhen to use: multi-tab workflows — \"switch to the 3rd tab and read it\"; bringing a background tab into view.\nWhen NOT to use: to read or act on a background tab without switching → pass tabId to the page tools instead. tabId is required (from get_tabs) — switching must always name its target.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabId: {
+        type: "number",
+        description: "Tab to activate, from get_tabs (required — activating must always name its target)",
+      },
+    },
+    required: ["tabId"],
+  },
+  execute: async (args) => {
+    if (typeof args.tabId !== "number") {
+      throw new Error("tab_activate requires tabId (from get_tabs)");
+    }
+    const tabId = await resolveTargetTabId({ tabId: args.tabId });
+    await chrome.tabs.update(tabId, { active: true });
+    return { tabId, active: true };
+  },
+});
+
+// 动作:关闭标签页。不可逆;最后一个标签页守卫在 execute 内(tab-lifecycle 方案)
+registerTool<{ tabId: number }, { closed: number; title?: string }>({
+  type: "function",
+  name: "close_tab",
+  write: true,
+  description:
+    "Close a browser tab. Irreversible: unsaved page state is lost. Closing the LAST tab of a window is refused (it would close the window and the side panel, killing the running task).\nWhen to use: the user asks to close a tab, or the run opened a tab it no longer needs (e.g. a search tab).\nWhen NOT to use: never guess — tabId is required and must come from get_tabs; do not close tabs the user did not ask to close.",
+  parameters: {
+    type: "object",
+    properties: {
+      tabId: {
+        type: "number",
+        description: "Tab to close, from get_tabs (required — closing must always name its target)",
+      },
+    },
+    required: ["tabId"],
+  },
+  execute: async (args) => {
+    const ctx = getToolExecutionContext();
+    if (typeof args.tabId !== "number") {
+      throw new Error(
+        "close_tab requires tabId (from get_tabs); closing a tab is irreversible",
+      );
+    }
+    const tab = await chrome.tabs.get(args.tabId).catch(() => null);
+    if (!tab) {
+      throw new Error(
+        `close_tab: tab ${args.tabId} not found or already closed; call get_tabs for a fresh list`,
+      );
+    }
+    const winTabs = await chrome.tabs.query({ windowId: tab.windowId });
+    if (winTabs.length <= 1) {
+      throw new Error(
+        "close_tab: that is the last tab in its window; closing it would close the window and the side panel, interrupting the running task. Refused — if the user really wants it closed, let the user close it manually.",
+      );
+    }
+    const tabId = await resolveTargetTabId({ tabId: args.tabId });
+    await chrome.tabs.remove(tabId);
+    /** 清位:目标已死,后续省略 tabId 的工具若落回「最近操作」会撞已关
+     *  tab,清了让回退链落到提交时/激活 tab。ctx 在此刻仍是本 run 对象
+     *  (dispatch 在 execute 前 set,收口才清),写入安全 */
+    if (ctx && ctx.lastOperatedTabId === tabId) {
+      ctx.lastOperatedTabId = undefined;
+    }
+    return { closed: tabId, title: tab.title };
   },
 });
 

@@ -10,7 +10,9 @@
 
 ## [Unreleased]
 
-(空)
+### Added
+
+- **标签页生命周期三件套:navigate_tab / tab_activate / close_tab** — 「打开某个页面」从此可让 TARS 代劳:navigate_tab 在用户浏览器里真跳转(或 newTab 新开),内部等页面完成 document 级加载(15s 上限,超时附注记;等待期间 tab 被关则明确报错);跳转后读页快照自动失效重建,与 scroll_page / page_find 衔接成「打开 → 划拉 → 找内容」的完整链路。tab_activate 切换活动标签页(不过确认门,视图态变更),close_tab 关闭标签页(tabId 必填;最后一个标签页拒绝关闭——那会连窗口与侧栏一起关掉、中断进行中的任务)。确认门随三件套升级:navigate_tab 与 close_tab 归新门类「页面跳转与关闭」,**仅页面操作放行(auto)档下仍逐次确认**——跳转可达整个网络(注入下可把登录态浏览器带去任意站),关闭不可逆且不受页面授权约束(误关即丢,跳转尚可后退);档位菜单文案同步明示;get_tabs 清单增补 status 字段(loading/complete)。
 
 ## [1.5.2] - 2026-10-13
 

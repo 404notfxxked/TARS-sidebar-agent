@@ -44,4 +44,16 @@ describe("write 标记 × WRITE_TOOLS 双向一致(写工具确认门)", () => {
     expect(tools.find((t) => t.name === "scroll_page")?.write).toBe(false);
     expect(WRITE_TOOLS.has("scroll_page")).toBe(false);
   });
+
+  it("tab 生命周期三件套:写标记与确认门归属(tab-lifecycle 方案)", () => {
+    const nav = tools.find((t) => t.name === "navigate_tab");
+    const close = tools.find((t) => t.name === "close_tab");
+    const act = tools.find((t) => t.name === "tab_activate");
+    expect(nav?.write, "navigate_tab 是写工具(跳转=替用户决定去哪)").toBe(true);
+    expect(close?.write, "close_tab 是写工具(不可逆)").toBe(true);
+    expect(act?.write, "tab_activate 视图态变更,不过门").toBe(false);
+    expect(WRITE_TOOLS.has("navigate_tab")).toBe(true);
+    expect(WRITE_TOOLS.has("close_tab")).toBe(true);
+    expect(WRITE_TOOLS.has("tab_activate")).toBe(false);
+  });
 });

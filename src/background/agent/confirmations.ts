@@ -41,19 +41,29 @@ const pending = new Map<string, (approved: boolean) => void>();
  *  - page-write:页面写动作(点按/填写,含 pressEnterAfter 提交路径)。
  *    auto 档免门 —— 浏览器 agent 的日常高频动作,逐次过卡必逼用户走
  *    极端(off);但它们作用于任意已授权页面(auto 档 UI 明示此范围)
+ *  - page-nav:页面跳转与标签页关闭(2026-10-13 tab-lifecycle 方案,
+ *    评审修订:close_tab 由 page-write 升入本类)。auto 档**仍过门** ——
+ *    跳转的可达集是全网络(注入下可把带登录态的浏览器带去任意站,
+ *    钓鱼页/登出链接等 GET 副作用);关闭不可逆且不受 hostAccess 约束
+ *    (能关任意站点的 tab,误关即丢,跳转尚可后退)。两者都低频,过门
+ *    几乎无成本。不设派生集合:needsConfirmation 的 auto 分支只豁免
+ *    page-write,page-nav 自然落入 WRITE_TOOLS 仍过门
  *  - persistent:跨会话持久写。auto 档仍过门 —— 记忆每轮以 user 角色
  *    注入所有会话,被注入的指令可借它形成跨会话持久化操纵;delete 还是
  *    按子串的破坏性删除
  * (web_fetch 不在表内:是否过门是参数级判定,见 webFetchNeedsConfirm;
  *  mcp_* 不在表内:语义由各服务器自定义,一律过门,宁慢勿错)
  */
-export const TOOL_CATEGORY: Readonly<Record<string, "page-write" | "persistent">> =
-  {
-    click_element: "page-write",
-    fill_input: "page-write",
-    memory_save: "persistent",
-    memory_delete: "persistent",
-  };
+export const TOOL_CATEGORY: Readonly<
+  Record<string, "page-write" | "page-nav" | "persistent">
+> = {
+  click_element: "page-write",
+  fill_input: "page-write",
+  close_tab: "page-nav",
+  navigate_tab: "page-nav",
+  memory_save: "persistent",
+  memory_delete: "persistent",
+};
 
 /** auto 档免门的组:由 TOOL_CATEGORY 派生(page-write) */
 export const PAGE_WRITE_TOOLS: ReadonlySet<string> = new Set(
@@ -121,13 +131,22 @@ export interface ConfirmRequestInfo {
   args?: unknown;
 }
 
-/** 目标标签页信息:取本 run 最近操作(缺省提交时捕获)的 tab,尽力解析
- *  标题/URL 供确认卡展示;解析失败不阻塞确认流程 */
-async function resolveTargetTab(ctx?: ToolExecutionContext | null): Promise<{
+/** 目标标签页信息:优先 args.tabId(确认卡必须显示「将操作的那个 tab」,
+ *  而非本 run 最近操作的 tab——close_tab(3) 的卡片若显示别的 tab 是误导),
+ *  否则回落本 run 最近操作(缺省提交时捕获)的 tab;尽力解析标题/URL 供确认卡
+ *  展示,解析失败不阻塞确认流程 */
+async function resolveTargetTab(
+  ctx?: ToolExecutionContext | null,
+  args?: unknown,
+): Promise<{
   tabTitle?: string;
   tabUrl?: string;
 }> {
-  const tabId = ctx?.lastOperatedTabId ?? ctx?.tabId;
+  const argsTabId = (args as { tabId?: unknown } | null | undefined)?.tabId;
+  const tabId =
+    typeof argsTabId === "number"
+      ? argsTabId
+      : (ctx?.lastOperatedTabId ?? ctx?.tabId);
   if (tabId === undefined) return {};
   const tab = await chrome.tabs.get(tabId);
   return { tabTitle: tab.title, tabUrl: tab.url };
@@ -145,7 +164,7 @@ export async function requestConfirmation(
   ctx?: ToolExecutionContext | null,
 ): Promise<boolean> {
   const requestId = crypto.randomUUID();
-  const target = await resolveTargetTab(ctx).catch(() => ({}));
+  const target = await resolveTargetTab(ctx, req.args).catch(() => ({}));
   port.postMessage({
     type: MSG.AGENT_CONFIRM_REQUEST,
     requestId,

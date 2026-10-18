@@ -196,8 +196,9 @@ export const COMPACT_LEVELS: CompactLevel[] = ["early", "standard", "late"];
 
 /** 写操作确认门档位(confirmLevel 的真源,消费在 agent/confirmations.ts):
  *  strict = 一切写动作逐次过确认卡(缺省,安全默认);auto = 页面写动作
- *  (click/fill,含提交型)免门,记忆写/MCP/可疑出站仍过门;off = 全部免审
- *  (用户自担)。语义与迁移见 permission-levels-plan */
+ *  (click/fill,含提交型)免门,页面跳转(navigate)/标签页关闭(close_tab)/
+ *  记忆写/MCP/可疑出站仍过门;off = 全部免审(用户自担)。语义与迁移见
+ *  permission-levels-plan */
 export type ConfirmLevel = "strict" | "auto" | "off";
 export const CONFIRM_LEVELS: ConfirmLevel[] = ["strict", "auto", "off"];
 
