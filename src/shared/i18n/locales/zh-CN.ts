@@ -325,6 +325,12 @@ export const zhCN = {
     fetchSuggestFix:
       "模型列表是通过 {url} 获取的：聊天请求也应使用该地址，建议修正 Base URL。",
     fetchApplyFix: "修正为该地址",
+    unlistedMark: "不在官方列表",
+    unlistedHint:
+      "该模型不在最近一次获取的官方列表中，可能已下线或更名，请求可能报错；若服务商仍提供，重新「获取列表」即可更新。",
+    unlistedNotice: "有 {n} 个模型不在官方列表中",
+    cleanUnlisted: "清理未收录",
+    confirmCleanUnlisted: "确认清理",
     modelEmptyHint:
       "暂无模型。点击「获取列表」自动拉取模型列表，或在下方手动添加模型。",
     modelRowHint: "点击行展开配置，「默认」即当前对话所用模型。",

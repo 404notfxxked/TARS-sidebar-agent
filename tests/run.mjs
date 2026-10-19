@@ -31,6 +31,7 @@ const SUITES = {
   notify: "verify-notify.mjs",
   confirm: "verify-confirm.mjs",
   "host-access": "verify-host-access.mjs",
+  "model-lists": "verify-model-lists.mjs", // 模型列表漂移:刷新标记「不在官方列表」+ 一键清理
   layout: "probe-layout.mjs", // 悬浮层硬规则的断言防线
   locale: "probe-locale.mjs", // 语言切换行为(带断言)
   focus: "probe-focus.mjs", // 焦点流(autofocus/悬浮层回归/运行中可输入)+ 回到底部 + 模型键盘导航

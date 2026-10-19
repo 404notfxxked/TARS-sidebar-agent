@@ -36,6 +36,7 @@ export function ExpandCard({
   open,
   onToggle,
   label,
+  icon,
   badge,
   meta,
   children,
@@ -43,6 +44,9 @@ export function ExpandCard({
   open: boolean;
   onToggle: () => void;
   label: string;
+  /** 名称前的裸图标(如模型行的「不在官方列表」警示标):省宽度的行级
+   *  标记,语义文案交给顶部计数行与展开体说明 */
+  icon?: ReactNode;
   /** 名称旁的小徽标(默认/当前/停用) */
   badge?: ReactNode;
   /** 头部右侧概要(模型数/工具数/主机名);null 不占位 */
@@ -58,6 +62,7 @@ export function ExpandCard({
         onClick={onToggle}
       >
         <span className="min-w-0 truncate">
+          {icon}
           <span className="model-row-name">{label}</span>
           {badge}
         </span>

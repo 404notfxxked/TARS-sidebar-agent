@@ -9,9 +9,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProviderEntry } from "../../shared/configStore";
 import {
-  backfillEntry,
+  mergeFetchedModels,
   loadCatalog,
-  prefillEntry,
 } from "../../shared/modelCatalog";
 import {
   fetchModels,
@@ -83,17 +82,12 @@ export function useProviderFetch(
         ctl.signal,
         entryRef.current.kind,
       );
-      /** 新增条目用 models.dev 快照 + 启发式预填;已有条目回填「从未设置」的
-       *  缺失字段——手动设置过/清空过的一律不碰。合并基线取 ref 镜像
-       *  (fetch 在途时的手动增删已在最新 entry 里) */
+      /** 合并基线取 ref 镜像(fetch 在途时的手动增删已在最新 entry 里):
+       *  新增条目用 models.dev 快照 + 启发式预填;已有条目回填「从未设置」的
+       *  缺失字段——手动设置过/清空过的一律不碰;本地独有模型标记「不在官方
+       *  列表」、重新在列的摘除标记(语义与取舍见 ModelEntry.unlisted) */
       const cat = await loadCatalog();
-      const map = new Map(entryRef.current.models.map((m) => [m.id, m]));
-      for (const id of list) {
-        const existing = map.get(id);
-        if (!existing) map.set(id, { id, ...prefillEntry(cat, id) });
-        else map.set(id, backfillEntry(cat, id, existing));
-      }
-      const next = [...map.values()].sort((a, b) => a.id.localeCompare(b.id));
+      const next = mergeFetchedModels(entryRef.current.models, list, cat);
       onPatch({ models: next }, true);
       setFixTo(suggestedBase ?? "");
       setFetchState("idle");

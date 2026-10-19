@@ -10,7 +10,7 @@ import {
 } from "../../shared/configStore";
 import { useConfirmReset, useT } from "../ui/hooks";
 import InfoTip from "../ui/InfoTip";
-import { EyeIcon } from "../ui/icons";
+import { EyeIcon, AlertIcon } from "../ui/icons";
 import { ExpandCard, SettingsSection, hostOf } from "./parts";
 import { useProviderFetch } from "./useProviderFetch";
 
@@ -159,7 +159,7 @@ export default function ModelSection({
   );
 }
 
-/** 模型行:收起态 = 别名/ID + 默认标记 + chevron,点击展开每模型配置 */
+/** 模型行:收起态 = 别名/ID + 默认标记 + 未收录标记 + chevron,点击展开每模型配置 */
 function ModelRow({
   entry,
   kind,
@@ -191,10 +191,21 @@ function ModelRow({
       open={open}
       onToggle={onToggle}
       label={entry.alias || entry.id}
+      icon={entry.unlisted && (
+        <AlertIcon
+          size={12}
+          strokeWidth={1.5}
+          className="model-row-warn-icon"
+          label={t("settings.unlistedMark")}
+        />
+      )}
       badge={isDefault && (
         <span className="model-badge">{t("common.default")}</span>
       )}
     >
+      {entry.unlisted && (
+        <p className="field-hint">{t("settings.unlistedHint")}</p>
+      )}
       {entry.alias && <p className="model-row-id">{entry.id}</p>}
       <label className="field-label" htmlFor={`model-alias-${entry.id}`}>
         {t("settings.alias")}<span className="font-normal text-on-surface-variant">{t("common.optional")}</span>
@@ -361,6 +372,10 @@ function ProviderCard({
   const [modelQuery, setModelQuery] = useState("");
   const [confirmModelId, armConfirmModel, resetConfirmModel] =
     useConfirmReset<string>();
+  // 一键清理「不在官方列表」模型的两段确认(单目标动作,值取 boolean;
+  // 语义同 useConfirmReset — 首点进入待确认,3 秒未跟进自动复位)
+  const [confirmClean, armConfirmClean, resetConfirmClean] =
+    useConfirmReset<boolean>();
   const { fetchState, fetchError, fetchList, fixSuggestion, applyFix } =
     useProviderFetch(entry, onPatch);
 
@@ -374,6 +389,9 @@ function ProviderCard({
           (m.alias?.toLowerCase().includes(mq) ?? false),
       )
     : entry.models;
+
+  /** 漂移模型数(最近一次获取列表时官方不含的本地模型);0 = 无提示无清理钮 */
+  const unlistedCount = entry.models.filter((m) => m.unlisted === true).length;
 
   /** 供应商内某个模型条目的局部更新;save=true 即时落盘 */
   const patchModel = (mid: string, patch: Partial<ModelEntry>, save = false) =>
@@ -403,6 +421,19 @@ function ProviderCard({
     }
     resetConfirmModel();
     onPatch({ models: entry.models.filter((m) => m.id !== mid) }, true);
+  };
+  /** 一键清理「不在官方列表」的本地模型:两段确认后整批移除。走 onPatch
+   *  save=true,当前默认模型被清时的回落由 patchProvider 统一兜底 */
+  const cleanUnlisted = () => {
+    if (!confirmClean) {
+      armConfirmClean(true);
+      return;
+    }
+    resetConfirmClean();
+    onPatch(
+      { models: entry.models.filter((m) => m.unlisted !== true) },
+      true,
+    );
   };
 
   return (
@@ -551,6 +582,26 @@ function ProviderCard({
               </button>
             </div>
           </>
+        )}
+        {/* 漂移提示行:说明 + 两段确认清理钮(紧邻「获取列表」下方,动作
+            与成因同屏;标记持久化,未处理时重开设置仍可见) */}
+        {unlistedCount > 0 && (
+          <div className="unlisted-notice">
+            <p className="field-hint">
+              {t("settings.unlistedNotice", { n: unlistedCount })}
+            </p>
+            <button
+              type="button"
+              className={`model-row-action model-row-action-danger shrink-0${
+                confirmClean ? " confirming" : ""
+              }`}
+              onClick={cleanUnlisted}
+            >
+              {confirmClean
+                ? t("settings.confirmCleanUnlisted")
+                : t("settings.cleanUnlisted")}
+            </button>
+          </div>
         )}
         {entry.models.length > 12 && (
           <input

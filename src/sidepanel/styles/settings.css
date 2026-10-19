@@ -798,6 +798,29 @@
     line-height: 1.4;
     font-weight: 500;
   }
+  /* 「不在官方列表」行首警示图标(圆形叹号,提示级;三角 WarnIcon 留给
+     错误语境):裸图标省宽度(窄面板长 id 下文字徽标挤占名称),语义由
+     顶部计数行与展开体说明承载。preflight 把 svg 置为 block,行内必须
+     显式 inline-block 再负值对齐 12.5px 行名基线(同 ui/icons.tsx
+     ArchiveIcon 的行内手法) */
+  .model-row-warn-icon {
+    display: inline-block;
+    margin-right: 4px;
+    color: var(--md-sys-color-error);
+    vertical-align: -1.5px;
+  }
+  /* 漂移提示行:说明 + 清理钮同排;field-hint 自带的顶部间距在行内
+     会把文字推离按钮轴线,行内归零,间距交给容器 */
+  .unlisted-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .unlisted-notice .field-hint {
+    margin: 0;
+  }
   .model-row-chevron {
     flex-shrink: 0;
     color: var(--md-sys-color-on-surface-variant);

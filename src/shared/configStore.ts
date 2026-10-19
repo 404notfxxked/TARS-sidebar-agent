@@ -68,6 +68,12 @@ export interface ModelEntry {
    *  为目录档位 token,wire 映射见 chatCompletions.ts thinkingParam。仅 reasoning
    *  为 true 时由 agent 门控发送 */
   reasoningEffort?: string;
+  /** 「不在官方列表」标记:最近一次成功「获取列表」的返回不含此 id。
+   *  只由刷新写入/清除(mergeFetchedModels;拉取结果为空 = 端点半残,
+   *  不作为信号,不写不清)。手动添加即时不标 —— 加进来那一刻没有可比对
+   *  的官方列表,下次刷新起按当次结果同样处理。设置页据此显示警示徽标与
+   *  供应商级一键清理;标记可能过期(服务商把模型加回来了),刷新即更新 */
+  unlisted?: boolean;
 }
 
 /** 供应商 API 协议(wire 格式,按协议而非厂商命名):chat-completions = OpenAI

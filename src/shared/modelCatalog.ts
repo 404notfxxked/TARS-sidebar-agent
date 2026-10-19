@@ -118,3 +118,38 @@ export function backfillEntry(
   }
   return out;
 }
+
+/**
+ * 「获取列表」的合并唯一入口:官方返回 ids 与本地已有条目按 id 并集。
+ *  - 新 id:预填合成,官方列表在列,无漂移标记;
+ *  - 已有且在列:回填缺失字段,并摘除 unlisted(重新出现 = 上次标记过期);
+ *  - 本地独有(含手动添加的):置 unlisted = 最近一次刷新时官方列表不含它。
+ * 拉取结果为空时整体不动(原样返回):200 空列表多半是端点半残/按渠道过滤,
+ * 不构成「官方撤了所有模型」的漂移信号 —— 判空防御是业界共识做法,标记
+ * 与清理都建立在「这次拉取可信」的前提上。
+ * 返回按 id 排序的新数组;条目按需换新对象(在列条目必过 backfill 复制,
+ * 摘标记的再换一次;本地独有且已有标记的原引用透传 —— React Compiler
+ * 的记忆化靠引用判变化,绝不原地改写条目)。
+ */
+export function mergeFetchedModels(
+  existing: ModelEntry[],
+  ids: string[],
+  cat: Catalog,
+): ModelEntry[] {
+  if (ids.length === 0) return existing;
+  const map = new Map(existing.map((m) => [m.id, m]));
+  for (const id of ids) {
+    const found = map.get(id);
+    if (!found) map.set(id, { id, ...prefillEntry(cat, id) });
+    else map.set(id, backfillEntry(cat, id, found));
+  }
+  const listed = new Set(ids);
+  return [...map.values()]
+    .map((m) => {
+      if (listed.has(m.id)) {
+        return m.unlisted === undefined ? m : { ...m, unlisted: undefined };
+      }
+      return m.unlisted ? m : { ...m, unlisted: true };
+    })
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
