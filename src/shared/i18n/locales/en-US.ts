@@ -339,6 +339,12 @@ export const enUS = {
     fetchSuggestFix:
       "The model list was fetched via {url}: chat requests need the same address, so consider fixing the Base URL.",
     fetchApplyFix: "Use this address",
+    unlistedMark: "Unlisted",
+    unlistedHint:
+      'Not in the last fetched model list — it may have been retired or renamed and requests may fail; if the provider still offers it, "Fetch list" again to update.',
+    unlistedNotice: "{n} model(s) not in the provider list",
+    cleanUnlisted: "Clean up",
+    confirmCleanUnlisted: "Confirm cleanup",
     modelEmptyHint:
       'No models yet. Click "Fetch list" to retrieve the model list automatically, or add models manually below.',
     modelRowHint:

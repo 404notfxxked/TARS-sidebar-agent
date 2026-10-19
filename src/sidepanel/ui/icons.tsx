@@ -1,6 +1,13 @@
 // 跨视图复用的图标。收拢自各视图的本地副本(ChatView/trace/bubbles/
 // ConfirmCard/MemoryView);新图标有第二使用方时才进这里,单视图私有的
 // 仍留在视图文件(如 trace 的 MarkOk/MarkError 带轨迹域样式钩子)。
+//
+// 行内图标铁律:Tailwind preflight 把 svg 默认置 display:block,与文字
+// 同排的图标必须显式 inline-block 并按需负值基线对齐,否则独占一行把
+// 行高压叠(2026-10 模型行警示标事故;先例 ArchiveIcon 的
+// inline-block align-[-2px]、settings.css 的 .model-row-warn-icon)。
+// 这类错误 lint/typecheck/组件测试全绿——jsdom 不载样式表,只有渲染
+// 截图能暴露;flex 容器内的图标不受影响,block 反而是常态。
 
 /** 垃圾桶(删除动作):记忆行/会话行同款 */
 export function GlobeIcon() {
@@ -389,24 +396,81 @@ export function InfoIcon() {
   );
 }
 
-/** 警示三角(错误消息) */
-export function WarnIcon() {
+/** 警示三角(错误消息/模型行「不在官方列表」警示标):
+ *  缺省保持错误消息语境的对齐与 aria-hidden;传 label 时升级为有语义图
+ *  (role=img + aria-label + svg title 悬停提示)——用于行首裸图标承载
+ *  「是什么」的场合 */
+export function WarnIcon({
+  size = 14,
+  label,
+  className = "mt-0.5 shrink-0",
+  strokeWidth = 1.3,
+}: {
+  size?: number;
+  /** 语义标签:可访问名 + 悬停提示(svg title) */
+  label?: string;
+  className?: string;
+  /** 缩到 12px 档时描边相应加粗,细线在小尺寸下发虚 */
+  strokeWidth?: number;
+}) {
   return (
     <svg
-      className="mt-0.5 shrink-0"
-      width="14"
-      height="14"
+      className={className}
+      width={size}
+      height={size}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.3"
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden="true"
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
     >
+      {label && <title>{label}</title>}
       <path d="M8 2.2 14.6 13.4H1.4L8 2.2Z" />
       <path d="M8 6.4v3" />
       <path d="M8 11.7h.01" />
+    </svg>
+  );
+}
+
+/** 圆形叹号(温和警示):与 WarnIcon 三角同族但降一级严重度 —— 三角读作
+ *  「出错了」,圆读作「注意一下」;模型行「不在官方列表」这类提示级标记用。
+ *  参数语义同 WarnIcon(label 升级为有语义图,小尺寸加粗描边) */
+export function AlertIcon({
+  size = 14,
+  label,
+  className = "mt-0.5 shrink-0",
+  strokeWidth = 1.3,
+}: {
+  size?: number;
+  /** 语义标签:可访问名 + 悬停提示(svg title) */
+  label?: string;
+  className?: string;
+  /** 缩到 12px 档时描边相应加粗,细线在小尺寸下发虚 */
+  strokeWidth?: number;
+}) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+    >
+      {label && <title>{label}</title>}
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M8 4.8v3.6" />
+      <path d="M8 11.2h.01" />
     </svg>
   );
 }

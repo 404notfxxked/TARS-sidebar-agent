@@ -6,6 +6,7 @@ import {
   backfillEntry,
   defaultThinkingEffort,
   inferReasoning,
+  mergeFetchedModels,
   prefillEntry,
   thinkingOptionsOf,
   type Catalog,
@@ -138,6 +139,72 @@ describe("backfillEntry(已有条目:只补缺失,绝不覆盖手动值)", () =>
   it("目录未命中 → 原样返回(字段引用不变)", () => {
     const entry: ModelEntry = { id: "no-such", alias: "x" };
     expect(backfillEntry({ models: {} }, "no-such", entry)).toEqual(entry);
+  });
+});
+
+describe("mergeFetchedModels(获取列表合并:预填/回填 + 漂移标记)", () => {
+  const cat: Catalog = {
+    models: {
+      "deepseek-chat": { ctx: 64000 },
+      "deepseek-reasoner": { ctx: 128000, r: 1 },
+    },
+  };
+
+  it("新 id 预填且不标;本地独有(含手动添加)标 unlisted;结果按 id 排序", () => {
+    const next = mergeFetchedModels(
+      [{ id: "z-local" }, { id: "a-manual" }],
+      ["deepseek-reasoner"],
+      cat,
+    );
+    expect(next.map((m) => m.id)).toEqual([
+      "a-manual",
+      "deepseek-reasoner",
+      "z-local",
+    ]);
+    expect(next[1]).toEqual({
+      id: "deepseek-reasoner",
+      contextTokens: 128000,
+      reasoning: true,
+    });
+    expect(next.map((m) => m.unlisted)).toEqual([true, undefined, true]);
+  });
+
+  it("重新在列:上次的 unlisted 摘除,回填照常、其余字段不丢", () => {
+    const next = mergeFetchedModels(
+      [{ id: "deepseek-chat", alias: "对话", unlisted: true }],
+      ["deepseek-chat"],
+      cat,
+    );
+    expect(next).toEqual([
+      { id: "deepseek-chat", alias: "对话", contextTokens: 64000 },
+    ]);
+  });
+
+  it("已有标记的本地独有条目原引用透传;在列条目经回填换新对象(值不变)", () => {
+    const flagged: ModelEntry = { id: "gone", unlisted: true };
+    const plain: ModelEntry = { id: "kept" };
+    const next = mergeFetchedModels([flagged, plain], ["kept"], cat);
+    expect(next[0]).toBe(flagged);
+    expect(next[1]).not.toBe(plain);
+    expect(next[1]).toEqual(plain);
+  });
+
+  it("官方返回空列表:整体不动(空响应不构成漂移信号,防端点半残全标)", () => {
+    const existing: ModelEntry[] = [
+      { id: "b", unlisted: true },
+      { id: "a" },
+    ];
+    expect(mergeFetchedModels(existing, [], { models: {} })).toBe(existing);
+  });
+
+  it("手动添加的模型被官方列表命中:回填且不标(在列即无漂移)", () => {
+    const next = mergeFetchedModels(
+      [{ id: "deepseek-chat" }],
+      ["deepseek-chat"],
+      cat,
+    );
+    expect(next[0].unlisted).toBeUndefined();
+    expect(next[0].contextTokens).toBe(64000);
   });
 });
 
