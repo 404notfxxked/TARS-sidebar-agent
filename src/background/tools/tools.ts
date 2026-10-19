@@ -1,4 +1,11 @@
 // 工具注册表 - agent loop 可调用的工具
+// 工具粒度三准线(拆多碎的判断依据,破一条就拆;三条全过才考虑合并):
+// 1) 门控同质 —— 风险等级/审批方式相同才可共用一个工具,过确认门的
+//    与不过门的不能捆(否则门控分类被工具形状绑架);
+// 2) 参数联合合法 —— 合并后若出现「参数 A 仅在某些 action 下有效」的
+//    schema 就别合;
+// 3) 返回契约一致 —— 返回形状不同的操作不共享工具(带图旁路的截图
+//    因此必须独立)。
 
 import { callContentTool, getActiveTabId } from "../../shared/contentTools";
 import { callOffscreenTool, ensureOffscreenDocument } from "../../shared/docBridge";

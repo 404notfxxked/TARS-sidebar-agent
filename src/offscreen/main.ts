@@ -201,6 +201,10 @@ chrome.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
     return true; // 异步响应
   }
   if (msg?.type === "PARSE_CALL") {
+    // handleParse 必须保持 async 函数:若改成同步,throw 发生在
+    // Promise.resolve(...) 求值实参时,会同步逃出本 listener 成为
+    // 未捕获异常,SW 端只收到 Chrome 包装过的错误文本 ——
+    // 「NOT_CACHED:<url>」这类靠前缀匹配的错误协议随之失效
     Promise.resolve(handleParse(msg.kind ?? "", msg.payload))
       .then((result) =>
         sendResponse({ type: "PARSE_RESULT", id: msg.id, ok: true, result }),

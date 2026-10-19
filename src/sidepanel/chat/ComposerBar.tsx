@@ -276,7 +276,10 @@ export default function ComposerBar({
               停止后 space 仍是同一颗键)。36px 与 settings-btn 同高 —— M3
               Expressive 的研究实测更大的主动作键命中更快;箭头用 SVG 不用
               「↑」字形,字形光学尺寸随平台字体漂移。图标以 key 触发 msg-in
-              轻浮升过渡,状态翻转有 250ms emphasized 的完成感 */}
+              轻浮升过渡,状态翻转有 250ms emphasized 的完成感。
+              className 模板串纪律:每个类后面必须跟空格再接 ${ ——
+              源码扫描会把「w-9${」当成单个 token,该工具类静默不生成
+              (此钮曾只剩高度、坍成竖条,build/test 全绿,唯几何断言能抓) */}
           <button
             type={status === "idle" ? "submit" : "button"}
             onClick={status === "idle" ? undefined : onCancel}

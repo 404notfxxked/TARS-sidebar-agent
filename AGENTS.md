@@ -86,8 +86,10 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
   辅助函数第一参传入 t。切换语言后文案不变这类问题,查编译
   产物排查,仅凭源码推不出来
 - 新 UI 只用 `styles/` 既有接口类(settings.css、chat.css),不
-  私造样式;`m3.css` 是生成物禁手改,改源色需同步
-  `scripts/generate-m3.mjs` 与设置页的色块副本并重新生成
+  私造样式;组件先取 `ui/` 与 `settings/parts.tsx` 现成件(两段
+  确认/开关行/分段/吸顶头/骨架),先取现成再手写;`m3.css` 是
+  生成物禁手改,改源色需同步 `scripts/generate-m3.mjs` 与设置页
+  的色块副本并重新生成
 
 ### 架构不变式
 
