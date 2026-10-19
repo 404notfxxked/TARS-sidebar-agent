@@ -607,7 +607,7 @@ try {
     (await sidepanel
       .locator('[role="option"]')
       .filter({ hasText: zh.chat.confirmPillOff })
-      .count()) === 1, "off 项在场且带 desc(T6 撤销「到不了 off」结构属性)",
+      .count()) === 1, "off 项在场且带 desc(撤销「到不了 off」结构属性)",
   );
   // 菜单几何(间距修法的硬防线):三行带说明在 180px 上限内不滚不裁,
   // 且首行高亮贴菜单上沿(基座垂直内边距已由 combo-pop--list 撤掉)。
@@ -686,7 +686,7 @@ try {
     JSON.stringify(clickAllow?.data ?? null).slice(0, 200),
   );
 
-  // 从 pill 菜单点「全部放行」:三档同权单击落档(T6),下一轮全程无卡
+  // 从 pill 菜单点「全部放行」:三档同权单击落档,下一轮全程无卡
   await pillStrict.click();
   const offOption = sidepanel.getByRole("option", {
     name: new RegExp(zh.chat.confirmPillOff),
@@ -749,7 +749,7 @@ try {
   check(
     (await hostRow.count()) > 0, "设置页「安全」分节在场(站点授权行)",
   );
-  // 档位已迁 composer pill(T7):分节内不应再出现档位单选
+  // 档位已迁 composer pill:分节内不应再出现档位单选
   for (const label of [
     zh.security.confirmLevelStrict,
     zh.security.confirmLevelAuto,

@@ -34,10 +34,10 @@ export const CONFIRM_DENIED_MSG =
 const pending = new Map<string, (approved: boolean) => void>();
 
 /**
- * 静态写工具的唯一真源(P1-17 定案):name → 风险类别。三个派生集合
+ * 静态写工具的唯一真源(定案):name → 风险类别。三个派生集合
  * (PAGE_WRITE_TOOLS / PERSISTENT_TOOLS / WRITE_TOOLS)全部由它算出,
- * 改分组只改这份数据,不动 needsConfirmation 函数体 —— C2 的 MCP
- * annotations 分流、C3 的敏感动作分类届时在对应分支接入。
+ * 改分组只改这份数据,不动 needsConfirmation 函数体 —— MCP annotations
+ * 分流与敏感动作分类届时的接入点也在对应分支。
  *  - page-write:页面写动作(点按/填写,含 pressEnterAfter 提交路径)。
  *    auto 档免门 —— 浏览器 agent 的日常高频动作,逐次过卡必逼用户走
  *    极端(off);但它们作用于任意已授权页面(auto 档 UI 明示此范围)

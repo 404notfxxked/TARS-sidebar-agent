@@ -13,7 +13,9 @@
 //   A/B/C. API 通道三家:Tavily POST+Bearer / 博查 count+freshness / Brave GET+market 映射
 //   D. 限流冷却:429 → 报错回填;冷却期不再发请求;清除后恢复
 //   H. 取消传播:中止 run 立即中断在途搜索请求(非等超时)
-//   E. web_fetch 分页 / E2. GBK 解码 / F. 实网 example.com / J. 工具结果预算
+//   E. web_fetch 分页 / E2. GBK 解码 / E5. 白名单内抓取免卡 / F. 实网 example.com
+//   / J. 工具结果预算
+//   R. 出口护栏:白名单域 302 到私网被拦(错误带落点、正文未读)
 //   G. 联网开关:关→隐藏;开→可见;选服务商但没填 Key→自动退回 tab 通道
 //
 // mock 手段:CDP Fetch 域直连扩展 SW target(DevTools 同款机制)。为什么不用

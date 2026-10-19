@@ -298,7 +298,7 @@ await setMcp(mcpOn);
   resetMcpLog();
   llm.mode = "call-mcp";
   const done = await runAskWithConfirmLog("s-t2", "帮我看下 issue 42");
-  // mcp_ 工具与页面写动作同款逐次过确认门(2026-09 审计 P1-4):门必须
+  // mcp_ 工具与页面写动作同款逐次过确认门(2026-09 审计定案):门必须
   // 先于执行出现,自动批准后链路继续(T2-1 起的行为断言依赖这次批准)
   check(
     done.confirmed.includes(WIRE_GET_ISSUE),

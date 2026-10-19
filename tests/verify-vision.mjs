@@ -76,7 +76,7 @@ const setModels = (page, vision) =>
  *  信号:附件钮的 aria-label 恒定,而 title 随 visionOk 翻转(ComposerBar.tsx:242)
  *  —— 面板内存里的配置只有收到 storage 变更事件后才更新,而贴图准入门控读它;
  *  赌输时下一行 setInputFiles 会被门控吞掉(预览永不出现)。
- *  ⚠️ 它**不是** T18 那条 vision V5 flake 的修复:改后 flake 仍复现(11 次里 1 次),
+ *  ⚠️ 它**不是** vision V5 那条 flake 的修复:改后 flake 仍复现(11 次里 1 次),
  *  且失败那次本函数已通过 —— 说明提交瞬间面板确实是非视觉档,根因仍未定论。 */
 const waitForVision = (page, vision) =>
   page
@@ -228,7 +228,7 @@ await waitForVision(sidepanel, false);
   // 前置条件(面板处于非视觉档)已由 waitForVision 保证;下面的 waitFor 只负责
   // 抓这个 ~3s 的瞬时窗口(框架内部轮询,不手写循环)。断言不删:用户被明确
   // 告知图片不会发送,有产品价值。
-  // ⚠️ T18(vision V5 偶发红,台账 memory/test-optimization-plan.md):已排除
+  // ⚠️ vision V5 偶发红是已知未定论 flake:已排除
   // 两种假设 —— ①手写轮询采样不足;②提交瞬间面板 visionOk 陈旧(waitForVision
   // 已通过的那次照样红)。失败签名固定:本行红,紧随的三条请求侧断言恒绿
   // (产品行为正确,仅测试脆弱)。页内诊断采样器已按 2026-09-30 决策移除
