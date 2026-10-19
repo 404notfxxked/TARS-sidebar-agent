@@ -25,7 +25,8 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
 - 覆盖率:`pnpm test:coverage`
 - e2e:`pnpm build && node tests/run.mjs <域>`,域清单见
   [tests/README.md](tests/README.md)
-- **改哪块跑哪块**:改纯逻辑跑对应单测,改交互链路跑对应域的 e2e
+- **改哪块跑哪块**:改纯逻辑跑对应单测,改交互链路跑对应域的 e2e,
+  改 UI 加截图核验(见「前端界面」)
 
 ## 工作流
 
@@ -85,6 +86,12 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
   永久缓存:组件文案每次渲染现取(`const t = useT()`),渲染期
   辅助函数第一参传入 t。切换语言后文案不变这类问题,查编译
   产物排查,仅凭源码推不出来
+- UI 改动(布局/样式/组件结构)必须截图核验实际渲染:模型支持视觉
+  的前提下,截图不是流程产物而是验证动作,必须真的看——DOM 断言
+  全绿不等于渲染正确(jsdom 不载样式表)。场景取波及面内的最坏
+  情况:最窄面板宽、最长内容(长 id/长文案折行)、深浅两主题、
+  空态与满数据;手段不限(shot-m3 / probe 家族 / 临时脚本),
+  看出问题修完再交
 - 新 UI 只用 `styles/` 既有接口类(settings.css、chat.css),不
   私造样式;组件先取 `ui/` 与 `settings/parts.tsx` 现成件(两段
   确认/开关行/分段/吸顶头/骨架),先取现成再手写;`m3.css` 是
