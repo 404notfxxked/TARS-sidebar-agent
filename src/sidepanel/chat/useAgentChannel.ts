@@ -543,16 +543,17 @@ export function useAgentChannel({
     });
   };
 
-  /** 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)。
-   *  失败不自挂失败态:端口断开 = 后台 run 已被 abort,确认对象已不存在,自愈。
-   *  wire 是 outcome 语义;「拒绝并说明」的附言由确认卡组件随 deny 一并带回 */
-  const answerConfirm = (approved: boolean) => {
+  /** 确认卡答复:把用户的决定(outcome 语义)带回后台,请求随即出列(等待
+   *  超时由后台兜底拒绝)。失败不自挂失败态:端口断开 = 后台 run 已被
+   *  abort,确认对象已不存在,自愈。「拒绝并说明」的附言随 deny 一并带回 */
+  const answerConfirm = (outcome: "allow_once" | "deny", text?: string) => {
     if (!confirmReq) return;
-    log.info("chat", "confirm answered", { approved, name: confirmReq.name });
+    log.info("chat", "confirm answered", { outcome, name: confirmReq.name });
     safeSend({
       type: MSG.CONFIRM_RESPONSE,
       requestId: confirmReq.requestId,
-      outcome: approved ? "allow_once" : "deny",
+      outcome,
+      ...(text ? { text } : {}),
     });
     setConfirmReq(null);
   };

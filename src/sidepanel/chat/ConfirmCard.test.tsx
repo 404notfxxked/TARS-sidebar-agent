@@ -3,7 +3,7 @@
 // 标签页族)与允许/拒绝出口。此前只有 e2e 慢链路覆盖。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import { MSG, type AgentEvent } from "../../shared/messages";
@@ -57,17 +57,17 @@ describe("ConfirmCard 确认卡", () => {
     ).toBeInTheDocument();
   });
 
-  it("拒绝与允许分别回调 false / true", async () => {
+  it("拒绝与允许分别回调 deny / allow_once", async () => {
     const user = userEvent.setup();
     const onAnswer = renderCard();
     await user.click(
       screen.getByRole("button", { name: zhCN.chat.confirmDeny }),
     );
-    expect(onAnswer).toHaveBeenCalledWith(false);
+    expect(onAnswer).toHaveBeenCalledWith("deny");
     await user.click(
       screen.getByRole("button", { name: zhCN.chat.confirmAllow }),
     );
-    expect(onAnswer).toHaveBeenCalledWith(true);
+    expect(onAnswer).toHaveBeenCalledWith("allow_once");
     expect(onAnswer).toHaveBeenCalledTimes(2);
   });
 
@@ -250,5 +250,141 @@ describe("ConfirmCard 标签页族", () => {
         zhCN.chat.confirmTarget.replace("{title}", "要关的页（www.example.com）"),
       ),
     ).toBeInTheDocument();
+  });
+});
+
+// ---- 拒绝并说明 / Esc 快捷拒绝 / 风险色调 / 超长原文展开 ----
+
+describe("ConfirmCard 拒绝并说明", () => {
+  it("展开内嵌输入 → 提交带附言;一键拒绝与允许仍直达", async () => {
+    const user = userEvent.setup();
+    const onAnswer = renderCard();
+    await user.click(
+      screen.getByRole("button", { name: zhCN.chat.confirmDenyWithReason }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: zhCN.chat.confirmFeedbackPlaceholder }),
+      "姓氏拼错了,改成 Li",
+    );
+    await user.click(
+      screen.getByRole("button", { name: zhCN.chat.confirmFeedbackSend }),
+    );
+    expect(onAnswer).toHaveBeenCalledWith("deny", "姓氏拼错了,改成 Li");
+    await user.click(screen.getByRole("button", { name: zhCN.chat.confirmDeny }));
+    expect(onAnswer).toHaveBeenCalledWith("deny");
+    await user.click(
+      screen.getByRole("button", { name: zhCN.chat.confirmAllow }),
+    );
+    expect(onAnswer).toHaveBeenCalledWith("allow_once");
+  });
+
+  it("说明为空时发送禁用(不产空附言)", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(
+      screen.getByRole("button", { name: zhCN.chat.confirmDenyWithReason }),
+    );
+    expect(
+      screen.getByRole("button", { name: zhCN.chat.confirmFeedbackSend }),
+    ).toBeDisabled();
+  });
+
+  it("说明输入框内 Esc 只收起面板,不触发拒绝", async () => {
+    const user = userEvent.setup();
+    const onAnswer = renderCard();
+    await user.click(
+      screen.getByRole("button", { name: zhCN.chat.confirmDenyWithReason }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: zhCN.chat.confirmFeedbackPlaceholder }),
+      "x",
+    );
+    await user.keyboard("{Escape}");
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: zhCN.chat.confirmDeny }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("ConfirmCard Esc 快捷拒绝", () => {
+  it("非输入焦点按 Esc = 拒绝", () => {
+    const onAnswer = renderCard();
+    // 真实按键从当前焦点元素冒泡到 window;body 即「无输入焦点」的代表态
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onAnswer).toHaveBeenCalledWith("deny");
+  });
+
+  it("焦点在文本输入内时 Esc 不拒绝(避开 composer 打字/技能菜单/IME)", () => {
+    const onAnswer = vi.fn();
+    render(
+      <>
+        <input type="text" data-testid="outside-input" />
+        <ConfirmCard req={baseReq} onAnswer={onAnswer} />
+      </>,
+    );
+    const outside = screen.getByTestId("outside-input");
+    outside.focus();
+    fireEvent.keyDown(outside, { key: "Escape", nativeEvent: new Event("keydown") });
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+});
+
+describe("ConfirmCard 风险色调(category accent)", () => {
+  it("persistent=error / page-nav=warning / page-write=primary;缺席不画 accent", () => {
+    renderCard({ category: "persistent" });
+    expect(screen.getByRole("alertdialog").className).toContain("border-l-error");
+    cleanup();
+    renderCard({ category: "page-nav" });
+    expect(screen.getByRole("alertdialog").className).toContain("border-l-warning");
+    cleanup();
+    renderCard({ category: "page-write" });
+    const cls = screen.getByRole("alertdialog").className;
+    expect(cls).toContain("border-l-primary");
+    expect(cls).not.toContain("border-l-error");
+    cleanup();
+    // 无 category(旧事件/未下发)→ 不画 accent,卡片照常
+    renderCard({});
+    expect(screen.getByRole("alertdialog").className).not.toContain("border-l-");
+  });
+});
+
+describe("ConfirmCard 超长原文展开", () => {
+  it("fill 文本超 80 字:默认截断,展开见全文,可收起", async () => {
+    const user = userEvent.setup();
+    const long = "甲".repeat(100);
+    renderCard({ args: { text: long } });
+    expect(
+      screen.getByText(
+        zhCN.chat.confirmFillText.replace("{text}", `${"甲".repeat(80)}…`),
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: zhCN.chat.confirmExpand }));
+    expect(screen.getByText(long)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: zhCN.chat.confirmCollapse }),
+    );
+    expect(screen.queryByText(long)).not.toBeInTheDocument();
+  });
+
+  it("MCP 负载超 80 字:同样可展开(原文=完整 JSON 负载)", async () => {
+    const user = userEvent.setup();
+    const long = "乙".repeat(100);
+    renderCard({
+      name: "mcp_Notes_create",
+      displayName: "Notes · create",
+      args: { content: long },
+    });
+    await user.click(screen.getByRole("button", { name: zhCN.chat.confirmExpand }));
+    expect(
+      screen.getByText(JSON.stringify({ content: long })),
+    ).toBeInTheDocument();
+  });
+
+  it("80 字以内不渲染展开入口", () => {
+    renderCard();
+    expect(
+      screen.queryByRole("button", { name: zhCN.chat.confirmExpand }),
+    ).not.toBeInTheDocument();
   });
 });

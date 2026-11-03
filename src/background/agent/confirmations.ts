@@ -135,6 +135,18 @@ export function needsConfirmation(
   return false;
 }
 
+/** 确认卡 accent 的风险类别:静态集查表,mcp_ / web_fetch 各自归位;
+ *  过门工具必属上述之一,查不到(理论不可达)缺省不下发 */
+function confirmCategoryOf(
+  name: string,
+): "page-write" | "page-nav" | "persistent" | "mcp" | "fetch" | undefined {
+  const inTable = TOOL_CATEGORY[name as keyof typeof TOOL_CATEGORY];
+  if (inTable) return inTable;
+  if (name.startsWith("mcp_")) return "mcp";
+  if (name === "web_fetch") return "fetch";
+  return undefined;
+}
+
 /** 面板答复入口(runHandlers 的 port 路由调用);此处只做幂等 resolve。
  *  outcome 语义见 CONFIRM_RESPONSE:allow_once = 放行,deny 可带附言 */
 export function resolveConfirmation(
@@ -192,6 +204,7 @@ export async function requestConfirmation(
 ): Promise<ConfirmDecision> {
   const requestId = crypto.randomUUID();
   const target = await resolveTargetTab(ctx, req.args).catch(() => ({}));
+  const category = confirmCategoryOf(req.name);
   port.postMessage({
     type: MSG.AGENT_CONFIRM_REQUEST,
     requestId,
@@ -200,6 +213,7 @@ export async function requestConfirmation(
     args: req.args,
     // 超时口径随载荷下发:确认卡展示「多久不答复算拒绝」,UI 不另存一份
     timeoutMs: CONFIRM_TIMEOUT_MS,
+    ...(category ? { category } : {}),
     ...target,
   });
 

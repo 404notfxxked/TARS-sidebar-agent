@@ -245,6 +245,9 @@ export type AgentEvent =
       args?: unknown;
       /** 等待答复上限(毫秒),超时按拒绝;确认卡据此展示倒计时口径 */
       timeoutMs?: number;
+      /** 风险类别(确认卡左侧 accent 色):SW 按 TOOL_CATEGORY 派生随载荷
+       *  下发,mcp_ / web_fetch 各自归位;旧事件/未下发时缺省,卡片不画 accent */
+      category?: "page-write" | "page-nav" | "persistent" | "mcp" | "fetch";
       /** 目标标签页(确认卡展示「操作将落在哪个页面」);取不到时缺省 */
       tabTitle?: string;
       tabUrl?: string;

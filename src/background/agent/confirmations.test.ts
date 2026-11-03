@@ -178,10 +178,17 @@ describe("确认决定流(答复 → 决定对象)", () => {
     const pending = requestConfirmation(port, { name: "click_element", args: {} });
     // postMessage 在 resolveTargetTab 的 await 之后,等载荷到达再断言
     await vi.waitFor(() => expect(sent).toHaveLength(1));
-    const req = sent[0] as { requestId: string; name: string; timeoutMs: number };
+    const req = sent[0] as {
+      requestId: string;
+      name: string;
+      timeoutMs: number;
+      category?: string;
+    };
     expect(req.name).toBe("click_element");
     expect(req.requestId).toBeTruthy();
     expect(req.timeoutMs).toBe(120_000);
+    // 风险类别随载荷下发(确认卡 accent 色的单一真源仍在 TOOL_CATEGORY)
+    expect(req.category).toBe("page-write");
     resolveConfirmation(req.requestId, "allow_once");
     expect(await pending).toEqual({ kind: "allow" });
   });

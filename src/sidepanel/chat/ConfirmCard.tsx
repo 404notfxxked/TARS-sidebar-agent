@@ -1,7 +1,12 @@
 // 写操作确认卡:后台在执行页面写动作/记忆持久写/受控外链读取/MCP 外部工具
-// 调用前停下等答复;展示目标与操作内容,给用户足够信息做「允许 / 拒绝」决定;
+// 调用前停下等答复;展示目标与操作内容,给用户足够信息做「允许 / 拒绝」决定。
+// 拒绝可附说明(「拒绝并说明」展开内嵌输入,随 deny 回传作为 feedback 给模型);
+// 非输入焦点的 Esc = 一键拒绝(composer 打字/技能菜单/IME 的 Esc 各有归属,
+// 不在此吞);左侧 accent 色按 wire 下发的 category 区分风险族;超 80 字的
+// 写入内容/外发负载默认截断(截断本身是信号),可展开看原文。
 // 视觉沿用 combo-pop 浮层语言。键位表必须写字面量(check-i18n 只收集键形字面量)
 
+import { useEffect, useState } from "react";
 import type { MSG, AgentEvent } from "../../shared/messages";
 import { useT } from "../ui/hooks";
 import { ConfirmIcon } from "../ui/icons";
@@ -11,6 +16,19 @@ type ConfirmRequest = Extract<
   AgentEvent,
   { type: typeof MSG.AGENT_CONFIRM_REQUEST }
 >;
+
+/** category → 左侧 accent 色(类名必须是源码字面量,Tailwind 才生成):
+ *  persistent(跨会话持久写)= error;page-nav(跳转/关 tab)= warning;
+ *  page-write(页面日常写)= primary;mcp / fetch(数据外发通道)= tertiary。
+ *  category 缺席(旧事件/未下发)不画 accent,卡片照常 */
+const CATEGORY_ACCENT: Record<NonNullable<ConfirmRequest["category"]>, string> =
+  {
+    "page-write": "border-l-2 border-l-primary",
+    "page-nav": "border-l-2 border-l-warning",
+    persistent: "border-l-2 border-l-error",
+    mcp: "border-l-2 border-l-tertiary",
+    fetch: "border-l-2 border-l-tertiary",
+  };
 
 /** 按工具族取卡片标题键:页面动作/记忆/外链/MCP/标签页各自有更贴题的说法 */
 function confirmTitleKey(name: string): string {
@@ -31,14 +49,26 @@ function confirmTitleKey(name: string): string {
   }
 }
 
+/** 超长原文(写入内容 / MCP 外发负载)展开区的展示块 */
+function FullText({ text }: { text: string }) {
+  return (
+    <p className="mt-1 max-h-40 overflow-y-auto break-all whitespace-pre-wrap rounded-xs bg-surface-container-highest px-2 py-1 font-mono text-[11.5px] leading-4 text-on-surface-variant">
+      {text}
+    </p>
+  );
+}
+
 export function ConfirmCard({
   req,
   onAnswer,
 }: {
   req: ConfirmRequest;
-  onAnswer: (approved: boolean) => void;
+  onAnswer: (outcome: "allow_once" | "deny", text?: string) => void;
 }) {
   const t = useT();
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const args = (req.args ?? {}) as {
     selector?: string;
     text?: string;
@@ -62,6 +92,7 @@ export function ConfirmCard({
   const isFill = req.name === "fill_input";
   const fillText =
     isFill && typeof args.text === "string" ? args.text.slice(0, 80) : "";
+  const fillTruncated = isFill && typeof args.text === "string" && args.text.length > 80;
   // 记忆/外链族的操作对象也必须上卡(与 fill 的写入内容同一条信息纪律)
   const memSaveText =
     req.name === "memory_save" && typeof args.content === "string"
@@ -101,7 +132,7 @@ export function ConfirmCard({
   const isNavigate = req.name === "navigate_tab";
   const navUrl = isNavigate && typeof args.url === "string" ? args.url : "";
   /** MCP 入参即外发负载,与记忆族同一条「操作对象上卡」纪律;超 80 截断,
-   *  让「截断」本身成为信号(与 web_fetch 查询串同款) */
+   *  让「截断」本身成为信号(与 web_fetch 查询串同款),可展开看原文 */
   const mcpArgsRaw =
     isMcp &&
     typeof req.args === "object" &&
@@ -112,11 +143,28 @@ export function ConfirmCard({
   const mcpArgsText = mcpArgsRaw.slice(0, 80);
   const mcpArgsTruncated = mcpArgsRaw.length > 80;
   const titleKey = confirmTitleKey(req.name);
+  const accent = req.category ? CATEGORY_ACCENT[req.category] : "";
+
+  // Esc 快捷拒绝:焦点不在文本输入时生效(composer 打字/技能菜单导航/IME
+  // 组词的 Esc 各有归属,不在此吞);说明框内的 Esc 由其自身 onKeyDown
+  // 收起说明框并阻断冒泡,到不了这里
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      const el = e.target;
+      if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)
+        return;
+      onAnswer("deny");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onAnswer]);
+
   return (
     <div
       role="alertdialog"
       aria-label={t(titleKey)}
-      className="mx-auto mb-2 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high p-3 shadow-2"
+      className={`mx-auto mb-2 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high p-3 shadow-2 ${accent}`}
     >
       <p className="flex items-center gap-1.5 text-[13px] font-medium text-on-surface">
         <ConfirmIcon />
@@ -141,14 +189,28 @@ export function ConfirmCard({
       {mcpArgsText && (
         <p className="mt-1 break-all text-[12px] text-on-surface-variant">
           {t("chat.confirmMcpArgs", { args: mcpArgsText })}
-          {mcpArgsTruncated ? "…" : ""}
+          {mcpArgsTruncated && !expanded ? "…" : ""}
         </p>
       )}
+      {mcpArgsTruncated && expanded && <FullText text={mcpArgsRaw} />}
       {fillText && (
         <p className="mt-1 break-all text-[12px] text-on-surface-variant">
           {t("chat.confirmFillText", { text: fillText })}
-          {args.text && args.text.length > 80 ? "…" : ""}
+          {fillTruncated && !expanded ? "…" : ""}
         </p>
+      )}
+      {fillTruncated && expanded && typeof args.text === "string" && (
+        <FullText text={args.text} />
+      )}
+      {(fillTruncated || mcpArgsTruncated) && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-label={expanded ? t("chat.confirmCollapse") : t("chat.confirmExpand")}
+          className="btn-text h-7 px-1"
+        >
+          {expanded ? t("chat.confirmCollapse") : t("chat.confirmExpand")}
+        </button>
       )}
       {isFill && args.pressEnterAfter && (
         <p className="mt-1 text-[12px] text-error">
@@ -184,10 +246,61 @@ export function ConfirmCard({
           {t("chat.confirmSelectorLabel", { selector: args.selector })}
         </p>
       )}
+      {reasonOpen && (
+        <div className="mt-2">
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                // 说明框内的 Esc 只收起说明框,不冒泡触发快捷拒绝
+                e.stopPropagation();
+                setReasonOpen(false);
+                return;
+              }
+              // Enter 提交与 composer 同款:Shift+Enter 换行,IME 组词不发送
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                reason.trim()
+              ) {
+                e.preventDefault();
+                onAnswer("deny", reason.trim());
+              }
+            }}
+            rows={2}
+            // biome-ignore lint/a11y/noAutofocus: 点开「拒绝并说明」后聚焦输入是明确交互结果,非表单页抢焦点
+            autoFocus
+            placeholder={t("chat.confirmFeedbackPlaceholder")}
+            aria-label={t("chat.confirmFeedbackPlaceholder")}
+            className="block w-full resize-none rounded-xs bg-surface-container-highest px-2 py-1.5 text-[12.5px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant"
+          />
+          <div className="mt-1 flex justify-end">
+            <button
+              type="button"
+              disabled={!reason.trim()}
+              onClick={() => onAnswer("deny", reason.trim())}
+              aria-label={t("chat.confirmFeedbackSend")}
+              className="btn-text h-7"
+            >
+              {t("chat.confirmFeedbackSend")}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="mt-2.5 flex items-center justify-end gap-2">
         <button
           type="button"
-          onClick={() => onAnswer(false)}
+          onClick={() => setReasonOpen((v) => !v)}
+          aria-label={t("chat.confirmDenyWithReason")}
+          className="btn-text"
+        >
+          {t("chat.confirmDenyWithReason")}
+        </button>
+        <button
+          type="button"
+          onClick={() => onAnswer("deny")}
           aria-label={t("chat.confirmDeny")}
           className="btn-text"
         >
@@ -195,7 +308,7 @@ export function ConfirmCard({
         </button>
         <button
           type="button"
-          onClick={() => onAnswer(true)}
+          onClick={() => onAnswer("allow_once")}
           aria-label={t("chat.confirmAllow")}
           className="icon-btn-filled ml-2 h-9 px-3 font-medium leading-none"
         >
