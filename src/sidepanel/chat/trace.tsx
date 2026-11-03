@@ -13,6 +13,7 @@ import type { TFn } from "../../shared/i18n";
 import { useCopyFlash, useLocale, useT } from "../ui/hooks";
 import { ChevronIcon, LinesIcon, SparkleIcon } from "../ui/icons";
 import { toolLabel } from "./toolNames";
+import { AskCard, askQuestionsOf, type AskAnswerView } from "./AskCard";
 import { AssistantBubble } from "./bubbles";
 
 // ---- 本轮执行流(segments):思考段 / 文本段 / 工具段按到达顺序交错 ----
@@ -47,6 +48,17 @@ export type ProcessSeg = ToolSeg | ReasoningSeg;
 const PREVIEW_CHARS = 500;
 const REASONING_MAX_CHARS = 2000;
 
+/** 反问请求的窄化形状(trace 不整取 AskRequest,只消费渲染所需字段) */
+export interface TraceAsk {
+  questions: {
+    question: string;
+    header?: string;
+    options: { label: string; description?: string }[];
+    multiSelect?: boolean;
+  }[];
+  timeoutMs?: number;
+}
+
 /** 本轮执行流渲染:live 按到达顺序交错;settled 重排为单张过程卡 + 收尾答案气泡 */
 export function RunZone({
   segs,
@@ -55,6 +67,8 @@ export function RunZone({
   openGroups,
   onToggleGroup,
   onRegenerate,
+  ask,
+  onAnswerAsk,
 }: {
   segs: RunSegment[];
   phase: "live" | "settled";
@@ -63,6 +77,10 @@ export function RunZone({
   onToggleGroup: (firstIdx: number) => void;
   /** 重新生成:仅 settled 的最后一个答案气泡带(与业界一致的末条重答位) */
   onRegenerate?: () => void;
+  /** 待作答的 ask_user 反问:非空 = 运行中的 ask_user 行渲染可交互反问卡
+   *  (run 循环阻塞 + 工具批次串行保证同刻至多一个,无需按 id 对号) */
+  ask?: TraceAsk | null;
+  onAnswerAsk?: (answers: AskAnswerView[]) => void;
 }) {
   // settled:整轮过程重排进一张卡(思考/工具/中间文案);只有收尾的连续文本段
   // (最终回答)留在卡外作气泡。文本是否「中间文案」取决于其后是否还有过程段
@@ -114,6 +132,8 @@ export function RunZone({
           endT={endedAt ?? Date.now()}
           open={openGroups.has(firstIdx)}
           onToggle={() => onToggleGroup(firstIdx)}
+          ask={ask}
+          onAnswerAsk={onAnswerAsk}
         />
         {tail.map((s, i) =>
           s.kind === "text" && s.text.trim() !== ""
@@ -139,6 +159,8 @@ export function RunZone({
         endT={endT}
         open={false}
         onToggle={() => {}}
+        ask={ask}
+        onAnswerAsk={onAnswerAsk}
       />,
     );
     group = [];
@@ -171,12 +193,16 @@ function ProcessCard({
   endT,
   open,
   onToggle,
+  ask,
+  onAnswerAsk,
 }: {
   entries: { s: ProcessSeg | TextSeg; i: number }[];
   phase: "live" | "settled";
   endT: number;
   open: boolean;
   onToggle: () => void;
+  ask?: TraceAsk | null;
+  onAnswerAsk?: (answers: AskAnswerView[]) => void;
 }) {
   /** live→settled 的收拢动画:翻转瞬间先以展开态渲染一帧(无过渡),下一帧放行
    *  默认的 0fr 过渡,让「过程收成摘要 chip」是一次可见的高度收拢而非硬切。
@@ -216,7 +242,13 @@ function ProcessCard({
               <ReasoningRow key={`r${e.i}`} item={e.s} durMs={e.durMs} />
             )
           ) : e.s.kind === "tool" ? (
-            <ToolRow key={e.s.id} item={e.s} durMs={e.durMs} />
+            <ToolRow
+              key={e.s.id}
+              item={e.s}
+              durMs={e.durMs}
+              ask={ask}
+              onAnswerAsk={onAnswerAsk}
+            />
           ) : null,
         )}
       </div>
@@ -269,7 +301,13 @@ function ProcessCard({
             ) : e.s.kind === "text" ? (
               <TextRow key={`t${e.i}`} item={e.s} />
             ) : (
-              <ToolRow key={e.s.id} item={e.s} durMs={e.durMs} />
+              <ToolRow
+                key={e.s.id}
+                item={e.s}
+                durMs={e.durMs}
+                ask={ask}
+                onAnswerAsk={onAnswerAsk}
+              />
             ),
           )}
         </div>
@@ -477,11 +515,24 @@ function TextRow({ item }: { item: TextSeg }) {
 /** 工具行:名称 + 状态常显(对勾/叉以描边画入),参数/结果点击展开(摘要截断)。
  *  完成的尾部直接给耗时(✓ 图标已表达完成,不再重复「完成」二字,与
  *  Manus/Cursor 的每步计时一致);运行中/失败仍用文字。
- *  durMs 缺省 = 回放形态(耗时未落盘),完成态只留图标 */
-function ToolRow({ item, durMs }: { item: ToolSeg; durMs?: number }) {
+ *  durMs 缺省 = 回放形态(耗时未落盘),完成态只留图标。
+ *  ask_user 特化:参数/结果即问题与作答,整行换反问卡(AskCard)——交互态
+ *  仅在 running 且面板持有请求(ask 非空)时可点,作答后原地翻已答态 */
+function ToolRow({
+  item,
+  durMs,
+  ask,
+  onAnswerAsk,
+}: {
+  item: ToolSeg;
+  durMs?: number;
+  ask?: TraceAsk | null;
+  onAnswerAsk?: (answers: AskAnswerView[]) => void;
+}) {
   const t = useT();
   const locale = useLocale();
   const [open, setOpen] = useState(false);
+  const isAsk = item.name === "ask_user";
   const statusText =
     item.status === "running"
       ? t("chat.trace.running")
@@ -490,6 +541,31 @@ function ToolRow({ item, durMs }: { item: ToolSeg; durMs?: number }) {
         : durMs === undefined
           ? ""
           : fmtDur(durMs, locale);
+  if (isAsk) {
+    const interactive = item.status === "running" && ask != null;
+    return (
+      <div className="trace-row" data-kind="tool" data-status={item.status} data-open="true">
+        <div className="trace-header" aria-hidden="true">
+          <span className="trace-icon">
+            {item.status === "running" ? <span className="trace-spinner" /> : item.status === "error" ? <MarkError /> : <MarkOk />}
+          </span>
+          <span className="trace-label">{toolLabel(t, item.name, item.displayName)}</span>
+          <span className="trace-tail">
+            {statusText !== "" && <span className="trace-status">{statusText}</span>}
+          </span>
+        </div>
+        <div className="mt-1">
+          <AskCard
+            questions={askQuestionsOf(item.args)}
+            interactive={interactive}
+            onAnswer={interactive ? onAnswerAsk : undefined}
+            result={item.result}
+            timeoutMs={ask?.timeoutMs}
+          />
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       className="trace-row"

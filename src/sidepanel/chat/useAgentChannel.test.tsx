@@ -297,3 +297,62 @@ describe("useAgentChannel HISTORY 兜底回包(读取失败可见)", () => {
     expect(result.current.messages[0]).toMatchObject({ content: "恢复的转写" });
   });
 });
+
+describe("useAgentChannel ask_user 反问通路", () => {
+  const askEvt = {
+    type: MSG.AGENT_ASK_REQUEST,
+    requestId: "ask-1",
+    timeoutMs: 300_000,
+    questions: [
+      { question: "Q?", options: [{ label: "A" }, { label: "B" }] },
+    ],
+  };
+
+  it("AGENT_ASK_REQUEST 入状态;answerAsk 按 id 回传并出列", () => {
+    const io = installFakePort();
+    const { result } = renderHook(() =>
+      useAgentChannel({ resumeSessionId: null, onResumeDone: vi.fn() }),
+    );
+    expect(result.current.askReq).toBeNull();
+    act(() => io.deliver(askEvt));
+    expect(result.current.askReq).toMatchObject({ requestId: "ask-1" });
+    act(() => result.current.answerAsk([{ selected: ["A"] }]));
+    const resp = io.sent.find((m) => m.type === MSG.ASK_RESPONSE);
+    expect(resp).toMatchObject({ requestId: "ask-1", answers: [{ selected: ["A"] }] });
+    expect(result.current.askReq).toBeNull();
+  });
+
+  it("ask_user 工具结果到达即出列(用户从未作答的超时/取消路径)", () => {
+    const io = installFakePort();
+    const { result } = renderHook(() =>
+      useAgentChannel({ resumeSessionId: null, onResumeDone: vi.fn() }),
+    );
+    act(() => io.deliver(askEvt));
+    expect(result.current.askReq).not.toBeNull();
+    act(() => {
+      io.deliver({
+        type: MSG.AGENT_TOOL_CALL,
+        id: "t1",
+        name: "ask_user",
+        args: askEvt.questions,
+      });
+      io.deliver({
+        type: MSG.AGENT_TOOL_RESULT,
+        id: "t1",
+        name: "ask_user",
+        ok: true,
+        result: '{"status":"unanswered"}',
+      });
+    });
+    expect(result.current.askReq).toBeNull();
+  });
+
+  it("无待答请求时 answerAsk 是空操作(不产生 ASK_RESPONSE)", () => {
+    const io = installFakePort();
+    const { result } = renderHook(() =>
+      useAgentChannel({ resumeSessionId: null, onResumeDone: vi.fn() }),
+    );
+    act(() => result.current.answerAsk([{ selected: ["A"] }]));
+    expect(io.sent.some((m) => m.type === MSG.ASK_RESPONSE)).toBe(false);
+  });
+});

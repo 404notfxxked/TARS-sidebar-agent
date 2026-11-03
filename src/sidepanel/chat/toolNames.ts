@@ -23,6 +23,7 @@ const TOOL_KEYS: Record<string, string> = {
   navigate_tab: "chat.tool.navigateTab",
   tab_activate: "chat.tool.tabActivate",
   close_tab: "chat.tool.closeTab",
+  ask_user: "chat.tool.askUser",
 };
 
 /** 工具显示名:内置工具走字典,外部工具回退 displayName,最后退原名 */

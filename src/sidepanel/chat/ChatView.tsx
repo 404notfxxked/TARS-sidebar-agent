@@ -56,12 +56,14 @@ export default function ChatView({
     memorySaved,
     status,
     confirmReq,
+    askReq,
     currentSession,
     runSegs,
     runPhase,
     runEndedAt,
     openGroups,
     toggleGroup,
+    answerAsk,
   } = chat;
 
   const [input, setInput] = useState("");
@@ -234,6 +236,8 @@ export default function ChatView({
         }}
         atBottom={atBottom}
         onJumpLatest={scrollToLatest}
+        askReq={askReq}
+        onAnswerAsk={answerAsk}
       />
 
       {/* 写操作确认卡:后台在执行点击/填写前停下等答复;展示目标页与写入内容 */}
