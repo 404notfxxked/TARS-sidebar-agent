@@ -33,6 +33,7 @@ export const MSG = {
   MCP_TOOLS: 'mcp_tools',
   PANEL_VISIBILITY: 'panel_visibility',
   CONFIRM_RESPONSE: 'confirm_response',
+  ASK_RESPONSE: 'ask_response',
 
   // Background → Side panel（流式事件）
   AGENT_STARTED: 'agent_started',
@@ -41,6 +42,7 @@ export const MSG = {
   AGENT_TOOL_CALL: 'agent_tool_call',
   AGENT_TOOL_RESULT: 'agent_tool_result',
   AGENT_CONFIRM_REQUEST: 'agent_confirm_request',
+  AGENT_ASK_REQUEST: 'agent_ask_request',
   AGENT_MESSAGE: 'agent_message',
   AGENT_DONE: 'agent_done',
   AGENT_ERROR: 'agent_error',
@@ -105,6 +107,13 @@ export type SideToBg =
        *  deny = 拒绝,text 为「拒绝并说明」附言,作为 feedback 回给模型 */
       outcome: "allow_once" | "deny";
       text?: string;
+    }
+  /** ask_user 反问的作答:answers 顺序对齐请求的 questions;selected 为
+   *  选中的 label(单选也是数组),text 为「其他」自由输入 */
+  | {
+      type: typeof MSG.ASK_RESPONSE;
+      requestId: string;
+      answers: { selected: string[]; text?: string }[];
     }
   | { type: typeof MSG.LOAD_HISTORY; sessionId: string; resync?: boolean }
   | { type: typeof MSG.LIST_SESSIONS }
@@ -251,6 +260,21 @@ export type AgentEvent =
       /** 目标标签页(确认卡展示「操作将落在哪个页面」);取不到时缺省 */
       tabTitle?: string;
       tabUrl?: string;
+    }
+  /** ask_user 反问:SW 在工具执行点发出(agent/askUser.ts),面板渲染反问
+   *  卡,用户作答后经 ASK_RESPONSE 回来;超时(5 分钟)在 SW 侧回填「未答」
+   *  而非拒绝 —— 反问没有安全后果,与确认门的从严语义分流 */
+  | {
+      type: typeof MSG.AGENT_ASK_REQUEST;
+      requestId: string;
+      questions: {
+        question: string;
+        /** 短标签(≤12 字):窄侧栏里作问题组标题 */
+        header?: string;
+        options: { label: string; description?: string }[];
+        multiSelect?: boolean;
+      }[];
+      timeoutMs?: number;
     }
   | { type: typeof MSG.AGENT_MESSAGE; delta: string }
   /** reason 缺省 = 兜底/取消路径发的 DONE(如 index.ts 的 finally);"max-turns" = 步数耗尽后收尾;

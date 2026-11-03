@@ -11,6 +11,7 @@ import {
   type ConfirmGate,
   requestConfirmation,
 } from "./confirmations";
+import { requestAskUser } from "./askUser";
 import type { AgentPort } from "./agent";
 
 export type DispatchToolCall = (name: string, args: unknown) => Promise<unknown>;
@@ -30,6 +31,10 @@ export function createDispatchToolCall(
   return async (name, args) => {
     const tool = getTool(name);
     if (!tool) throw new Error(`unknown tool: ${name}`);
+    // ask_user 的执行体就是「发反问卡等作答」(agent/askUser.ts);确认门
+    // 不拦它 —— 反问没有写动作的安全后果,三档全免门。但它同样阻塞 run
+    // 循环,与确认卡共享面板单槽;注册表里的 execute 只是防御性占位
+    if (name === "ask_user") return requestAskUser(port, args, signal);
     // 写操作确认门:页面动作(点按/填写)、记忆写入/删除、MCP 动态工具
     // (语义未知不假设只读),以及 web_fetch 的出口判定(私网目标 /
     // 白名单未命中)。档位语义(strict/auto/off)在 needsConfirmation 内,
