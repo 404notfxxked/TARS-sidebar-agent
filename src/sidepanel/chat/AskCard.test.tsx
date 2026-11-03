@@ -18,7 +18,7 @@ const answeredResult = JSON.stringify({
 const ONE_Q = [
   {
     question: "要操作哪个标签页?",
-    header: "目标页",
+    header: "目标页", // i18n-ok 协议 mock 数据(SW 侧校验的 header 用例),非 UI 文案断言
     options: [
       { label: "结算页", description: "example.com 的结算" },
       { label: "商品列表" },
@@ -55,7 +55,7 @@ describe("AskCard 交互态", () => {
   it("单问单选:点选项即作答;问题描述与 header 上卡", async () => {
     const onAnswer = renderInteractive(ONE_Q);
     expect(screen.getByText("要操作哪个标签页?")).toBeInTheDocument();
-    expect(screen.getByText("目标页")).toBeInTheDocument();
+    expect(screen.getByText("目标页" /* i18n-ok mock 数据回显,非字典断言 */)).toBeInTheDocument();
     expect(screen.getByText("example.com 的结算")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /结算页/ }));
     expect(onAnswer).toHaveBeenCalledWith([{ selected: ["结算页"] }]);

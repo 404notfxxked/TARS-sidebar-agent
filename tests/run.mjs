@@ -30,6 +30,7 @@ const SUITES = {
   "page-tools": "verify-page-tools.mjs",
   notify: "verify-notify.mjs",
   confirm: "verify-confirm.mjs",
+  ask: "verify-ask.mjs", // ask_user 反问:点选/多选/其他输入/取消未答/回放已答卡
   "host-access": "verify-host-access.mjs",
   "model-lists": "verify-model-lists.mjs", // 模型列表漂移:刷新标记「不在官方列表」+ 一键清理
   layout: "probe-layout.mjs", // 悬浮层硬规则的断言防线
