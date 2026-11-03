@@ -7,7 +7,7 @@ import { allowlistDomainOf } from "../web/outboundGuard";
 import { getTool } from "../tools/tools";
 import { setToolExecutionContext, type ToolExecutionContext } from "../tools/toolContext";
 import {
-  CONFIRM_DENIED_MSG,
+  deniedMessage,
   type ConfirmGate,
   requestConfirmation,
 } from "./confirmations";
@@ -33,16 +33,16 @@ export function createDispatchToolCall(
     // 写操作确认门:页面动作(点按/填写)、记忆写入/删除、MCP 动态工具
     // (语义未知不假设只读),以及 web_fetch 的出口判定(私网目标 /
     // 白名单未命中)。档位语义(strict/auto/off)在 needsConfirmation 内,
-    // 档位由 confirmGate 闭包持有。拒绝/超时的文案作为工具错误回给模型
-    // —— 让它改道而不是硬重试
+    // 档位由 confirmGate 闭包持有。拒绝/超时的结构化文案作为工具错误回给
+    // 模型 —— 让它改道而不是硬重试;用户拒绝附言随 feedback 字段透传
     if (confirmGate(name, args)) {
-      const approved = await requestConfirmation(
+      const decision = await requestConfirmation(
         port,
         { name, displayName: tool.displayName, args },
         signal,
         toolCtx,
       );
-      if (!approved) throw new Error(CONFIRM_DENIED_MSG);
+      if (decision.kind === "deny") throw new Error(deniedMessage(decision));
       // 批准即知情:同 run 内该域后续抓取不再重复确认(跨 run 由下一轮
       // 从历史里的成功抓取结果推导)
       if (name === "web_fetch") {

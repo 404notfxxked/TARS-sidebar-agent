@@ -99,8 +99,8 @@ export async function handleRunMessage(
       return true;
     }
     case MSG.CONFIRM_RESPONSE: {
-      // 确认卡的答复;未知/过期 requestId 在确认门内静默忽略
-      resolveConfirmation(msg.requestId, msg.approved);
+      // 确认卡的答复(允许/拒绝,拒绝可附言);未知/过期 requestId 在确认门内静默忽略
+      resolveConfirmation(msg.requestId, msg.outcome, msg.text);
       return true;
     }
     default:

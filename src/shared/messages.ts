@@ -98,7 +98,14 @@ export type SideToBg =
   | { type: typeof MSG.REGENERATE; sessionId: string }
   | { type: typeof MSG.CANCEL_RUN; sessionId: string }
   | { type: typeof MSG.PANEL_VISIBILITY; hidden: boolean }
-  | { type: typeof MSG.CONFIRM_RESPONSE; requestId: string; approved: boolean }
+  | {
+      type: typeof MSG.CONFIRM_RESPONSE;
+      requestId: string;
+      /** 决定:allow_once = 本次允许(将来扩 allow_session 等范围值不改形);
+       *  deny = 拒绝,text 为「拒绝并说明」附言,作为 feedback 回给模型 */
+      outcome: "allow_once" | "deny";
+      text?: string;
+    }
   | { type: typeof MSG.LOAD_HISTORY; sessionId: string; resync?: boolean }
   | { type: typeof MSG.LIST_SESSIONS }
   | { type: typeof MSG.DELETE_SESSION; sessionId: string }
