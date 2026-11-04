@@ -8,6 +8,7 @@
 // (与确认门同款兜底)。
 
 import { MSG } from "../../shared/messages";
+import { startUserWaitKeepalive } from "./confirmations";
 import type { AgentPort } from "./agent";
 
 /** 等待作答上限:反问没有安全后果,比确认门宽(5 分钟);超时回填
@@ -118,9 +119,11 @@ export async function requestAskUser(
   });
 
   return new Promise<string>((resolve) => {
+    const keepalive = startUserWaitKeepalive();
     let timer: ReturnType<typeof setTimeout> | null = null;
     const settle = (answers: AskAnswer[] | null) => {
       pending.delete(requestId);
+      clearInterval(keepalive);
       if (timer) clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       resolve(resultOf(questions, answers));

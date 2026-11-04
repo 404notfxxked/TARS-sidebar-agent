@@ -55,6 +55,24 @@ export function deniedMessage(
 const pending = new Map<string, (decision: ConfirmDecision) => void>();
 
 /**
+ * 等待用户操作期间的 SW 保活:挂起等待时没有任何事件流动,MV3 SW 约 30s
+ * 空闲即被浏览器回收(pending 决定随之丢失,面板只能断连恢复整轮 —— 确认
+ * 卡与反问卡都受害,用户「犹豫一下」就中断)。定时调用一次便宜的扩展 API
+ * 重置空闲计时,把后台撑到作答/超时为止:上限即各自的 timeout,不会无限
+ * 期占住后台。确认门与反问通道共用(单槽下同刻至多一个等待者)。
+ */
+export function startUserWaitKeepalive(): ReturnType<typeof setInterval> {
+  return setInterval(() => {
+    // 测试环境可能没有 chrome 全局:保活尽力而为,失败不影响等待语义
+    try {
+      void chrome.runtime.getPlatformInfo();
+    } catch {
+      /* 保活失败无害 */
+    }
+  }, 20_000);
+}
+
+/**
  * 静态写工具的唯一真源(定案):name → 风险类别。三个派生集合
  * (PAGE_WRITE_TOOLS / PERSISTENT_TOOLS / WRITE_TOOLS)全部由它算出,
  * 改分组只改这份数据,不动 needsConfirmation 函数体 —— MCP annotations
@@ -218,9 +236,11 @@ export async function requestConfirmation(
   });
 
   return new Promise<ConfirmDecision>((resolve) => {
+    const keepalive = startUserWaitKeepalive();
     let timer: ReturnType<typeof setTimeout> | null = null;
     const settle = (decision: ConfirmDecision) => {
       pending.delete(requestId);
+      clearInterval(keepalive);
       if (timer) clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       resolve(decision);

@@ -242,6 +242,29 @@ describe("确认决定流(答复 → 决定对象)", () => {
     resolveConfirmation(req.requestId, "allow_once");
     expect(await pending).toEqual({ kind: "allow" });
   });
+
+  it("等待期 SW 保活:定时调用扩展 API 重置空闲计时,结算后停止", async () => {
+    vi.useFakeTimers();
+    const getPlatformInfo = vi.fn();
+    const prevChrome = (globalThis as Record<string, unknown>).chrome;
+    (globalThis as Record<string, unknown>).chrome = { runtime: { getPlatformInfo } };
+    try {
+      const { port, sent } = makeFakePort();
+      const pending = requestConfirmation(port, { name: "click_element", args: {} });
+      await vi.advanceTimersByTimeAsync(0); // 冲刷 resolveTargetTab 的微任务
+      expect(sent).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(45_000);
+      expect(getPlatformInfo.mock.calls.length).toBeGreaterThan(0); // 等待期有保活
+      resolveConfirmation((sent[0] as { requestId: string }).requestId, "allow_once");
+      expect(await pending).toEqual({ kind: "allow" });
+      getPlatformInfo.mockClear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getPlatformInfo).not.toHaveBeenCalled(); // 结算后停止,不占后台
+    } finally {
+      vi.useRealTimers();
+      (globalThis as Record<string, unknown>).chrome = prevChrome;
+    }
+  });
 });
 
 // ---- 拒绝回填文案:结构化 JSON,status "declined" 是 e2e 的断言锚点 ----

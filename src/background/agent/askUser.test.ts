@@ -139,6 +139,10 @@ describe("ask_user 端口协议与回填", () => {
 
   it("超时(5 分钟)→ 未答而非拒绝:status=unanswered + 让模型自行决断的注记", async () => {
     vi.useFakeTimers();
+    // 保活观测:等待期间应定时调用扩展 API 重置 SW 空闲计时
+    const getPlatformInfo = vi.fn();
+    const prevChrome = (globalThis as Record<string, unknown>).chrome;
+    (globalThis as Record<string, unknown>).chrome = { runtime: { getPlatformInfo } };
     try {
       const { port } = makeFakePort();
       const pending = requestAskUser(port, ONE_Q);
@@ -146,8 +150,10 @@ describe("ask_user 端口协议与回填", () => {
       const result = JSON.parse(await pending);
       expect(result.status).toBe("unanswered");
       expect(result.note).toContain("best judgment");
+      expect(getPlatformInfo.mock.calls.length).toBeGreaterThan(0); // 等待期有保活
     } finally {
       vi.useRealTimers();
+      (globalThis as Record<string, unknown>).chrome = prevChrome;
     }
   });
 
@@ -184,10 +190,13 @@ describe("ask_user 注册表与门控归属", () => {
     }
   });
 
-  it("SYSTEM_PROMPT 含反问纪律(唯一提问通道/不替代确认门/上限)", () => {
+  it("SYSTEM_PROMPT 含反问纪律(唯一提问通道/不替代确认门/上限/关联追问拆轮)", () => {
     expect(SYSTEM_PROMPT).toContain("ask_user");
     expect(SYSTEM_PROMPT).toMatch(/confirm/i);
     expect(SYSTEM_PROMPT).toMatch(/2-4|2–4/);
+    // 批量提问只许独立问题;依赖型追问必须拆轮(实测定调:依赖选项随
+    // 前一答失效,批量表达不了)
+    expect(SYSTEM_PROMPT).toMatch(/independent/i);
   });
 
   it("dispatch 特判走 ask 通道:确认门不拦、答复可经 resolveAsk 结算", async () => {
