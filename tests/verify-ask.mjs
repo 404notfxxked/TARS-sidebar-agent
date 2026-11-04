@@ -141,7 +141,6 @@ const stopBtn = `button[aria-label="${zh.chat.stop}"]`;
 const submitBtn = `button[aria-label="${zh.chat.askSubmit}"]`;
 const otherBtn = `button[aria-label="${zh.chat.askOther}"]`;
 const otherBox = `textarea[aria-label="${zh.chat.askOtherPlaceholder}"]`;
-const sendAnsBtn = `button[aria-label="${zh.chat.askSend}"]`;
 const waitIdle = () =>
   sidepanel.locator(sendBtn).waitFor({ state: "visible", timeout: 20000 });
 /** 发消息但不等 run 结束(反问卡会挂起等作答) */
@@ -174,6 +173,7 @@ try {
   );
   await sidepanel.screenshot({ path: "/tmp/tars-ask-shots/e2e-a1.png" });
   await sidepanel.locator('button:has-text("结算页")').click();
+  await sidepanel.locator(submitBtn).click();
   await waitIdle();
   check(
     toolRoundSeen && /"selected":\["结算页"\]/.test(lastToolContent ?? ""),
@@ -212,7 +212,7 @@ try {
   await sidepanel.locator(otherBtn).first().waitFor({ timeout: 20000 });
   await sidepanel.locator(otherBtn).first().click();
   await sidepanel.locator(otherBox).fill("就叫我为小助手");
-  await sidepanel.locator(sendAnsBtn).click();
+  await sidepanel.locator(submitBtn).click();
   await waitIdle();
   check(
     /"text":"就叫我为小助手"/.test(lastToolContent ?? "") &&

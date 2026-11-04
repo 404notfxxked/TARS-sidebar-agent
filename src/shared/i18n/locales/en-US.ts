@@ -124,7 +124,6 @@ export const enUS = {
     confirmTimeoutHint: "Without a response within {n} s this counts as denied",
     askOther: "Other",
     askOtherPlaceholder: "Type your answer…",
-    askSend: "Send",
     askSubmit: "Submit",
     askSubmitted: "Submitted, continuing…",
     askTimeoutHint: "If there is no answer within {n} min, the model will decide",
