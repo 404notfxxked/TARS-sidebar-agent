@@ -1,5 +1,7 @@
 // 从源色生成 M3 scheme CSS 变量(亮 / 暗两套),写入 src/sidepanel/styles/m3.css。
 // 跑法:pnpm tokens:m3;产物是生成文件,提交入库,运行时零依赖。
+// 改源色(ACCENTS)需同步设置页的色块副本再重新生成——两处色值
+// 是镜像,只改一边会出现设置页色块与实际主题不一致。
 //
 // 重点色:ACCENTS 里每个源色各生成 浅色 + 暗色 两套 scheme。浅色挂
 // html[data-accent](默认 green 不用属性);暗色挂 [data-theme][data-accent]
@@ -146,6 +148,20 @@ const MONO_ERROR_TONES = {
   },
 };
 
+/** container 系角色的 chroma 上限:M3 标准 container 取源色调色板 tone 90/30,
+ *  高彩源色(如绿)在 tone 90 带出全量 chroma,浅色下刺眼(视觉评审定调)。
+ *  压 chroma 保色相,观感向 neutral-variant 靠拢仍保留家族辨识度;
+ *  on-container 同palette取深 tone,对比不变。error 是语义色不参与压 chroma */
+const CONTAINER_CHROMA_CAP = 28;
+const CONTAINER_TONES = {
+  primaryContainer: ["primary", 90, 30],
+  onPrimaryContainer: ["primary", 10, 90],
+  secondaryContainer: ["secondary", 90, 30],
+  onSecondaryContainer: ["secondary", 10, 90],
+  tertiaryContainer: ["tertiary", 90, 30],
+  onTertiaryContainer: ["tertiary", 10, 90],
+};
+
 function linesFor(theme, mode, mono) {
   const neutral = theme.palettes.neutral;
   const errorPalette = theme.palettes.error;
@@ -155,6 +171,16 @@ function linesFor(theme, mode, mono) {
     // mono:error 角色固定取红系调色板,其余取 neutral(见 MONO_ERROR_TONES 注)
     if (roles && errorTones && role in errorTones) {
       return `  --md-sys-color-${cssName}: ${hexFromArgb(errorPalette.tone(errorTones[role]))};`;
+    }
+    // 非 mono:container 系走压 chroma 的家族调色板(见 CONTAINER_CHROMA_CAP 注)
+    if (!roles && CONTAINER_TONES[role]) {
+      const [family, lightTone, darkTone] = CONTAINER_TONES[role];
+      const p = theme.palettes[family];
+      const capped = TonalPalette.fromHueAndChroma(
+        p.hue,
+        Math.min(p.chroma, CONTAINER_CHROMA_CAP),
+      );
+      return `  --md-sys-color-${cssName}: ${hexFromArgb(capped.tone(mode === "light" ? lightTone : darkTone))};`;
     }
     const value = roles
       ? hexFromArgb(neutral.tone(roles[role]))

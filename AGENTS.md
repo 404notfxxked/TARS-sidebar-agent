@@ -55,8 +55,8 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
   插值用键值 `replace("{n}", 实参)` 派生,禁止手抄文案
   〔CI:check-i18n〕;测试断言从 `tests/lib-i18n.mjs` 取键
   〔CI:check-test-strings〕
-- Service Worker 的错误与状态文案目前不经字典(中英混杂透传,
-  已知债务):调整前先立设计决定,不得将字典键引入 background
+- Service Worker 的错误与状态文案不经字典(中英混杂透传,设计
+  冻结):解冻需先立设计决定,不得顺手把字典键引入 background
 - 后台日志面向模型与诊断,措辞是测试契约——verify-* 套件按日志
   子串断言链路,改措辞前先 grep tests/
 - 诊断日志只记功能必需的最少原文(工具参数不记,查询词仅截取
@@ -72,10 +72,10 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
   受上限约束,否则主链路的预算会被静默绕过
 - 已开始的流式请求不自动重试:内容已在输出,重放必然重复;
   只能报错,由用户以「重新生成」兜底
-- 流式响应必须挂不活动看门狗:HTTP 连接超时只护到响应头,流
-  中途停滞需由看门狗发现并中断
-- SSE 解析须容忍真实端点的脏形态(CRLF、多行 data、坏帧)
-  〔测试:chatCompletions.test.ts 脏形态回归,改解析必须全绿〕
+- 流式传输的看门狗与 SSE 脏形态容忍,权威口径与取值理由见
+  `src/background/provider/sse.ts` 头注——chat 补全与 MCP 两处
+  消费方必须同一套解析〔测试:chatCompletions.test.ts 脏形态
+  回归,改解析必须全绿〕
 
 ### 前端界面
 
@@ -91,12 +91,13 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
   全绿不等于渲染正确(jsdom 不载样式表)。场景取波及面内的最坏
   情况:最窄面板宽、最长内容(长 id/长文案折行)、深浅两主题、
   空态与满数据;手段不限(shot-m3 / probe 家族 / 临时脚本),
-  看出问题修完再交
+  看出问题修完再交。完工答复必须随附实机截图让用户直接看到
+  改动后的效果;交付通道是会话内可视化片段(图片转 data URL
+  内嵌,经 ::visualize 引用发出)——Read 读图只进模型自己的
+  上下文,用户端不可见,「截图已存某路径」同样不能替代
 - 新 UI 只用 `styles/` 既有接口类(settings.css、chat.css),不
   私造样式;组件先取 `ui/` 与 `settings/parts.tsx` 现成件(两段
-  确认/开关行/分段/吸顶头/骨架),先取现成再手写;`m3.css` 是
-  生成物禁手改,改源色需同步 `scripts/generate-m3.mjs` 与设置页
-  的色块副本并重新生成
+  确认/开关行/分段/吸顶头/骨架),先取现成再手写
 
 ### 架构不变式
 
@@ -141,8 +142,8 @@ TARS 是 Chrome MV3 侧边栏里的 ReAct agent 扩展:用户自带 API key
 - commit 风格:conventional commits + 中文主题,测试改动用
   `test(...)` scope;主题与正文不带工单/台账编号(见「边界」)
 - push/PR 到 main 自动跑四件套;e2e 手动按域跑,nightly 全量
-- 入库文档固定四份:README、CHANGELOG、AGENTS.md、tests/README,
-  新增 `*.md` 须经用户当轮确认
+- 入库文档以 `git ls-files '*.md'` 现取为准,不手抄清单(清单会腐化,
+  PRIVACY.md 入库即先例);新增 `*.md` 须经用户当轮确认
 - 发版三步:manifest 与 package.json 升版本 → CHANGELOG 的
   `[Unreleased]` 定版并开新段 → 推 `v*` tag;release 流程从
   CHANGELOG 取对应段发 notes,缺段即拦。用户可感知的变化及时记入

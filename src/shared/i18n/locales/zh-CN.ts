@@ -117,7 +117,7 @@ export const zhCN = {
     confirmTimeoutHint: "{n} 秒未答复将按「拒绝」处理",
     askOther: "其他",
     askOtherPlaceholder: "输入你的回答…",
-    askNext: "下一题",
+    askNext: "下一步",
     askProgress: "{i}/{n}",
     askSubmit: "提交",
     askSubmitted: "已提交，等待继续…",

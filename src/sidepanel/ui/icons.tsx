@@ -113,11 +113,11 @@ export function CopyIcon() {
 }
 
 /** 对勾(复制成功反馈) */
-export function CheckIcon() {
+export function CheckIcon({ size = 14 }: { size?: number }) {
   return (
     <svg
-      width="14"
-      height="14"
+      width={size}
+      height={size}
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"

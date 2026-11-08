@@ -9,6 +9,7 @@
 
 import { useState } from "react";
 import { useT } from "../ui/hooks";
+import { CheckIcon } from "../ui/icons";
 
 /** SW 侧 askUser.ts 的 AskQuestion(面板侧防御性重声明,不跨域 import) */
 export interface AskQuestionView {
@@ -66,6 +67,34 @@ export function askQuestionsOf(args: unknown): AskQuestionView[] {
 
 /** 收起态的形态:已答(有 answers)/ 未答(超时)/ 等待(结果未到或面板丢请求) */
 type CollapsedMode = "answered" | "unanswered" | "waiting";
+
+/** 选项指示器:单选 = 圆环 + 选中内点(M3 radio),多选 = 方块 + 选中对勾
+ *  (M3 checkbox,对勾用选项底色镂空)。此前选中态是 14px 实心圆块,视觉
+ *  过重(视觉评审定调);环/框一律 1.5px,选中强调交给内点与对勾 */
+function PickMark({ multi, picked }: { multi: boolean; picked: boolean }) {
+  const shape = multi ? "rounded-xs" : "rounded-full";
+  if (!picked)
+    return (
+      <span
+        aria-hidden="true"
+        className={`mt-0.5 h-3.5 w-3.5 shrink-0 border-[1.5px] ${shape} border-outline`}
+      />
+    );
+  return (
+    <span
+      aria-hidden="true"
+      className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center border-[1.5px] ${shape} border-on-primary-container ${
+        multi ? "bg-on-primary-container text-primary-container" : ""
+      }`}
+    >
+      {multi ? (
+        <CheckIcon size={10} />
+      ) : (
+        <span className="h-1.5 w-1.5 rounded-full bg-on-primary-container" />
+      )}
+    </span>
+  );
+}
 
 export function AskCard({
   questions,
@@ -211,16 +240,7 @@ export function AskCard({
                                   : "text-on-surface-variant"
                               }`}
                             >
-                              <span
-                                aria-hidden="true"
-                                className={`mt-0.5 h-3.5 w-3.5 shrink-0 border ${
-                                  q.multiSelect ? "rounded-xs" : "rounded-full"
-                                } ${
-                                  picked
-                                    ? "border-on-primary-container bg-on-primary-container"
-                                    : "border-outline"
-                                }`}
-                              />
+                              <PickMark multi={!!q.multiSelect} picked={picked} />
                               <span className="min-w-0 break-all">
                                 {o.label}
                                 {o.description && (
@@ -284,16 +304,7 @@ export function AskCard({
                   : "bg-surface-container-highest text-on-surface"
               } disabled:opacity-60`}
             >
-              <span
-                aria-hidden="true"
-                className={`mt-0.5 h-3.5 w-3.5 shrink-0 border ${
-                  q.multiSelect ? "rounded-xs" : "rounded-full"
-                } ${
-                  picked
-                    ? "border-on-primary-container bg-on-primary-container"
-                    : "border-outline"
-                }`}
-              />
+              <PickMark multi={!!q.multiSelect} picked={picked} />
               <span className="min-w-0 break-all">
                 {o.label}
                 {o.description && (
