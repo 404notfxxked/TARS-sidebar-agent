@@ -153,7 +153,7 @@ export function needsConfirmation(
   return false;
 }
 
-/** 确认卡 accent 的风险类别:静态集查表,mcp_ / web_fetch 各自归位;
+/** 确认卡标题着色的风险类别:静态集查表,mcp_ / web_fetch 各自归位;
  *  过门工具必属上述之一,查不到(理论不可达)缺省不下发 */
 function confirmCategoryOf(
   name: string,

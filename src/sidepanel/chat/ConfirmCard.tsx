@@ -2,9 +2,9 @@
 // 调用前停下等答复;展示目标与操作内容,给用户足够信息做「允许 / 拒绝」决定。
 // 拒绝可附说明(「拒绝并说明」展开内嵌输入,随 deny 回传作为 feedback 给模型);
 // 非输入焦点的 Esc = 一键拒绝(composer 打字/技能菜单/IME 的 Esc 各有归属,
-// 不在此吞);左侧 accent 色按 wire 下发的 category 区分风险族;超 80 字的
-// 写入内容/外发负载默认截断(截断本身是信号),可展开看原文。
-// 视觉沿用 combo-pop 浮层语言。键位表必须写字面量(check-i18n 只收集键形字面量)
+// 不在此吞);标题行按 wire 下发的 category 着色区分风险族(卡体中性,M3
+// 列表的图标强调法);超 80 字的写入内容/外发负载默认截断(截断本身是信号),
+// 可展开看原文。视觉沿用 combo-pop 浮层语言。键位表必须写字面量(check-i18n)
 
 import { useEffect, useState } from "react";
 import type { MSG, AgentEvent } from "../../shared/messages";
@@ -17,18 +17,21 @@ type ConfirmRequest = Extract<
   { type: typeof MSG.AGENT_CONFIRM_REQUEST }
 >;
 
-/** category → 左侧 accent 色(类名必须是源码字面量,Tailwind 才生成):
+/** category → 标题行颜色(类名必须是源码字面量,Tailwind 才生成):
  *  persistent(跨会话持久写)= error;page-nav(跳转/关 tab)= warning;
  *  page-write(页面日常写)= primary;mcp / fetch(数据外发通道)= tertiary。
- *  category 缺席(旧事件/未下发)不画 accent,卡片照常 */
-const CATEGORY_ACCENT: Record<NonNullable<ConfirmRequest["category"]>, string> =
-  {
-    "page-write": "border-l-2 border-l-primary",
-    "page-nav": "border-l-2 border-l-warning",
-    persistent: "border-l-2 border-l-error",
-    mcp: "border-l-2 border-l-tertiary",
-    fetch: "border-l-2 border-l-tertiary",
-  };
+ *  卡体保持中性,只有图标与标题行着色 —— M3 列表/对话框的惯用强调法;
+ *  category 缺席(旧事件/未下发)保持默认色 */
+const CATEGORY_HEAD_COLOR: Record<
+  NonNullable<ConfirmRequest["category"]>,
+  string
+> = {
+  "page-write": "text-primary",
+  "page-nav": "text-warning",
+  persistent: "text-error",
+  mcp: "text-tertiary",
+  fetch: "text-tertiary",
+};
 
 /** 按工具族取卡片标题键:页面动作/记忆/外链/MCP/标签页各自有更贴题的说法 */
 function confirmTitleKey(name: string): string {
@@ -143,7 +146,9 @@ export function ConfirmCard({
   const mcpArgsText = mcpArgsRaw.slice(0, 80);
   const mcpArgsTruncated = mcpArgsRaw.length > 80;
   const titleKey = confirmTitleKey(req.name);
-  const accent = req.category ? CATEGORY_ACCENT[req.category] : "";
+  const headColor = req.category
+    ? CATEGORY_HEAD_COLOR[req.category]
+    : "text-on-surface";
 
   // Esc 快捷拒绝:焦点不在文本输入时生效(composer 打字/技能菜单导航/IME
   // 组词的 Esc 各有归属,不在此吞);说明框内的 Esc 由其自身 onKeyDown
@@ -164,9 +169,9 @@ export function ConfirmCard({
     <div
       role="alertdialog"
       aria-label={t(titleKey)}
-      className={`mx-auto mb-2 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high p-3 shadow-2 ${accent}`}
+      className="mx-auto mb-2 w-[calc(100%-24px)] max-w-[560px] rounded-lg bg-surface-container-high p-3 shadow-2"
     >
-      <p className="flex items-center gap-1.5 text-[13px] font-medium text-on-surface">
+      <p className={`flex items-center gap-1.5 text-[13px] font-medium ${headColor}`}>
         <ConfirmIcon />
         {toolLabel(t, req.name, req.displayName)} · {t(titleKey)}
       </p>

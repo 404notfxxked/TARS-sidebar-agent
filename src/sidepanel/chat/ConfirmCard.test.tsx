@@ -330,22 +330,35 @@ describe("ConfirmCard Esc 快捷拒绝", () => {
   });
 });
 
-describe("ConfirmCard 风险色调(category accent)", () => {
-  it("persistent=error / page-nav=warning / page-write=primary;缺席不画 accent", () => {
+describe("ConfirmCard 风险标题着色(category → 标题行颜色,卡体中性)", () => {
+  /** 标题行 = 卡内第一个 <p>(图标 + 类别名 · 标题) */
+  const headClass = () =>
+    screen.getByRole("alertdialog").querySelector("p")?.className ?? "";
+
+  it("persistent=error / page-nav=warning / page-write=primary / mcp 与 fetch=tertiary", () => {
     renderCard({ category: "persistent" });
-    expect(screen.getByRole("alertdialog").className).toContain("border-l-error");
+    expect(headClass()).toContain("text-error");
     cleanup();
     renderCard({ category: "page-nav" });
-    expect(screen.getByRole("alertdialog").className).toContain("border-l-warning");
+    expect(headClass()).toContain("text-warning");
     cleanup();
     renderCard({ category: "page-write" });
-    const cls = screen.getByRole("alertdialog").className;
-    expect(cls).toContain("border-l-primary");
-    expect(cls).not.toContain("border-l-error");
+    const pw = headClass();
+    expect(pw).toContain("text-primary");
+    expect(pw).not.toContain("text-error");
     cleanup();
-    // 无 category(旧事件/未下发)→ 不画 accent,卡片照常
+    renderCard({ name: "web_fetch", category: "fetch" });
+    expect(headClass()).toContain("text-tertiary");
+    cleanup();
+    renderCard({ name: "mcp_x_tool", category: "mcp" });
+    expect(headClass()).toContain("text-tertiary");
+  });
+
+  it("无 category(旧事件/未下发)→ 标题保持默认色;卡体任何位置无左边条", () => {
     renderCard({});
+    expect(headClass()).toContain("text-on-surface");
     expect(screen.getByRole("alertdialog").className).not.toContain("border-l-");
+    expect(headClass()).not.toContain("border-l-");
   });
 });
 
