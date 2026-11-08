@@ -861,3 +861,50 @@ registerTool<
     return { deleted: count, texts: deleted };
   },
 });
+
+// ask_user:agent 反问用户的唯一通道。刻意不标 write —— 反问没有写动作的
+// 安全后果,三档全免门(needsConfirmation 对它恒 false);它的「执行体」是
+// 发反问卡等面板作答,住在 agent/askUser.ts,由 toolDispatch 特判调用,
+// 这里的 execute 只是防御性占位(直接调用只会得到可行动的错误)
+registerTool<{ questions: unknown[] }, string>({
+  type: "function",
+  name: "ask_user",
+  description:
+    "Ask the user structured questions with pickable options when only they can decide: which tab or page to act on, a preference among valid approaches, or an ambiguity that tools cannot resolve. Do NOT use it to confirm whether you may act (a separate confirmation gate already protects page writes, memory writes and external calls), to ask for facts obtainable with tools, or to re-ask what the user just said — answer from context. At most 3 questions per call; each needs 2-4 short concrete options the user can pick as-is (the UI adds a free-text choice automatically, so never add an \"other\" option yourself). Batch only questions that are independent of each other — if one answer would change another question's options or relevance, ask that question alone first. After calling, stop and wait: the result carries the user's answers, or an explicit notice that they did not answer — in that case proceed with your best judgment and say so; do not immediately re-ask.",
+  parameters: {
+    type: "object",
+    required: ["questions"],
+    properties: {
+      questions: {
+        type: "array",
+        description:
+          "1-3 questions. Each: question (full text), optional header (short label, at most 12 characters), options (2-4 items of {label, description?}), optional multiSelect (true = several options may be picked together)",
+        items: {
+          type: "object",
+          required: ["question", "options"],
+          properties: {
+            question: { type: "string" },
+            header: { type: "string" },
+            multiSelect: { type: "boolean" },
+            options: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["label"],
+                properties: {
+                  label: { type: "string" },
+                  description: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  execute: async () => {
+    throw new Error(
+      "ask_user runs through the panel ask channel and is dispatched by toolDispatch; direct execution is not possible",
+    );
+  },
+});

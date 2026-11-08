@@ -5,6 +5,8 @@
 //   场景 1(C1/C2):默认开启(confirmLevel 键缺席 = strict)弹确认卡,卡内
 //       含目标页面 / 写入内容 / 回车提交提示 / 元素定位 —— 信息足够做决定;
 //       拒绝后 fill_input 不执行,「declined」错误文案回给模型,run 正常收口
+//   场景 1b(C2b):拒绝并说明 —— 附言随 declined 结构化文案(feedback 字段)
+//       回给模型
 //   场景 2(C3):允许 → 门放行,工具真实分发(本测试环境无普通页面可注入,
 //       执行期失败也算放行 —— 关键是错误不再是 declined)
 //   场景 3(M):memory_save 过门(拒绝 → 拒;允许 → 落库)
@@ -73,6 +75,10 @@ mock.setRoutes([
       if (/记住我喜欢深色界面|再记一次/.test(lastUser)) {
         if (!usedTool) return toolCall(ctx, "memory_save", { content: "用户偏好深色界面" });
         return answer(ctx, "明白,已停下。终答:CONFIRM_OK");
+      }
+      if (/填错姓氏了/.test(lastUser)) {
+        if (!usedTool) return toolCall(ctx, "fill_input", { selector: "form > input#last-name", text: "Zhang San" });
+        return answer(ctx, "明白,已按附言停下。终答:CONFIRM_OK");
       }
       if (/记住我喜欢等宽字体/.test(lastUser)) {
         if (!usedTool) return toolCall(ctx, "memory_save", { content: "用户偏好等宽字体" });
@@ -174,6 +180,9 @@ const sidepanel = await openPanel(browser, extId, { configure: injectTestConfig 
 const sendBtn = `button[aria-label="${zh.chat.send}"]`;
 const denyBtn = `button[aria-label="${zh.chat.confirmDeny}"]`;
 const allowBtn = `button[aria-label="${zh.chat.confirmAllow}"]`;
+const denyReasonBtn = `button[aria-label="${zh.chat.confirmDenyWithReason}"]`;
+const reasonBox = `textarea[aria-label="${zh.chat.confirmFeedbackPlaceholder}"]`;
+const sendReasonBtn = `button[aria-label="${zh.chat.confirmFeedbackSend}"]`;
 const card = '[role="alertdialog"]';
 
 const check = makeChecker();
@@ -220,9 +229,32 @@ try {
     JSON.stringify(denyLog?.data ?? null).slice(0, 200), 
   );
   const answered1 = entries1.some(
-    (e) => `${e.ctx}/${e.tag}` === "panel/chat" && /confirm answered/.test(e.msg) && /false/.test(`${e.data ?? ""}${e.msg}`),
+    (e) => `${e.ctx}/${e.tag}` === "panel/chat" && /confirm answered/.test(e.msg) && /deny/.test(`${e.data ?? ""}${e.msg}`),
   );
   check(answered1, "面板记录拒绝答复");
+
+  // ---- 场景 1b:拒绝并说明(附言随 denied 结构化文案回传给模型) ----
+  scene = "C2b 拒绝并说明";
+  console.log("\n── C2b 拒绝并说明 ──");
+  await sendOnly("填错姓氏了,帮我改一下");
+  await sidepanel.locator(denyReasonBtn).waitFor({ timeout: 20000 });
+  await sidepanel.locator(denyReasonBtn).click();
+  await sidepanel.locator(reasonBox).fill("姓氏拼错了,改成 Li");
+  await sidepanel.locator(sendReasonBtn).click();
+  await waitIdle();
+  const entries1b = await readRunLogs(sidepanel);
+  // 附言文案在本场景独有:即使日志窗口串进上一 run,条件也只命中本场景条目
+  const denyReasonLog = entries1b.find(
+    (e) =>
+      `${e.ctx}/${e.tag}` === "bg/tool" &&
+      /fill_input 失败/.test(e.msg) &&
+      /declined/.test(e.data ?? "{}") &&
+      /姓氏拼错了,改成 Li/.test(e.data ?? "{}"),
+  );
+  check(
+    !!denyReasonLog, "拒绝并说明 → 附言随 declined 结构化文案回给模型",
+    JSON.stringify(entries1b.find((e) => /fill_input 失败/.test(e.msg))?.data ?? null).slice(0, 200),
+  );
 
   // ---- 场景 2:允许 ----
   scene = "C3 允许放行";
@@ -243,7 +275,7 @@ try {
     JSON.stringify(failLog?.data ?? okLog?.data ?? null).slice(0, 200), 
   );
   const answered2 = entries2.some(
-    (e) => `${e.ctx}/${e.tag}` === "panel/chat" && /confirm answered/.test(e.msg) && /true/.test(`${e.data ?? ""}${e.msg}`),
+    (e) => `${e.ctx}/${e.tag}` === "panel/chat" && /confirm answered/.test(e.msg) && /allow_once/.test(`${e.data ?? ""}${e.msg}`),
   );
   check(answered2, "面板记录允许答复");
   if (!gatePassed) {

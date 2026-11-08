@@ -3,9 +3,9 @@
 // (useAgentChannel)仍归 ChatView 唯一持有。
 
 import type { RefObject } from "react";
-import type { AgentStatus, ChatMsg, SubmitArgs } from "./useAgentChannel";
+import type { AgentStatus, AskRequest, ChatMsg, SubmitArgs } from "./useAgentChannel";
 import type { RunSegment } from "./useRunSegments";
-import { ReplayProcessCard, RunZone } from "./trace";
+import { ReplayProcessCard, RunZone, type TraceAsk } from "./trace";
 import { WarnIcon } from "../ui/icons";
 import {
   AssistantBubble,
@@ -38,6 +38,8 @@ export default function MessageList({
   onRetryLoadHistory,
   atBottom,
   onJumpLatest,
+  askReq,
+  onAnswerAsk,
 }: {
   listRef: RefObject<HTMLDivElement | null>;
   messages: ChatMsg[];
@@ -59,6 +61,9 @@ export default function MessageList({
   onRetryLoadHistory?: (sessionId: string) => void;
   atBottom: boolean;
   onJumpLatest: () => void;
+  /** 待作答的 ask_user 反问:透传执行流,ask_user 行据此渲染交互反问卡 */
+  askReq?: AskRequest | null;
+  onAnswerAsk?: (answers: { selected: string[]; text?: string }[]) => void;
 }) {
   const t = useT();
   /** 注入的伪 user 消息(截图附件注记)只属于模型管线,对话流不渲染
@@ -209,6 +214,8 @@ export default function MessageList({
                       openGroups={openGroups}
                       onToggleGroup={toggleGroup}
                       onRegenerate={regenerate}
+                      ask={askReq as TraceAsk | null | undefined}
+                      onAnswerAsk={onAnswerAsk}
                     />,
                   ]
                 : [...divider, node];

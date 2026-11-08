@@ -261,7 +261,7 @@ const runAskWithConfirmLog = (sessionId, text) =>
             port.postMessage({
               type: "confirm_response",
               requestId: msg.requestId,
-              approved: true,
+              outcome: "allow_once",
             });
             return;
           }

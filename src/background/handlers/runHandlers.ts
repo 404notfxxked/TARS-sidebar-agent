@@ -10,6 +10,7 @@ import {
 import { errText } from "../../shared/errors";
 import { createLogger } from "../../shared/logger";
 import { resolveConfirmation } from "../agent/confirmations";
+import { resolveAsk } from "../agent/askUser";
 import { prepareRegenerate } from "../sessions/sessionHistory";
 import type { PortCtx } from "./context";
 
@@ -99,8 +100,13 @@ export async function handleRunMessage(
       return true;
     }
     case MSG.CONFIRM_RESPONSE: {
-      // 确认卡的答复;未知/过期 requestId 在确认门内静默忽略
-      resolveConfirmation(msg.requestId, msg.approved);
+      // 确认卡的答复(允许/拒绝,拒绝可附言);未知/过期 requestId 在确认门内静默忽略
+      resolveConfirmation(msg.requestId, msg.outcome, msg.text);
+      return true;
+    }
+    case MSG.ASK_RESPONSE: {
+      // ask_user 反问的作答;未知/过期 requestId 在反问通道内静默忽略
+      resolveAsk(msg.requestId, msg.answers);
       return true;
     }
     default:

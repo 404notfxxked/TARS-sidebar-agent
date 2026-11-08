@@ -68,6 +68,11 @@ export type ConfirmRequest = Extract<
   { type: typeof MSG.AGENT_CONFIRM_REQUEST }
 >;
 
+export type AskRequest = Extract<
+  AgentEvent,
+  { type: typeof MSG.AGENT_ASK_REQUEST }
+>;
+
 /** 用户消息的提交参数:文本 + 本次提问的页面上下文 + 待发图片附件。
  *  附件借 PendingImage 形状(元数据 + 预览 url + wire 用 base64) */
 export interface SubmitArgs {
@@ -99,6 +104,9 @@ export function useAgentChannel({
   const [status, setStatus] = useState<AgentStatus>("idle");
   /** 待答复的写操作确认请求:非空 = 输入区上方弹确认卡(拒绝/超时由后台兜底) */
   const [confirmReq, setConfirmReq] = useState<ConfirmRequest | null>(null);
+  /** 待作答的 ask_user 反问:非空 = 执行流中该工具行渲染可交互反问卡
+   *  (超时/取消由后台结算为「未答」,工具结果到达即出列) */
+  const [askReq, setAskReq] = useState<AskRequest | null>(null);
   const [currentSession, setCurrentSession] = useState("");
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const sessionRef = useRef("");
@@ -172,8 +180,17 @@ export function useAgentChannel({
     setConfirmReq(evt);
   };
 
+  const applyAskRequest = (
+    evt: Extract<AgentEvent, { type: typeof MSG.AGENT_ASK_REQUEST }>,
+  ) => {
+    setAskReq(evt);
+  };
+
   const applyToolResult = (evt: Extract<AgentEvent, { type: typeof MSG.AGENT_TOOL_RESULT }>) => {
     run.onToolResult(evt);
+    // ask_user 的结果到达(作答回填/超时未答/取消)= 反问出列;作答路径
+    // 已在 answerAsk 里清过,这里兜住用户从未作答的两条后台结算路径
+    if (evt.name === "ask_user") setAskReq(null);
     // 记忆落库轻提示:成功的非重复保存累计,回复尾渲染「已写入 N 条」
     if (evt.name === "memory_save" && evt.ok) {
       const r = evt.result as { duplicate?: boolean } | null;
@@ -186,6 +203,7 @@ export function useAgentChannel({
     run.onSettled();
     updateStatus("idle");
     setConfirmReq(null); // 确认卡随 run 收口清掉(超时拒绝后台已兜底)
+    setAskReq(null); // 反问卡同款:后台已按未答结算,结果事件会补上
     // 步数耗尽:模型已按收尾指令交代进展,这里再补一条系统级提示;
     // 输出截断:回答半截收束,同样明示
     if (evt.reason === "max-turns" || evt.reason === "truncated") {
@@ -208,6 +226,7 @@ export function useAgentChannel({
     run.onSettled();
     updateStatus("idle");
     setConfirmReq(null);
+    setAskReq(null);
     setMessages((ms) => [
       ...ms,
       {
@@ -320,6 +339,7 @@ export function useAgentChannel({
     run.onPortDisconnected();
     updateStatus("idle");
     setConfirmReq(null);
+    setAskReq(null);
     if (runWasActive) {
       resyncPendingRef.current = true;
       resyncSessionRef.current = sessionRef.current;
@@ -363,6 +383,8 @@ export function useAgentChannel({
           return applyToolCall(evt);
         case MSG.AGENT_CONFIRM_REQUEST:
           return applyConfirmRequest(evt);
+        case MSG.AGENT_ASK_REQUEST:
+          return applyAskRequest(evt);
         case MSG.AGENT_TOOL_RESULT:
           return applyToolResult(evt);
         case MSG.AGENT_DONE:
@@ -543,17 +565,32 @@ export function useAgentChannel({
     });
   };
 
-  /** 确认卡答复:把用户的决定带回后台,请求随即出列(等待超时由后台兜底拒绝)。
-   *  失败不自挂失败态:端口断开 = 后台 run 已被 abort,确认对象已不存在,自愈 */
-  const answerConfirm = (approved: boolean) => {
+  /** 确认卡答复:把用户的决定(outcome 语义)带回后台,请求随即出列(等待
+   *  超时由后台兜底拒绝)。失败不自挂失败态:端口断开 = 后台 run 已被
+   *  abort,确认对象已不存在,自愈。「拒绝并说明」的附言随 deny 一并带回 */
+  const answerConfirm = (outcome: "allow_once" | "deny", text?: string) => {
     if (!confirmReq) return;
-    log.info("chat", "confirm answered", { approved, name: confirmReq.name });
+    log.info("chat", "confirm answered", { outcome, name: confirmReq.name });
     safeSend({
       type: MSG.CONFIRM_RESPONSE,
       requestId: confirmReq.requestId,
-      approved,
+      outcome,
+      ...(text ? { text } : {}),
     });
     setConfirmReq(null);
+  };
+
+  /** ask_user 反问作答:答案带回后台,请求随即出列(超时/取消由后台结算
+   *  为「未答」)。失败不自挂失败态:断连 = run 已 abort,同确认门口径 */
+  const answerAsk = (answers: { selected: string[]; text?: string }[]) => {
+    if (!askReq) return;
+    log.info("chat", "ask answered", { questions: askReq.questions.length });
+    safeSend({
+      type: MSG.ASK_RESPONSE,
+      requestId: askReq.requestId,
+      answers,
+    });
+    setAskReq(null);
   };
 
   /** 开始新对话:只清本地视图。旧会话原样留在历史列表(多会话语义,
@@ -653,6 +690,7 @@ export function useAgentChannel({
     memorySaved,
     status,
     confirmReq,
+    askReq,
     currentSession,
     /** 本轮执行流(渲染层直接消费) */
     runSegs: run.runSegs,
@@ -669,5 +707,6 @@ export function useAgentChannel({
     regenerate,
     cancel,
     answerConfirm,
+    answerAsk,
   };
 }

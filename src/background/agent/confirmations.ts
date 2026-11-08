@@ -14,6 +14,8 @@
 // - 超时未答复 = 拒绝(宁慢勿错,不给人不在场时放行写动作的口子)
 // - run 被取消 = 立即拒绝并返回(等待不阻塞取消)
 // - 过期/未知 requestId 的答复一律忽略(面板刷新后的迟到答复打不穿)
+// - 拒绝可附言(「拒绝并说明」):feedback 随结构化文案(deniedMessage)
+//   回给模型,与超时/取消的拒绝在 reason 字段上区分
 //
 // 排查指引:面板看到「确认卡悬空无人应答」= 等待期间 SW 被回收过
 // —— pending Map 随 SW 消失,迟到答复在此静默忽略,属预期兜底而非卡死。
@@ -27,11 +29,48 @@ import { webFetchNeedsConfirm } from "../web/outboundGuard";
 /** 等待答复上限:面板关了/用户走开了,run 不该挂在半空 */
 const CONFIRM_TIMEOUT_MS = 120_000;
 
-/** 模型可见的拒绝文案:明确告知不要原样重试,把意图讲给用户 */
-export const CONFIRM_DENIED_MSG =
-  "The user declined this action (or did not respond in time). Do not retry it verbatim; briefly tell the user what you intended to do and continue without it unless they ask otherwise.";
+/** 确认决定:allow = 放行(本次);deny 按 reason 区分用户拒绝(可附
+ *  feedback,「拒绝并说明」)/ 超时未答复 / run 取消 —— 三者都以结构化
+ *  文案回填模型(deniedMessage),模型能分清「用户拒绝了并说了为什么」
+ *  与「没人应答」 */
+export type ConfirmDecision =
+  | { kind: "allow" }
+  | { kind: "deny"; reason: "user" | "timeout" | "abort"; feedback?: string };
 
-const pending = new Map<string, (approved: boolean) => void>();
+/** 拒绝回填模型的结构化文案:status 固定 "declined"(e2e 按该子串断言
+ *  拒绝链路),feedback 为用户附言(缺席不造空字段),guidance 携带
+ *  行为指引(不要原样重试,把意图讲给用户) */
+export function deniedMessage(
+  decision: Extract<ConfirmDecision, { kind: "deny" }>,
+): string {
+  return JSON.stringify({
+    status: "declined",
+    reason: decision.reason,
+    ...(decision.feedback ? { feedback: decision.feedback } : {}),
+    guidance:
+      "Do not retry verbatim; briefly tell the user what you intended and continue without it unless they ask otherwise.",
+  });
+}
+
+const pending = new Map<string, (decision: ConfirmDecision) => void>();
+
+/**
+ * 等待用户操作期间的 SW 保活:挂起等待时没有任何事件流动,MV3 SW 约 30s
+ * 空闲即被浏览器回收(pending 决定随之丢失,面板只能断连恢复整轮 —— 确认
+ * 卡与反问卡都受害,用户「犹豫一下」就中断)。定时调用一次便宜的扩展 API
+ * 重置空闲计时,把后台撑到作答/超时为止:上限即各自的 timeout,不会无限
+ * 期占住后台。确认门与反问通道共用(单槽下同刻至多一个等待者)。
+ */
+export function startUserWaitKeepalive(): ReturnType<typeof setInterval> {
+  return setInterval(() => {
+    // 测试环境可能没有 chrome 全局:保活尽力而为,失败不影响等待语义
+    try {
+      void chrome.runtime.getPlatformInfo();
+    } catch {
+      /* 保活失败无害 */
+    }
+  }, 20_000);
+}
 
 /**
  * 静态写工具的唯一真源(定案):name → 风险类别。三个派生集合
@@ -114,15 +153,33 @@ export function needsConfirmation(
   return false;
 }
 
-/** 面板答复入口(index.ts 的 port 路由调用);此处只做幂等 resolve */
+/** 确认卡 accent 的风险类别:静态集查表,mcp_ / web_fetch 各自归位;
+ *  过门工具必属上述之一,查不到(理论不可达)缺省不下发 */
+function confirmCategoryOf(
+  name: string,
+): "page-write" | "page-nav" | "persistent" | "mcp" | "fetch" | undefined {
+  const inTable = TOOL_CATEGORY[name as keyof typeof TOOL_CATEGORY];
+  if (inTable) return inTable;
+  if (name.startsWith("mcp_")) return "mcp";
+  if (name === "web_fetch") return "fetch";
+  return undefined;
+}
+
+/** 面板答复入口(runHandlers 的 port 路由调用);此处只做幂等 resolve。
+ *  outcome 语义见 CONFIRM_RESPONSE:allow_once = 放行,deny 可带附言 */
 export function resolveConfirmation(
   requestId: string,
-  approved: boolean,
+  outcome: "allow_once" | "deny",
+  text?: string,
 ): void {
   const settle = pending.get(requestId);
   if (!settle) return;
   pending.delete(requestId);
-  settle(approved);
+  settle(
+    outcome === "allow_once"
+      ? { kind: "allow" }
+      : { kind: "deny", reason: "user", ...(text ? { feedback: text } : {}) },
+  );
 }
 
 export interface ConfirmRequestInfo {
@@ -153,7 +210,7 @@ async function resolveTargetTab(
 }
 
 /**
- * 发确认请求并等待答复。true = 用户允许;false = 拒绝/超时/已取消。
+ * 发确认请求并等待答复,返回确认决定(allow / deny+reason / 附言)。
  * ctx 显式传入:等待窗口是跨 await 的,并发 run 可能已覆盖全局单槽,
  * 从全局读目标 tab 会读到别人的(目标页信息随确认卡一起展示给用户,不能错)
  */
@@ -162,9 +219,10 @@ export async function requestConfirmation(
   req: ConfirmRequestInfo,
   signal?: AbortSignal,
   ctx?: ToolExecutionContext | null,
-): Promise<boolean> {
+): Promise<ConfirmDecision> {
   const requestId = crypto.randomUUID();
   const target = await resolveTargetTab(ctx, req.args).catch(() => ({}));
+  const category = confirmCategoryOf(req.name);
   port.postMessage({
     type: MSG.AGENT_CONFIRM_REQUEST,
     requestId,
@@ -173,20 +231,26 @@ export async function requestConfirmation(
     args: req.args,
     // 超时口径随载荷下发:确认卡展示「多久不答复算拒绝」,UI 不另存一份
     timeoutMs: CONFIRM_TIMEOUT_MS,
+    ...(category ? { category } : {}),
     ...target,
   });
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<ConfirmDecision>((resolve) => {
+    const keepalive = startUserWaitKeepalive();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const settle = (approved: boolean) => {
+    const settle = (decision: ConfirmDecision) => {
       pending.delete(requestId);
+      clearInterval(keepalive);
       if (timer) clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
-      resolve(approved);
+      resolve(decision);
     };
-    const onAbort = () => settle(false);
+    const onAbort = () => settle({ kind: "deny", reason: "abort" });
     pending.set(requestId, settle);
-    timer = setTimeout(() => settle(false), CONFIRM_TIMEOUT_MS);
+    timer = setTimeout(
+      () => settle({ kind: "deny", reason: "timeout" }),
+      CONFIRM_TIMEOUT_MS,
+    );
     if (signal) {
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
