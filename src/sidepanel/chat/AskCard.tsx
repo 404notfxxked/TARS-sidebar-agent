@@ -90,6 +90,12 @@ export function AskCard({
   const [otherOpen, setOtherOpen] = useState<boolean[]>(questions.map(() => false));
   const [submitted, setSubmitted] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  /** 逐题步进:一次调用可带多问,但同屏只展示当前题 —— 答完「下一题」确认
+   *  再展示下一题(「1/3」进度标示,单问不出),末题按钮换「提交」一并回填。
+   *  协议/超时/单槽/回放全不变:SW 仍按整组收发作答 */
+  const [step, setStep] = useState(0);
+  const isLast = step === questions.length - 1;
+  const stepAnswered = picks[step].length > 0 || texts[step].trim().length > 0;
 
   const everyAnswered = questions.every(
     (_, i) => picks[i].length > 0 || texts[i].trim().length > 0,
@@ -243,88 +249,97 @@ export function AskCard({
     );
   }
 
-  // ---- 交互态:点选 + 其他自由输入,答齐后卡片级提交 ----
+  // ---- 交互态:逐题展示(多问带 1/N 进度),答完确认进下一题,末题提交 ----
+  const q = questions[step];
   return (
     <div className="w-full rounded-lg bg-surface-container-high p-3">
-      {questions.map((q, qi) => (
-        <div key={qi} className={qi > 0 ? "mt-3 border-t border-outline-variant pt-3" : ""}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
           {q.header && (
             <p className="text-[11px] font-medium tracking-wide text-primary">{q.header}</p>
           )}
           <p className="text-[13px] font-medium text-on-surface">{q.question}</p>
-          <div className="mt-1.5 flex flex-col gap-1">
-            {q.options.map((o) => {
-              const picked = picks[qi].includes(o.label);
-              return (
-                <button
-                  key={o.label}
-                  type="button"
-                  disabled={submitted}
-                  onClick={() => togglePick(qi, o.label, !!q.multiSelect)}
-                  className={`flex items-start gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] ${
-                    picked
-                      ? "bg-primary-container text-on-primary-container"
-                      : "bg-surface-container-highest text-on-surface"
-                  } disabled:opacity-60`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`mt-0.5 h-3.5 w-3.5 shrink-0 border ${
-                      q.multiSelect ? "rounded-xs" : "rounded-full"
-                    } ${
-                      picked
-                        ? "border-on-primary-container bg-on-primary-container"
-                        : "border-outline"
-                    }`}
-                  />
-                  <span className="min-w-0 break-all">
-                    {o.label}
-                    {o.description && (
-                      <span className="block text-[11.5px] text-on-surface-variant">
-                        {o.description}
-                      </span>
-                    )}
-                  </span>
-                </button>
-              );
-            })}
-            {!otherOpen[qi] && (
-              <button
-                type="button"
-                disabled={submitted}
-                onClick={() =>
-                  setOtherOpen((prev) => prev.map((v, i) => (i === qi ? true : v)))
-                }
-                aria-label={t("chat.askOther")}
-                className="rounded-md border border-dashed border-outline px-2.5 py-1.5 text-left text-[12.5px] text-on-surface-variant disabled:opacity-60"
-              >
-                + {t("chat.askOther")}
-              </button>
-            )}
-            {otherOpen[qi] && (
-              <textarea
-                value={texts[qi]}
-                onChange={(e) =>
-                  setTexts((prev) => prev.map((v, i) => (i === qi ? e.target.value : v)))
-                }
-                rows={1}
-                placeholder={t("chat.askOtherPlaceholder")}
-                aria-label={t("chat.askOtherPlaceholder")}
-                className="block w-full resize-none rounded-xs bg-surface-container-highest px-2 py-1.5 text-[12.5px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant"
-              />
-            )}
-          </div>
         </div>
-      ))}
+        {questions.length > 1 && (
+          <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-on-surface-variant">
+            {t("chat.askProgress", {
+              i: String(step + 1),
+              n: String(questions.length),
+            })}
+          </span>
+        )}
+      </div>
+      <div className="mt-1.5 flex flex-col gap-1">
+        {q.options.map((o) => {
+          const picked = picks[step].includes(o.label);
+          return (
+            <button
+              key={o.label}
+              type="button"
+              disabled={submitted}
+              onClick={() => togglePick(step, o.label, !!q.multiSelect)}
+              className={`flex items-start gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] ${
+                picked
+                  ? "bg-primary-container text-on-primary-container"
+                  : "bg-surface-container-highest text-on-surface"
+              } disabled:opacity-60`}
+            >
+              <span
+                aria-hidden="true"
+                className={`mt-0.5 h-3.5 w-3.5 shrink-0 border ${
+                  q.multiSelect ? "rounded-xs" : "rounded-full"
+                } ${
+                  picked
+                    ? "border-on-primary-container bg-on-primary-container"
+                    : "border-outline"
+                }`}
+              />
+              <span className="min-w-0 break-all">
+                {o.label}
+                {o.description && (
+                  <span className="block text-[11.5px] text-on-surface-variant">
+                    {o.description}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+        {!otherOpen[step] && (
+          <button
+            type="button"
+            disabled={submitted}
+            onClick={() =>
+              setOtherOpen((prev) => prev.map((v, i) => (i === step ? true : v)))
+            }
+            aria-label={t("chat.askOther")}
+            className="rounded-md border border-dashed border-outline px-2.5 py-1.5 text-left text-[12.5px] text-on-surface-variant disabled:opacity-60"
+          >
+            + {t("chat.askOther")}
+          </button>
+        )}
+        {otherOpen[step] && (
+          <textarea
+            value={texts[step]}
+            onChange={(e) =>
+              setTexts((prev) => prev.map((v, i) => (i === step ? e.target.value : v)))
+            }
+            rows={1}
+            placeholder={t("chat.askOtherPlaceholder")}
+            aria-label={t("chat.askOtherPlaceholder")}
+            className="block w-full resize-none rounded-xs bg-surface-container-highest px-2 py-1.5 text-[12.5px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant"
+          />
+        )}
+      </div>
       <div className="mt-2.5 flex items-center justify-end gap-2">
         <button
           type="button"
-          disabled={submitted || !everyAnswered}
-          onClick={submitCard}
-          aria-label={t("chat.askSubmit")}
+          disabled={submitted || (isLast ? !everyAnswered : !stepAnswered)}
+          onClick={() => (isLast ? submitCard() : setStep((s) => s + 1))}
+          aria-label={t(isLast ? "chat.askSubmit" : "chat.askNext")}
           className="icon-btn-filled h-8 px-3 text-[12.5px] font-medium leading-none"
         >
-          {t("chat.askSubmit")}
+          {t(isLast ? "chat.askSubmit" : "chat.askNext")}
         </button>
       </div>
       {submitted ? (

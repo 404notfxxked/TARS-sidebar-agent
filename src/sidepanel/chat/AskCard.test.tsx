@@ -53,11 +53,15 @@ const renderInteractive = (
 };
 
 describe("AskCard 交互态", () => {
-  it("单问单选:点选仅选中,提交后才作答(防误触直接发出)", async () => {
+  it("单问单选:点选仅选中,提交后才作答;单问不带进度标示", async () => {
     const user = userEvent.setup();
     const onAnswer = renderInteractive(ONE_Q);
     expect(screen.getByText("要操作哪个标签页?")).toBeInTheDocument();
     expect(screen.getByText("目标页" /* i18n-ok mock 数据回显,非字典断言 */)).toBeInTheDocument();
+    // 单问 1/1 是噪音:进度标示只在多问时出现
+    expect(
+      screen.queryByText(zhCN.chat.askProgress.replace("{i}", "1").replace("{n}", "1")),
+    ).not.toBeInTheDocument();
     const submit = screen.getByRole("button", { name: zhCN.chat.askSubmit });
     expect(submit).toBeDisabled(); // 未作答不可提交
     await user.click(screen.getByRole("button", { name: /结算页/ }));
@@ -90,17 +94,37 @@ describe("AskCard 交互态", () => {
     ]);
   });
 
-  it("多选/多问:未答齐禁用;答齐卡片级提交,两问齐回", async () => {
+  it("多问逐题展示:进度 1/2、答完确认才进下一题、末题提交一并回填", async () => {
     const user = userEvent.setup();
     const onAnswer = renderInteractive(TWO_Q_MULTI);
+    // 仅当前题在场:第二问不渲染
+    expect(screen.getByText("先做什么?")).toBeInTheDocument();
+    expect(screen.queryByText("偏好哪些?")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        zhCN.chat.askProgress.replace("{i}", "1").replace("{n}", "2"),
+      ),
+    ).toBeInTheDocument();
+    // 「下一题」按钮:当前题未答时禁用
+    const next = screen.getByRole("button", { name: zhCN.chat.askNext });
+    expect(next).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /^A1/ }));
+    expect(next).toBeEnabled();
+    await user.click(next);
+    // 进入第二题:第一问退场,进度推进,按钮换回「提交」
+    expect(screen.queryByText("先做什么?")).not.toBeInTheDocument();
+    expect(screen.getByText("偏好哪些?")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        zhCN.chat.askProgress.replace("{i}", "2").replace("{n}", "2"),
+      ),
+    ).toBeInTheDocument();
     const submit = screen.getByRole("button", { name: zhCN.chat.askSubmit });
     expect(submit).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: /^A1/ }));
-    expect(submit).toBeDisabled(); // 第二问未答
     await user.click(screen.getByRole("button", { name: /^X/ }));
     await user.click(screen.getByRole("button", { name: /^Y/ }));
-    expect(submit).toBeEnabled();
     await user.click(submit);
+    // 逐题答案一并回填,顺序对齐请求
     expect(onAnswer).toHaveBeenCalledWith([
       { selected: ["A1"] },
       { selected: ["X", "Y"] },
@@ -109,12 +133,11 @@ describe("AskCard 交互态", () => {
 
   it("提交后进入已提交态,不再重复作答", async () => {
     const user = userEvent.setup();
-    const onAnswer = renderInteractive(TWO_Q_MULTI);
-    await user.click(screen.getByRole("button", { name: /^A1/ }));
-    await user.click(screen.getByRole("button", { name: /^Z/ }));
+    const onAnswer = renderInteractive(ONE_Q);
+    await user.click(screen.getByRole("button", { name: /结算页/ }));
     await user.click(screen.getByRole("button", { name: zhCN.chat.askSubmit }));
     expect(screen.getByText(zhCN.chat.askSubmitted)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^A1/ }));
+    await user.click(screen.getByRole("button", { name: /结算页/ }));
     expect(onAnswer).toHaveBeenCalledTimes(1);
   });
 

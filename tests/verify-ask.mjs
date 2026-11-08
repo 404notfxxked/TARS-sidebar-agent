@@ -185,23 +185,35 @@ try {
     "答案回显问题文本(模型可对号)",
   );
 
-  // ---- A2 两问含多选 ----
-  console.log("\n── A2 两问含多选:未答齐禁用,答齐卡片提交 ──");
+  // ---- A2 两问含多选:逐题展示 ----
+  console.log("\n── A2 逐题展示:进度 1/2,确认进下一题,末题提交 ──");
   await freshTool();
   await sendOnly("再多问一轮帮我确认");
-  await sidepanel.locator(submitBtn).waitFor({ timeout: 20000 });
-  check(await sidepanel.locator(submitBtn).isDisabled(), "未答齐时提交禁用");
+  const prog = (i, n) =>
+    zh.chat.askProgress.replace("{i}", String(i)).replace("{n}", String(n));
+  await sidepanel.getByText(prog(1, 2)).waitFor({ timeout: 20000 });
+  check(
+    (await sidepanel.getByText("要导出哪些列?").count()) === 0,
+    "逐题展示:第二问不在场",
+  );
+  const nextBtn = `button[aria-label="${zh.chat.askNext}"]`;
+  check(await sidepanel.locator(nextBtn).isDisabled(), "当前题未答时下一题禁用");
   await sidepanel.locator('button:has-text("改标题")').click();
-  check(await sidepanel.locator(submitBtn).isDisabled(), "仅第一问已答仍禁用(第二问未答)");
+  await sidepanel.locator(nextBtn).click();
+  await sidepanel.getByText("要导出哪些列?").waitFor({ timeout: 10000 });
+  check(
+    (await sidepanel.getByText("先处理哪件事?").count()) === 0,
+    "确认后第一问退场,进度推进 2/2",
+    `progress=${await sidepanel.getByText(prog(2, 2)).count()}`,
+  );
   await sidepanel.locator('button:has-text("价格")').click();
   await sidepanel.locator('button:has-text("评分")').click();
-  check(await sidepanel.locator(submitBtn).isEnabled(), "两问答齐后提交可用");
   await sidepanel.locator(submitBtn).click();
   await waitIdle();
   check(
     /"selected":\["改标题"\]/.test(lastToolContent ?? "") &&
       /"selected":\["价格","评分"\]/.test(lastToolContent ?? ""),
-    "两问答案齐回填(多选合并数组)",
+    "两问答案齐回填(逐题作答一次回填,多选合并数组)",
     (lastToolContent ?? "").slice(0, 200),
   );
 
