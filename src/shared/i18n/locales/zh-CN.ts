@@ -180,6 +180,18 @@ export const zhCN = {
       copied: "已复制 ✓",
       plain: "代码",
     },
+    diagram: {
+      renderFailed: "图表渲染失败，已显示源码",
+    },
+    media: {
+      viewer: "媒体查看器",
+      zoomIn: "放大查看",
+      zoomOut: "缩小",
+      reset: "重置缩放",
+      openTab: "在新标签页打开",
+      save: "保存到本地",
+      close: "关闭",
+    },
   },
   sessions: {
     title: "历史会话",
