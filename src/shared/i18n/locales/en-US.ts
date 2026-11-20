@@ -188,6 +188,18 @@ export const enUS = {
       copied: "Copied ✓",
       plain: "Code",
     },
+    diagram: {
+      renderFailed: "Chart failed to render — showing source",
+    },
+    media: {
+      viewer: "Media viewer",
+      zoomIn: "Zoom in",
+      zoomOut: "Zoom out",
+      reset: "Reset zoom",
+      openTab: "Open in a new tab",
+      save: "Save to device",
+      close: "Close",
+    },
   },
   sessions: {
     title: "Chat history",

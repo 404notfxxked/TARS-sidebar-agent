@@ -41,7 +41,9 @@ import {
   RefreshIcon,
   WarnIcon,
 } from "../ui/icons";
+import { EChartsFigure, MermaidFigure } from "./diagram";
 import { peekImgUrl, requestImgUrl } from "./images";
+import { MediaViewer } from "./MediaViewer";
 
 /** markdown 渲染配置:引用保持稳定——模块级常量让编译器记忆化生效,
  *  历史消息不因无关状态重渲染/重解析(手写 memo 已删,见头注) */
@@ -226,11 +228,13 @@ export function CompactionDivider() {
 }
 
 /** 气泡里的图片:优先 objectURL 缓存(刚发送的已在),缺失时向后台取字节;
- *  取不到(随会话被清理)显示失效占位。点击原图新开查看 */
+ *  取不到(随会话被清理)显示失效占位。点击进面板内放大查看器;修饰键/
+ *  中键单击保留原生新标签页行为 */
 export function ChatImage({ meta }: { meta: ImageMeta }) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(() => peekImgUrl(meta.id));
   const [failed, setFailed] = useState(false);
+  const [zoom, setZoom] = useState(false);
   /** 展示盒按 meta 比例预留(meta 是入库时的真实尺寸):加载占位与成图同
    *  尺寸,字节到位不推挤消息列表(CLS);高封顶 192 与既有 max-h-48 一致 */
   const scale = Math.min(1, 192 / meta.h);
@@ -264,18 +268,42 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
     );
   }
   return (
-    <a href={url} target="_blank" rel="noreferrer">
-      <img
-        src={url}
-        alt={t("chat.imageAlt", { w: meta.w, h: meta.h })}
-        width={dispW}
-        height={dispH}
-        className="max-h-48 max-w-full rounded-md object-contain"
-        // URL 失效(已被回收/字节被清理)时退到失效占位:否则是破图 + 点开
-        // 死链(气泡缓存里的 blob URL 会随会话切换回收)
-        onError={() => setFailed(true)}
-      />
-    </a>
+    <>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => {
+          // 修饰键/非左键保留浏览器原生行为(新标签页/下载);普通单击进查看器
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+            return;
+          e.preventDefault();
+          setZoom(true);
+        }}
+      >
+        <img
+          src={url}
+          alt={t("chat.imageAlt", { w: meta.w, h: meta.h })}
+          width={dispW}
+          height={dispH}
+          className="max-h-48 max-w-full rounded-md object-contain"
+          // URL 失效(已被回收/字节被清理)时退到失效占位:否则是破图 + 点开
+          // 死链(气泡缓存里的 blob URL 会随会话切换回收)
+          onError={() => setFailed(true)}
+        />
+      </a>
+      {zoom && (
+        <MediaViewer
+          content={{
+            kind: "image",
+            url,
+            alt: t("chat.imageAlt", { w: meta.w, h: meta.h }),
+            mime: meta.mime,
+          }}
+          onClose={() => setZoom(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -294,13 +322,19 @@ function CodeBlock({
       )?.[1] ?? "")
     : "";
   const [copied, copy] = useCopyFlash();
+  // 图表语言走图表管线(渲染成图;失败与流式半成品回退为下方普通代码块)
+  const source = nodeText(children);
+  if (lang === "mermaid") return <MermaidFigure code={source} />;
+  // echarts:key 随源码换新重挂——init 失败的回退态在新源码上获得全新
+  // 尝试,不会被上一次失败卡死(流式半成品的逐片重挂只是廉价回退)
+  if (lang === "echarts") return <EChartsFigure key={source} code={source} />;
   return (
     <figure className="code-block">
       <figcaption className="code-block-head">
         <span>{lang || t("chat.code.plain")}</span>
         <button
           type="button"
-          onClick={() => copy(nodeText(children))}
+          onClick={() => copy(source)}
           className="code-copy-btn"
         >
           {copied ? t("common.copied") : t("common.copy")}

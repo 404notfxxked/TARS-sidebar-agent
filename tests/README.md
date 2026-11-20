@@ -172,6 +172,10 @@ e2e 套件先 `pnpm build` 再跑(dist 过期时 run.mjs 警告并置红退出�
 
 ## 视觉/诊断探针(人看截图/DOM,不判 PASS/FAIL)
 
+- `shot-diagram.mjs` — 图表视觉留档:复杂架构图成图/查看器(含 svg 几何
+  断言,防 DOM 在而视觉不在的假绿)/新标签页出口(裸 SVG 会被 XML 解析
+  拒收的回归)/保存下载事件/缩放胶囊/深浅主题/300px 窄面板。等待一律
+  事件驱动
 - `shot-m3.mjs` — 视觉主工具(2026-09 并入 probe-memory-ui/probe-mcp-ui/
   probe-hints):一条命令留档全部页面 —— mock 对话驱动 深浅色 × 对话/设置/
   历史/模型弹层/记忆页(12 条/空态/超预算)/ MCP 设置卡与过程卡 +
