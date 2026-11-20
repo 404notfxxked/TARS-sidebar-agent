@@ -1,6 +1,8 @@
 // 图表视觉留档(非断言型,shot-m3 同族:截图人看 + 少量健康检查):
-// 复杂 mermaid 在窄面板的成图/横滚、放大查看器(缩放后)、坏源码回退态、
-// 深浅两主题。等待一律事件驱动(waitFor/locator.waitFor),不进固定等待基线。
+// 复杂 mermaid 在窄面板的成图/横滚、放大查看器(缩放后)、echarts 统计图
+// 成图与快照查看器(data: URL 新标签页出口)、坏源码回退态、深浅两主题、
+// 窄面板 ResizeObserver 跟随。等待一律事件驱动(waitFor/locator.waitFor),
+// 不进固定等待基线。
 // 用法: pnpm build && node tests/shot-diagram.mjs
 
 import { mkdirSync } from "fs";
@@ -52,6 +54,12 @@ const GOOD_MD = [
   "  SVC_C --> MET",
   "```",
   "",
+  "各链路量级如下:",
+  "",
+  "```echarts",
+  '{"legend":{},"xAxis":{"type":"category","data":["Q1","Q2","Q3","Q4"]},"yAxis":{},"series":[{"name":"订单","type":"bar","data":[120,200,150,80]},{"name":"渠道","type":"bar","data":[90,140,110,60]},{"name":"直销","type":"bar","data":[70,110,160,130]}]}',
+  "```",
+  "",
   "网关统一收口,观测面挂在服务侧。",
 ].join("\n");
 
@@ -97,6 +105,32 @@ const input = page.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
 const send = page.locator(`button[aria-label="${zh.chat.send}"]`);
 const shot = (name) => page.screenshot({ path: `${OUT_DIR}/diagram-${name}.png` });
 
+/** 等 echarts 柱体真正画上:setOption 后有 ~1s 入场动画,canvas 底色已变
+ *  不代表柱已画;取中部一行像素找「不透明且有色度」的着色(深底与网格线
+ *  都是无/低色度,彩色柱远超阈值) */
+const waitBars = () =>
+  page.waitForFunction(
+    () => {
+      const c = document.querySelector(".diagram-echarts-body canvas");
+      const ctx = c?.getContext("2d");
+      if (!c || !ctx) return false;
+      const d = ctx.getImageData(
+        0,
+        Math.round(c.height * 0.5),
+        Math.round(c.width),
+        1,
+      ).data;
+      for (let i = 0; i < d.length; i += 4) {
+        const span = Math.max(d[i], d[i + 1], d[i + 2]) -
+          Math.min(d[i], d[i + 1], d[i + 2]);
+        if (d[i + 3] > 0 && span > 60) return true;
+      }
+      return false;
+    },
+    undefined,
+    { timeout: 15000 },
+  );
+
 // ① 复杂图成图(浅色)
 await input.fill("画一张读取链路的流程图");
 await send.click();
@@ -104,6 +138,58 @@ await page.locator(".diagram-body svg").first().waitFor({ timeout: 20000 });
 await send.waitFor({ state: "visible", timeout: 30000 });
 await shot("1-flow-light");
 ok(true, "复杂流程图成图(浅色)");
+
+// ①b echarts 统计图成图:canvas 在场且有形,柱体动画结束后留档
+await page
+  .locator(".diagram-echarts-body canvas")
+  .first()
+  .waitFor({ timeout: 20000 });
+await waitBars();
+const cbox = await page.evaluate(() => {
+  const r = document
+    .querySelector(".diagram-echarts-body canvas")
+    ?.getBoundingClientRect();
+  return r ? { w: Math.round(r.width), h: Math.round(r.height) } : null;
+});
+ok(cbox !== null && cbox.w > 0, `echarts canvas 有形(${cbox?.w}×${cbox?.h})`);
+await shot("1b-echarts-light");
+
+// ①c echarts 快照查看器与 data: URL 新标签页出口(Chrome 拦 data: 顶层
+// 导航,须先转 objectURL——MediaViewer 侧适配)
+await page.locator("figure:has(.diagram-echarts-body) .diagram-btn").click();
+await page.locator('[role="dialog"]').waitFor({ timeout: 5000 });
+const isnap = await page.evaluate(() => {
+  const img = document.querySelector(".media-stage img");
+  const r = img?.getBoundingClientRect();
+  return {
+    head: img instanceof HTMLImageElement ? img.src.slice(0, 14) : null,
+    w: r ? Math.round(r.width) : 0,
+  };
+});
+ok(
+  isnap.head === "data:image/png" && isnap.w > 0,
+  `查看器是 echarts 快照(${isnap.head} 开头,宽 ${isnap.w})`,
+);
+await shot("1c-echarts-viewer");
+const eTabPromise = page.context().waitForEvent("page", { timeout: 10000 });
+await page
+  .locator(`button[aria-label="${zh.chat.media.openTab}"]`)
+  .first()
+  .click();
+const eTab = await eTabPromise;
+await eTab.locator("img").first().waitFor({ timeout: 10000 });
+const eTabImg = await eTab.evaluate(() => {
+  const img = document.querySelector("img");
+  return { complete: img?.complete ?? false, natural: img?.naturalWidth ?? 0 };
+});
+ok(
+  eTabImg.complete && eTabImg.natural > 0,
+  `data: URL 经 objectURL 开新标签页成图(naturalWidth=${eTabImg.natural})`,
+);
+await eTab.close();
+await page.keyboard.press("Escape");
+await page.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 5000 });
+ok(true, "Esc 关闭 echarts 查看器");
 
 // ② 放大查看器:点击 → svg 必须有形(0×0 = 塌缩回归)→ 缩放 → 截图 → Esc 关
 await page.locator(".diagram-btn").first().click();
@@ -186,6 +272,20 @@ await page.waitForFunction(
   { timeout: 10000 },
 );
 await page.locator(".diagram-body svg").first().waitFor({ timeout: 10000 });
+// echarts 同步换暗色主题:等 canvas 背景像素变实(浅色默认透明底,dark 主题整幅铺底色)
+await page.waitForFunction(
+  () => {
+    const ctx = document
+      .querySelector(".diagram-echarts-body canvas")
+      ?.getContext("2d");
+    if (!ctx) return false;
+    return ctx.getImageData(0, 0, 1, 1).data[3] > 0;
+  },
+  undefined,
+  { timeout: 10000 },
+);
+ok(true, "echarts 深色主题重渲(canvas 底色变实)");
+await waitBars();
 await shot("5-flow-dark");
 ok(true, "深色主题重渲");
 
@@ -204,8 +304,26 @@ await shot("5b-viewer-dark");
 await page.keyboard.press("Escape");
 await page.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 5000 });
 
-// ⑤ 最窄面板(300px):宽图不撑破、横滚在
+// ⑤ 最窄面板(300px):宽图不撑破、横滚在;echarts 随容器 resize
+// (ResizeObserver → resize 链路的实机证据)
+const wideW = await page.evaluate(() => {
+  const r = document
+    .querySelector(".diagram-echarts-body canvas")
+    ?.getBoundingClientRect();
+  return r ? Math.round(r.width) : 0;
+});
 await page.setViewportSize({ width: 300, height: 740 });
+await page.waitForFunction(
+  (prev) => {
+    const r = document
+      .querySelector(".diagram-echarts-body canvas")
+      ?.getBoundingClientRect();
+    return r !== undefined && prev > 0 && r.width > 0 && r.width < prev - 20;
+  },
+  wideW,
+  { timeout: 5000 },
+);
+ok(true, `echarts 随容器 resize(${wideW}px → 300px 面板内收窄)`);
 await page.locator(".diagram-figure").first().waitFor({ timeout: 5000 });
 await shot("6-narrow-300");
 ok(true, "300px 窄面板");

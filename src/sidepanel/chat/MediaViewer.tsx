@@ -214,11 +214,26 @@ export function MediaViewer({
     });
   };
 
-  const openInTab = () => {
-    const url =
-      content.kind === "image"
-        ? content.url
-        : svgToTabUrl(content.html, content.dark, t("chat.media.viewer"));
+  const openInTab = async () => {
+    if (content.kind === "image") {
+      // data: URL(echarts 快照走 getDataURL)会被 Chrome 拦顶层导航:
+      // 先转 objectURL 再开。不主动回收——新标签页加载中 revoke 会死链
+      // (同 svgToTabUrl 的取舍)
+      if (content.url.startsWith("data:")) {
+        try {
+          const blob = await fetch(content.url).then((r) => r.blob());
+          window.open(URL.createObjectURL(blob), "_blank", "noreferrer");
+        } catch {
+          // data: URL 本地解码失败(实际不可达)→ 退回原始尝试,Chrome
+          // 仍会拦,行为等于没有出口
+          window.open(content.url, "_blank", "noreferrer");
+        }
+        return;
+      }
+      window.open(content.url, "_blank", "noreferrer");
+      return;
+    }
+    const url = svgToTabUrl(content.html, content.dark, t("chat.media.viewer"));
     if (url) window.open(url, "_blank", "noreferrer");
   };
 

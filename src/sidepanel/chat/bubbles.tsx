@@ -41,7 +41,7 @@ import {
   RefreshIcon,
   WarnIcon,
 } from "../ui/icons";
-import { MermaidFigure } from "./diagram";
+import { EChartsFigure, MermaidFigure } from "./diagram";
 import { peekImgUrl, requestImgUrl } from "./images";
 import { MediaViewer } from "./MediaViewer";
 
@@ -323,14 +323,18 @@ function CodeBlock({
     : "";
   const [copied, copy] = useCopyFlash();
   // 图表语言走图表管线(渲染成图;失败与流式半成品回退为下方普通代码块)
-  if (lang === "mermaid") return <MermaidFigure code={nodeText(children)} />;
+  const source = nodeText(children);
+  if (lang === "mermaid") return <MermaidFigure code={source} />;
+  // echarts:key 随源码换新重挂——init 失败的回退态在新源码上获得全新
+  // 尝试,不会被上一次失败卡死(流式半成品的逐片重挂只是廉价回退)
+  if (lang === "echarts") return <EChartsFigure key={source} code={source} />;
   return (
     <figure className="code-block">
       <figcaption className="code-block-head">
         <span>{lang || t("chat.code.plain")}</span>
         <button
           type="button"
-          onClick={() => copy(nodeText(children))}
+          onClick={() => copy(source)}
           className="code-copy-btn"
         >
           {copied ? t("common.copied") : t("common.copy")}

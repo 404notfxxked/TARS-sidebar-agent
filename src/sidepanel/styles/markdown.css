@@ -225,6 +225,11 @@
     height: auto;
     max-height: 420px;
   }
+  /* echarts 体部:固定高度——统计图没有内在纵横比,给 canvas 一个稳定
+     画布,宽度仍交给容器适配(ResizeObserver 触发 resize) */
+  .diagram-echarts-body {
+    height: 240px;
+  }
   .diagram-note {
     margin-left: 6px;
     color: var(--md-sys-color-error);

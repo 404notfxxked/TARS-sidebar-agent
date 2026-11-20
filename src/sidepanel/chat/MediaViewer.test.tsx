@@ -17,6 +17,7 @@ import "@testing-library/jest-dom/vitest";
 import mermaid from "mermaid";
 import { AssistantBubble, UserBubble } from "./bubbles";
 import { cacheImgUrl } from "./images";
+import { MediaViewer } from "./MediaViewer";
 import { zhCN } from "../../shared/i18n/locales/zh-CN";
 
 vi.mock("mermaid", () => ({
@@ -205,5 +206,36 @@ describe("媒体放大查看器", () => {
     expect(/<br\b[^>]*\/>/.test(xml)).toBe(true);
     const parsed = new DOMParser().parseFromString(xml, "image/svg+xml");
     expect(parsed.querySelector("parsererror")).toBeNull();
+  });
+
+  it("data: URL 图片(图表快照)的新标签页出口:先转 objectURL 再开(Chrome 拦 data: 顶层导航)", async () => {
+    render(
+      <MediaViewer
+        content={{ kind: "image", url: "data:image/png;base64,QUJD", alt: "x" }}
+        onClose={() => {}}
+      />,
+    );
+    const dlg = screen.getByRole("dialog");
+    let blobArg: Blob | null = null;
+    Object.defineProperty(URL, "createObjectURL", {
+      value: (b: Blob) => {
+        blobArg = b;
+        return "blob:from-data";
+      },
+      configurable: true,
+    });
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    fireEvent.click(
+      within(dlg).getByRole("button", { name: zhCN.chat.media.openTab }),
+    );
+    await waitFor(() => {
+      expect(openSpy).toHaveBeenCalledWith(
+        "blob:from-data",
+        "_blank",
+        "noreferrer",
+      );
+    });
+    expect(blobArg).not.toBeNull();
+    expect(blobArg!.type).toBe("image/png");
   });
 });

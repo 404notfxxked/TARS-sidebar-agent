@@ -1,16 +1,20 @@
-// 图表渲染(mermaid 代码块 → 图):组件与渲染基建,语言分派在 bubbles 的
-// CodeBlock(它已在提取语言标识与源码)。关键取舍:
+// 图表渲染(mermaid / echarts 代码块 → 图):组件与渲染基建,语言分派在
+// bubbles 的 CodeBlock(它已在提取语言标识与源码)。关键取舍:
 // - 渲染在面板本地、库按需 import:流式增量直接命中源码缓存,不做 port
-//   往返;mermaid 只在首个图表块出现时才加载(约 1MB 级 chunk 不进首屏)
+//   往返;mermaid/echarts 只在首个对应图表块出现时才加载(约 1MB 级
+//   chunk 不进首屏)
 // - 渲染失败与流式半成品共用「回退源码」一条路径:不完整源码 parse 必然
 //   失败,流式中自然以代码块形态出现,闭合且合法后翻成图;失败注记在源码
 //   静置片刻后才显示,流式期间不出「失败」字样误导
 // - SVG 经 mermaid securityLevel:"strict"(内置 DOMPurify)消毒后注入,
 //   不开 loose、不接 click 回调
+// - echarts 实例随容器生灭(与 mermaid 的全局单例不同):容器挂上才
+//   init、卸载即 dispose,主题翻转走重新 init;放大快照走 getDataURL
+//   的 data: URL,开新标签页时的 data:→objectURL 转换在 MediaViewer 侧
 // - 主题跟随 <html data-theme>(theme.ts 只写 DOM 属性,无 React 状态可
 //   订阅):MutationObserver 监听翻转;缓存键含主题,浅深各存一份
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCopyFlash, useT } from "../ui/hooks";
 import { MediaViewer } from "./MediaViewer";
 
@@ -199,6 +203,122 @@ export function MermaidFigure({ code }: { code: string }) {
       {zoom && (
         <MediaViewer
           content={{ kind: "svg", html: svg, dark: theme === "dark" }}
+          onClose={() => setZoom(false)}
+        />
+      )}
+    </figure>
+  );
+}
+
+// ---- echarts:统计图(JSON option)。实例随容器生灭,无跨渲染缓存 ----
+
+type EChartsChart = ReturnType<typeof import("echarts").init>;
+/** setOption 的参数形态(JSON.parse 结果的目标类型) */
+type EChartsOptionInput = Parameters<EChartsChart["setOption"]>[0];
+
+export function EChartsFigure({ code }: { code: string }) {
+  const t = useT();
+  const theme = useResolvedTheme();
+  const [initFailed, setInitFailed] = useState(false);
+  const [noteVisible, setNoteVisible] = useState(false);
+  const [zoom, setZoom] = useState(false);
+  const [zoomUrl, setZoomUrl] = useState<string | null>(null);
+  // 容器元素走 state 而非 ref:init 必须等容器真挂上(option 可用晚于
+  // 回退态的挂载拍,拿 ref 拿不到),callback ref 置值驱动 init effect 重跑
+  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null);
+  const chartRef = useRef<EChartsChart | null>(null);
+
+  // JSON 可用性同步判定:parse 抛错(流式半成品)或结果不是 option 对象
+  // 都算不可用,渲染直接走源码回退,与 MermaidFigure 的失败态同款
+  const option = useMemo<EChartsOptionInput | null>(() => {
+    try {
+      const parsed: unknown = JSON.parse(code);
+      return parsed !== null &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
+        ? (parsed as EChartsOptionInput)
+        : null;
+    } catch {
+      return null;
+    }
+  }, [code]);
+
+  const failed = option === null || initFailed;
+
+  useEffect(() => {
+    if (option === null || !bodyEl) return;
+    let alive = true;
+    let inst: EChartsChart | null = null;
+    void import("echarts")
+      .then((echarts) => {
+        if (!alive) return;
+        inst = echarts.init(bodyEl, theme === "dark" ? "dark" : undefined);
+        inst.setOption(option);
+        chartRef.current = inst;
+      })
+      .catch(() => {
+        // 懒加载失败(chunk 拉取失败,罕见)同样回退源码态
+        if (alive) setInitFailed(true);
+      });
+    return () => {
+      alive = false;
+      inst?.dispose();
+      chartRef.current = null;
+    };
+  }, [option, theme, bodyEl]);
+
+  // 容器尺寸变化 → resize:echarts 不自动跟随面板宽度(拖宽侧栏等)
+  useEffect(() => {
+    if (!bodyEl) return;
+    const ro = new ResizeObserver(() => chartRef.current?.resize());
+    ro.observe(bodyEl);
+    return () => ro.disconnect();
+  }, [bodyEl]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: code 是刻意的重置触发器(流式新分片重启静置计时),不在回调内读取
+  useEffect(() => {
+    if (!failed) {
+      setNoteVisible(false);
+      return;
+    }
+    const timer = setTimeout(() => setNoteVisible(true), NOTE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [failed, code]);
+
+  if (failed) {
+    return (
+      <figure className="code-block">
+        <DiagramHead
+          lang="echarts"
+          note={noteVisible ? t("chat.diagram.renderFailed") : undefined}
+          code={code}
+        />
+        <pre>
+          <code className="language-echarts">{code}</code>
+        </pre>
+      </figure>
+    );
+  }
+  return (
+    <figure className="diagram-figure">
+      <DiagramHead lang="echarts" code={code} />
+      {/* 点击进放大查看器:快照 data: URL 的获取与转换见 MediaViewer 头注 */}
+      <button
+        type="button"
+        className="diagram-btn"
+        aria-label={t("chat.media.zoomIn")}
+        onClick={() => {
+          const url = chartRef.current?.getDataURL({ pixelRatio: 2 });
+          if (!url) return;
+          setZoomUrl(url);
+          setZoom(true);
+        }}
+      >
+        <div ref={setBodyEl} className="diagram-echarts-body" />
+      </button>
+      {zoom && zoomUrl && (
+        <MediaViewer
+          content={{ kind: "image", url: zoomUrl, alt: t("chat.media.viewer") }}
           onClose={() => setZoom(false)}
         />
       )}

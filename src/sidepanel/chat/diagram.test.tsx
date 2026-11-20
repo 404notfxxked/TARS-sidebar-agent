@@ -8,6 +8,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import mermaid from "mermaid";
+import * as echarts from "echarts";
 import { AssistantBubble } from "./bubbles";
 import { zhCN } from "../../shared/i18n/locales/zh-CN";
 
@@ -22,11 +23,33 @@ vi.mock("mermaid", () => ({
 const renderMock = vi.mocked(mermaid.render);
 const initializeMock = vi.mocked(mermaid.initialize);
 
+vi.mock("echarts", () => ({
+  init: vi.fn(() => ({
+    setOption: vi.fn(),
+    dispose: vi.fn(),
+    resize: vi.fn(),
+    getDataURL: vi.fn(() => "data:image/png;base64,mock"),
+  })),
+}));
+const echartsInitMock = vi.mocked(echarts.init);
+
+// jsdom 不提供 ResizeObserver:EChartsFigure 挂容器观察用,最小桩。
+// 容器尺寸在 jsdom 里不变,回调触发路径归真实浏览器(e2e 探针覆盖)
+(globalThis as Record<string, unknown>).ResizeObserver ??= class {
+  observe() {
+    // jsdom 无观察实现
+  }
+  disconnect() {
+    // jsdom 无实现
+  }
+};
+
 afterEach(() => {
   cleanup();
   delete document.documentElement.dataset.theme;
   renderMock.mockClear();
   initializeMock.mockClear();
+  echartsInitMock.mockClear();
 });
 
 describe("mermaid 图表块", () => {
@@ -104,5 +127,66 @@ describe("mermaid 图表块", () => {
         expect.objectContaining({ theme: "default" }),
       );
     });
+  });
+});
+
+describe("echarts 图表块", () => {
+  const BAR_OPTION = {
+    xAxis: { type: "category", data: ["一", "二", "三"] },
+    yAxis: {},
+    series: [{ type: "bar", data: [12, 34, 21] }],
+  };
+  const PIE_OPTION = {
+    series: [
+      {
+        type: "pie",
+        data: [
+          { name: "甲", value: 3 },
+          { name: "乙", value: 5 },
+        ],
+      },
+    ],
+  };
+
+  it("走图表管线:init 拿到容器,setOption 收到 JSON.parse 结果", async () => {
+    render(
+      <AssistantBubble text={["```echarts", JSON.stringify(BAR_OPTION), "```"].join("\n")} />,
+    );
+    await waitFor(() => {
+      expect(document.querySelector(".diagram-echarts-body")).not.toBeNull();
+    });
+    expect(echartsInitMock).toHaveBeenCalledTimes(1);
+    expect(echartsInitMock.mock.calls[0]?.[0]).toBe(
+      document.querySelector(".diagram-echarts-body"),
+    );
+    expect(
+      echartsInitMock.mock.results[0]?.value.setOption,
+    ).toHaveBeenCalledWith(BAR_OPTION);
+  });
+
+  it("坏 JSON(流式半成品)回退源码态:普通代码块在、init 未调、静置后出注记", async () => {
+    render(<AssistantBubble text={'```echarts\n{"series": [{"type":"bar"'} />);
+    expect(echartsInitMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/"series"/)).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(zhCN.chat.diagram.renderFailed),
+        ).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
+  });
+
+  it("卸载时 dispose 图表实例", async () => {
+    const { unmount } = render(
+      <AssistantBubble text={["```echarts", JSON.stringify(PIE_OPTION), "```"].join("\n")} />,
+    );
+    await waitFor(() => {
+      expect(echartsInitMock).toHaveBeenCalled();
+    });
+    const inst = echartsInitMock.mock.results[0]?.value;
+    unmount();
+    expect(inst.dispose).toHaveBeenCalled();
   });
 });
