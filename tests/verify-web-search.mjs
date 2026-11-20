@@ -25,7 +25,7 @@
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { ask, bodyText, injectTestConfig, launchWithCdp, makeChecker, openPanel, waitForRunLog, answerSSE, toolCallSSE } from "./lib-cdp-mock.mjs";
+import { ask, bodyText, idbGetAll, injectTestConfig, launchWithCdp, makeChecker, openPanel, waitForRunLog, answerSSE, toolCallSSE } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,11 @@ const pageFixture = readFileSync(resolve(__dirname, "fixtures", "fetch-page.html
 const gbkFixtureB64 = readFileSync(resolve(__dirname, "fixtures", "fetch-gbk.html")).toString("base64");
 const bingFixture = readFileSync(resolve(__dirname, "fixtures", "search-bing.html"), "utf8");
 const ddgFixture = readFileSync(resolve(__dirname, "fixtures", "search-ddg.html"), "utf8");
+// web_fetch_image fixture:1×1 PNG(68 字节,IHDR CRC 已校验)。K 场景按
+// PNG_1PX_BYTES 断言入库字节量,w/h 按 1×1 断言解码取到的尺寸
+const PNG_1PX_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+const PNG_1PX_BYTES = Buffer.from(PNG_1PX_B64, "base64").length;
 
 const SEARCH_QUERY = "React 19 新特性";
 // 三家 mock 响应(形状对齐各家真实 API)
@@ -77,6 +82,8 @@ let searchArgs = { query: SEARCH_QUERY };
 /** web_fetch 第一跳的 URL 与附加参数 */
 let fetchUrl = "https://mock.test/page";
 let fetchArgs = {};
+/** web_fetch_image 的抓取目标(K 场景注入:img.test / 私网两用) */
+let imageUrl = "https://img.test/pic.png";
 /** 最近一次 LLM 请求里是否见到预算截断标记 */
 let budgetMarkerSeen = false;
 let lastToolNames = [];
@@ -125,7 +132,16 @@ mock.setRoutes([
             } else if (typeof parsed.text === "string") {
               text = `读完网页:FETCH_OK:${parsed.title}`;
             }
-          } catch { /* 保持默认文案 */ }
+          } catch {
+            // web_fetch_image 回执 = JSON 行 + 指引行,整段不可 parse:
+            // 按首行取入库契约(id/尺寸)给终答留下可断言标记
+            try {
+              const img = JSON.parse(c.split("\n")[0]);
+              if (img?.stored === true && typeof img.id === "string") {
+                text = `图片已入库:IMG_OK:${img.id} ${img.w}x${img.h}`;
+              }
+            } catch { /* 保持默认文案 */ }
+          }
         }
         return answer(text);
       }
@@ -139,6 +155,9 @@ mock.setRoutes([
           } catch { /* 保持从头发起 */ }
         }
         return toolCall("web_fetch", args);
+      }
+      if (next === "web_fetch_image") {
+        return toolCall("web_fetch_image", { url: imageUrl });
       }
       return answer("未知脚本,直接回答");
     },
@@ -237,6 +256,16 @@ mock.setRoutes([
         bodyBase64: gbkFixtureB64,
       }),
   },
+  // web_fetch_image fixture:1×1 PNG(场景 K 的入库对象)。img.test 不在
+  // 任何既有白名单推导来源里(用户消息不含它、搜索结果不含它),首抓必弹卡
+  {
+    match: (url) => url.includes("img.test/pic"),
+    handle: (ctx) =>
+      ctx.fulfill({
+        headers: { "Content-Type": "image/png" },
+        bodyBase64: PNG_1PX_B64,
+      }),
+  },
   // 场景 R:白名单内域 302 重定向到私网(重定向绕行链路)。
   // 私网落点也给 mock 响应 —— 拦截必须发生在「读正文之前」,若实现漏了
   // 复核,正文标记会进上下文,断言即红
@@ -271,6 +300,21 @@ async function toolLogs(name) {
   return logs.filter((e) => e.tag === "tool" && e.msg.includes(`${name} 完成`));
 }
 const unesc = (s) => (s ?? "").replaceAll('\\"', '"');
+// 确认卡交互(K 场景:web_fetch_image 白名单外/私网先过卡):发消息不等
+// run 结束,卡答复后再等收口 —— 与 verify-confirm.mjs 同款样板
+const cardSel = '[role="alertdialog"]';
+const sendBtnSel = `button[aria-label="${zh.chat.send}"]`;
+const allowBtnSel = `button[aria-label="${zh.chat.confirmAllow}"]`;
+const denyBtnSel = `button[aria-label="${zh.chat.confirmDeny}"]`;
+/** 发消息但不等 run 结束(确认门会让 run 挂起等答复) */
+async function sendOnly(text) {
+  const input = sidepanel.locator(`textarea[aria-label="${zh.chat.askInput}"]`);
+  await input.waitFor({ timeout: 5000 });
+  await input.fill(text);
+  await sidepanel.locator(sendBtnSel).click();
+}
+const waitIdle = () =>
+  sidepanel.locator(sendBtnSel).waitFor({ state: "visible", timeout: 30000 });
 /** 空的服务连接条目(新结构:每家 {baseUrl, apiKey} 各存一格) */
 const _svc = (baseUrl = "", apiKey = "") => ({ baseUrl, apiKey });
 /** 改搜索配置(storage 直写,SW 每次 run 现读,无需刷新)。
@@ -302,7 +346,7 @@ chain = [];
 // biome-ignore lint/complexity/noUselessLoneBlockStatements: 块用于限定场景变量作用域
 {
   await ask(sidepanel, "还没开联网时的提问");
-  check(lastToolNames.length > 0 && !lastToolNames.includes("web_search") && !lastToolNames.includes("web_fetch"),
+  check(lastToolNames.length > 0 && !lastToolNames.includes("web_search") && !lastToolNames.includes("web_fetch") && !lastToolNames.includes("web_fetch_image"),
     "S0-1 未开启时请求不含 web_* 工具", JSON.stringify(lastToolNames));
   check(lastSystemPrompt.includes("Web search is disabled in this session"),
     "S0-2 系统提示声明联网已关闭", lastSystemPrompt.slice(-120));
@@ -627,7 +671,7 @@ chain = [];
 {
   await sidepanel.evaluate(() => chrome.storage.local.set({ webSearch: false }));
   await ask(sidepanel, "开关关闭后的提问");
-  check(lastToolNames.length > 0 && !lastToolNames.includes("web_search") && !lastToolNames.includes("web_fetch"),
+  check(lastToolNames.length > 0 && !lastToolNames.includes("web_search") && !lastToolNames.includes("web_fetch") && !lastToolNames.includes("web_fetch_image"),
     "G1 关闭后请求不含 web_* 工具", JSON.stringify(lastToolNames));
   check(lastToolNames.includes("page_read"), "G2 页面工具保留", JSON.stringify(lastToolNames));
   check(lastSystemPrompt.includes("Web search is disabled in this session"), "G3 系统提示声明联网已关闭", lastSystemPrompt.slice(-120));
@@ -636,8 +680,8 @@ chain = [];
   await sidepanel.evaluate(() => chrome.storage.local.set({ webSearch: true }));
   chain = ["web_search"];
   await ask(sidepanel, "开关重新打开后的提问");
-  check(lastToolNames.includes("web_search") && lastToolNames.includes("web_fetch"),
-    "G5 开启后 web_* 工具恢复", JSON.stringify(lastToolNames));
+  check(lastToolNames.includes("web_search") && lastToolNames.includes("web_fetch") && lastToolNames.includes("web_fetch_image"),
+    "G5 开启后 web_* 工具恢复(含 web_fetch_image)", JSON.stringify(lastToolNames));
   check(!lastSystemPrompt.includes("Web search is disabled in this session"), "G6 系统提示不再声明关闭", "");
   await waitForRunLog(sidepanel, (e) => e.tag === "search" && e.msg.includes("web_search 完成"),
     "web_search 完成(重新开启)");
@@ -669,6 +713,60 @@ chain = [];
     (e) => e.tag === "search" && e.msg.includes("web_search 完成"), "G7 完成");
   check(g7logs.some((e) => (e.data ?? "").includes('"engine":"ddg"') && (e.data ?? "").includes('"mode":"tab"')),
     "G8 只认选中槽位:该家无 Key 实际走 tab 通道(别家 key 不顶替)", g7logs[g7logs.length-1]?.data);
+}
+
+// ---- 场景 K:web_fetch_image 网图入库(确认卡放行 → 解码落库 → 引用契约)----
+console.log("\n===== K. web_fetch_image:外链卡放行 → 入库 =====");
+{
+  imageUrl = "https://img.test/pic.png";
+  chain = ["web_fetch_image"];
+  // 用户消息不含 URL:img.test 不在任何白名单推导来源里,首抓必弹卡
+  await sendOnly("帮我把网上那张实拍图片抓下来入库");
+  await sidepanel.locator(cardSel).waitFor({ timeout: 20000 });
+  const cardText = await sidepanel.locator(cardSel).innerText();
+  check(cardText.includes(zh.chat.confirmWebFetchTitle),
+    "K1 白名单外抓图弹确认卡(外链族标题)", cardText.slice(0, 200));
+  check(cardText.includes("img.test"), "K2 卡上展示目标链接", cardText.slice(0, 200));
+  check(lastToolNames.includes("web_fetch_image"), "K3 工具在请求 schema 内", JSON.stringify(lastToolNames));
+  await sidepanel.locator(allowBtnSel).click();
+  await waitIdle();
+  const done = (await toolLogs("web_fetch_image"))[0];
+  const data = unesc(done?.data ?? "");
+  check(data.includes('"stored":true') && data.includes("tars-img:"),
+    "K4 工具结果契约:入库 JSON + tars-img 引用指引", data.slice(0, 300));
+  check((await bodyText(sidepanel)).includes("IMG_OK:"),
+    "K5 终答引用入库回执", (await bodyText(sidepanel)).slice(-300));
+  const imgs = await idbGetAll(sidepanel, "images");
+  const row = imgs.find((r) => r.mime === "image/png");
+  check(
+    !!row && row.w === 1 && row.h === 1 && row.bytes?.length === PNG_1PX_BYTES &&
+      typeof row.sessionId === "string" && row.sessionId.length > 0,
+    `K6 images store 行存在(mime/w/h/字节 ${PNG_1PX_BYTES}B/会话归属)`,
+    JSON.stringify({ n: imgs.length, row: row ? { ...row, bytes: `[${row.bytes?.length}B]` } : null }),
+  );
+  check((await sidepanel.locator(cardSel).count()) === 0, "K7 放行后确认卡收起");
+}
+
+// ---- 场景 K2:私网地址过卡(出口底线,拒绝 → declined,不落库)----
+console.log("\n===== K2. web_fetch_image 私网地址过卡 =====");
+{
+  imageUrl = "http://10.0.0.5/pic.png";
+  chain = ["web_fetch_image"];
+  const imgsBefore = (await idbGetAll(sidepanel, "images")).length;
+  await sendOnly("抓一下内网那张图");
+  await sidepanel.locator(cardSel).waitFor({ timeout: 20000 });
+  const cardText = await sidepanel.locator(cardSel).innerText();
+  check(cardText.includes(zh.chat.confirmWebFetchTitle) && cardText.includes("10.0.0.5"),
+    "K8 私网地址弹卡(外链族标题 + 目标链接)", cardText.slice(0, 200));
+  await sidepanel.locator(denyBtnSel).click();
+  const failLogs = await waitForRunLog(sidepanel,
+    (e) => e.tag === "tool" && e.msg.includes("web_fetch_image 失败"), "拒绝后 declined 日志");
+  const fail = failLogs.find((e) => e.tag === "tool" && e.msg.includes("web_fetch_image 失败"));
+  check(unesc(fail?.data ?? "").includes("declined"),
+    "K9 拒绝 → declined 文案回给模型", (fail?.data ?? "").slice(0, 200));
+  check((await idbGetAll(sidepanel, "images")).length === imgsBefore,
+    `K10 拒绝 → 无图片入库(${imgsBefore} → ${imgsBefore})`);
+  check((await bodyText(sidepanel)).includes("ERR_OK"), "K11 run 正常收口", (await bodyText(sidepanel)).slice(-200));
 }
 
 // ---- 汇总 ----

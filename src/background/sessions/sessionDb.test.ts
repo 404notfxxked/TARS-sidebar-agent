@@ -15,6 +15,7 @@ import {
   getImage,
   listSessions,
   loadMessageRows,
+  putImage,
   type ImageRow,
   type SessionRow,
 } from "./sessionDb";
@@ -241,5 +242,31 @@ describe("sessionDb 会话删除的图片级联回收(键序回归)", () => {
     // 缓存缺省语义 = 不动,读侧回落扫描
     const session = (await listSessions()).find((r) => r.id === sid);
     expect(session?.visibleCount).toBeUndefined();
+  });
+});
+
+describe("putImage(工具入库直写)", () => {
+  it("按 ImageRow 原形写入,getImage 按 id 可取回", async () => {
+    await putImage("s-tool", "img-tool-1", new Uint8Array([1, 2, 3]), {
+      mime: "image/png",
+      w: 4,
+      h: 2,
+    });
+    const row = await getImage("img-tool-1");
+    expect(row?.sessionId).toBe("s-tool");
+    expect(row?.mime).toBe("image/png");
+    expect(row?.w).toBe(4);
+    expect(row?.h).toBe(2);
+    expect(Array.from(row?.bytes ?? [])).toEqual([1, 2, 3]);
+  });
+
+  it("随 deleteSessionRows 级联消失(与会话生命周期绑定)", async () => {
+    await putImage("s-tool", "img-tool-2", new Uint8Array([9]), {
+      mime: "image/webp",
+      w: 1,
+      h: 1,
+    });
+    await deleteSessionRows("s-tool");
+    expect(await getImage("img-tool-2")).toBeUndefined();
   });
 });

@@ -149,7 +149,12 @@ export function needsConfirmation(
   // 也可能就是把数据外带的通道 —— 一律过门,宁慢勿错(架构不变式:写工具
   // 必须过确认门再上线;off 档关闭即用户自担,同页面写动作口径)
   if (name.startsWith("mcp_")) return true;
-  if (name === "web_fetch") return webFetchNeedsConfirm(args, fetchAllowlist);
+  // web_fetch 与 web_fetch_image 走同一条参数级出口判定(私网目标 /
+  // 白名单未命中先过卡):抓图与读页同属「数据从会话外进来」的受控外链,
+  // 判定语义完全一致,谓词只认 args.url
+  if (name === "web_fetch" || name === "web_fetch_image") {
+    return webFetchNeedsConfirm(args, fetchAllowlist);
+  }
   return false;
 }
 
@@ -161,7 +166,9 @@ function confirmCategoryOf(
   const inTable = TOOL_CATEGORY[name as keyof typeof TOOL_CATEGORY];
   if (inTable) return inTable;
   if (name.startsWith("mcp_")) return "mcp";
-  if (name === "web_fetch") return "fetch";
+  // 外链族:web_fetch(读页)与 web_fetch_image(抓图)同色同标题族 ——
+  // 都是「看清将要访问什么」的知情放行
+  if (name === "web_fetch" || name === "web_fetch_image") return "fetch";
   return undefined;
 }
 

@@ -15,6 +15,10 @@ import {
 } from "./toolContext";
 import { runWebSearch, type WebSearchArgs, type WebSearchResult } from "../web/webSearch";
 import { runWebFetch, type WebFetchArgs, type WebFetchResult } from "../web/webFetch";
+import {
+  runWebFetchImage,
+  type WebFetchImageArgs,
+} from "../web/fetchImage";
 import { runPageScreenshot } from "./screenshot";
 import {
   addMemory,
@@ -546,6 +550,30 @@ registerTool<WebFetchArgs, WebFetchResult>({
     required: ["url"],
   },
   execute: (args) => runWebFetch(args),
+});
+
+// ---- 网图入库 ----
+// web_fetch 同族的受控外链读取,产物是图片字节:校验链(协议/授权/类型/大小/
+// 解码验真)与入库在 background/web/fetchImage.ts。有意不标 write、不进
+// TOOL_CATEGORY:入库写的是本会话短命数据(随会话删除级联),非持久写;
+// 是否过门是参数级出口判定,与 web_fetch 共用同一条谓词路径
+// (confirmations.needsConfirmation),批准后的白名单学习同族(toolDispatch)
+registerTool<WebFetchImageArgs, string>({
+  type: "function",
+  name: "web_fetch_image",
+  description:
+    "Download an image from the web into the current session's local image store so it can be embedded in your answer.\nMechanics: the image is fetched, verified (must be a real raster image, content-type image/*, at most 4 MB) and stored locally; the result returns a stored id — the image is NOT re-fetchable from its original URL by the reader.\nWhen to use: the user explicitly wants a real-world photographic image (a photo, a scene, a product shot) that a chart or text cannot convey.\nWhen NOT to use: structure diagrams (flow / sequence / architecture) → mermaid code block; data charts → echarts code block; anything expressible in text → just write it. Use sparingly — only when the image itself is the deliverable.\nReferencing: embed the stored image as ![alt](tars-img:<id>) with <id> from the tool result, and state the source URL near the reference. Plain https image links in the answer do not load in the panel — only tars-img references render.\nOn failure (dead link, wrong type, too large): try a different source once; otherwise say honestly what failed and describe the expected image in text.",
+  parameters: {
+    type: "object",
+    properties: {
+      url: {
+        type: "string",
+        description: "Direct http/https URL of an image resource (from web_search results, a page, or provided by the user)",
+      },
+    },
+    required: ["url"],
+  },
+  execute: (args) => runWebFetchImage(args),
 });
 
 

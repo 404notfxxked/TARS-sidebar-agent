@@ -171,6 +171,7 @@ export const enUS = {
       pageOutline: "Page outline",
       webSearch: "Web search",
       webFetch: "Read page",
+      webFetchImage: "Fetch web image",
       findElements: "Find elements",
       scrollPage: "Scroll page",
       pageScreenshot: "Screenshot",

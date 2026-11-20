@@ -42,6 +42,7 @@ function confirmTitleKey(name: string): string {
     case "memory_delete":
       return "chat.confirmMemoryDeleteTitle";
     case "web_fetch":
+    case "web_fetch_image":
       return "chat.confirmWebFetchTitle";
     case "navigate_tab":
       return "chat.confirmNavigateTitle";
@@ -109,7 +110,10 @@ export function ConfirmCard({
    *  负载恰好藏在长查询串里 —— 查询串不逐字展示,另起一行只报长度,让
    *  「截断」本身成为信号 */
   const fetchRawUrl =
-    req.name === "web_fetch" && typeof args.url === "string" ? args.url : "";
+    (req.name === "web_fetch" || req.name === "web_fetch_image") &&
+    typeof args.url === "string"
+      ? args.url
+      : "";
   const fetchTarget = (() => {
     if (!fetchRawUrl) return null;
     try {

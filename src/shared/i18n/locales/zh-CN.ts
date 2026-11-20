@@ -163,6 +163,7 @@ export const zhCN = {
       pageOutline: "页面大纲",
       webSearch: "网络搜索",
       webFetch: "网页读取",
+      webFetchImage: "抓取网络图片",
       findElements: "查找元素",
       scrollPage: "滚动页面",
       pageScreenshot: "网页截图",
