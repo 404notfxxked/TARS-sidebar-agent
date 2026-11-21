@@ -7,6 +7,7 @@ import { SYSTEM_NOTE_PREFIX } from "./compaction";
 import { saveCtx } from "../sessions/sessionHistory";
 import { errText } from "../../shared/errors";
 import { getTool } from "../tools/tools";
+import { validateDiagrams } from "./diagramLint";
 import {
   markReasoningObserved,
 } from "../../shared/configStore";
@@ -26,6 +27,11 @@ import type { AgentPort, RunLoopState } from "./agent";
 const log = createLogger({ ctx: "bg" });
 
 const MAX_TURNS = 10;
+
+/** 图表源码自检的回喂修复预算(轮):最终回答里的坏块以系统注记回喂,让
+ *  模型重发修正块;预算耗尽仍坏则照常收束 —— 面板对坏块有源码回退 + 失败
+ *  注记兜底,收束不该被图表质量卡死 */
+const DIAGRAM_FIX_ROUNDS = 2;
 
 /** 截图附件随工具结果注入的 user 消息文本。必须以 SYSTEM_NOTE_PREFIX 开头:
  *  compaction 的整轮切分靠这个前缀识别「附件延续,不是新的一轮」 */
@@ -69,6 +75,7 @@ export async function runTurns(
   deps: TurnDeps,
 ): Promise<void> {
   const { cfg, port, signal, sessionId, callChat, dispatchToolCall, confirmGate } = deps;
+  let diagramFixBudget = DIAGRAM_FIX_ROUNDS;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     loop.turnNo = turn + 1;
     log.debug("agent", `turn ${turn + 1}/${MAX_TURNS}`);
@@ -224,6 +231,33 @@ export async function runTurns(
         : {}),
       model: cfg.config.model,
     });
+    // 图表源码自检(收尾校验 + 回喂自修复):截断回答(finishReason=length)
+    // 里的图必坏,校验只会误报,跳过;用户取消同理(run 即将静默退出)。
+    // 有坏块且回喂预算未尽 → 以系统注记 user 消息回喂进下一轮,note 的
+    // SYSTEM_NOTE_PREFIX 保证压缩切分把它算作上一轮延续而不是新的一轮;
+    // 修复轮计入 MAX_TURNS,不另设预算参数。预算耗尽仍坏 → 照常收束
+    if (result.finishReason !== "length" && !signal?.aborted) {
+      const fixNote = await validateDiagrams(result.content);
+      if (fixNote) {
+        if (diagramFixBudget > 0) {
+          diagramFixBudget -= 1;
+          log.info(
+            "agent",
+            `diagram lint: invalid block(s), feeding fix note back (left ${diagramFixBudget})`,
+            { note: fixNote.slice(0, 160) },
+          );
+          loop.messages.push({ role: "user", content: fixNote });
+          // 修复轮收口即落盘:坏回答与修复指令不因 SW 休眠丢失(与工具轮
+          // 收口同一纪律);历史以 user 注记结尾,是严格端点可接受的边界
+          await persistNewMessages(loop, sessionId);
+          continue;
+        }
+        log.warn(
+          "agent",
+          "diagram lint: fix budget exhausted, closing with invalid block(s)",
+        );
+      }
+    }
     loop.truncatedByLength = result.finishReason === "length";
     loop.completed = true;
     break;
