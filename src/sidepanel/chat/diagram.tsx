@@ -56,6 +56,15 @@ async function ensureMermaid(
       startOnLoad: false,
       securityLevel: "strict",
       theme: theme === "dark" ? "dark" : "default",
+      // 深色微调:dark 默认线色 lightgrey(#d3d3d3)对 figure 深底
+      // (surface-container #282828)整幅对比名义达标,但窄面板 fit 态把宽图
+      // 缩进亚像素,线经抗锯齿混色后观感发灰——线色往白提一档,混色后仍可
+      // 辨;边标签底色对齐 figure 底色,免得中灰标签块在深底上发闷。浅色
+      // default 主题现状够用,不动
+      themeVariables:
+        theme === "dark"
+          ? { lineColor: "#f2f2f2", edgeLabelBackground: "#282828" }
+          : undefined,
     });
     mermaidTheme = theme;
   }
