@@ -236,6 +236,130 @@ console.log("\n===== D2. tars-img 引用渲染(横滑成组 + 外链拦截)=====
   await viewer.waitFor({ state: "hidden", timeout: 5000 });
 }
 
+// ---- D3. 回放回归:含 mermaid 块 + tars-img 引用的会话重进面板后,
+//      实况 = 回放(svg 重渲、图片经 GET_IMAGE 重取、落盘全量) ----
+console.log("\n===== D3. 会话回放(mermaid + tars-img)=====");
+{
+  const REPLAY_MD = [
+    "```mermaid",
+    "flowchart TD",
+    "  A[开始] --> B[结束]",
+    "```",
+    "",
+    "![回放图甲](tars-img:seed-r1)",
+    "![回放图乙](tars-img:seed-r2)",
+  ].join("\n");
+
+  // 直种会话(不经 LLM):消息行只存引用原文,字节单独落 images store
+  await sidepanel.evaluate(({ answer, b64 }) => {
+    return new Promise((resolvePromise, rejectPromise) => {
+      const now = Date.now();
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const rq = indexedDB.open("tars");
+      rq.onupgradeneeded = () => {
+        const db = rq.result;
+        if (!db.objectStoreNames.contains("sessions"))
+          db.createObjectStore("sessions", { keyPath: "id" });
+        if (!db.objectStoreNames.contains("messages"))
+          db.createObjectStore("messages", { keyPath: ["sessionId", "seq"] });
+        if (!db.objectStoreNames.contains("images"))
+          db.createObjectStore("images", { keyPath: ["sessionId", "id"] });
+      };
+      rq.onsuccess = () => {
+        const db = rq.result;
+        const tx = db.transaction(["sessions", "messages", "images"], "readwrite");
+        tx.objectStore("sessions").put({
+          id: "d3-replay",
+          title: "回放回归:图表与网图",
+          createdAt: now,
+          updatedAt: now,
+          msgCount: 2,
+        });
+        tx.objectStore("messages").put({
+          sessionId: "d3-replay",
+          seq: 0,
+          msg: { role: "user", content: "看图" },
+        });
+        tx.objectStore("messages").put({
+          sessionId: "d3-replay",
+          seq: 1,
+          msg: { role: "assistant", content: answer },
+        });
+        for (const id of ["seed-r1", "seed-r2"])
+          tx.objectStore("images").put({
+            sessionId: "d3-replay",
+            id,
+            mime: "image/png",
+            w: 320,
+            h: 240,
+            bytes,
+          });
+        tx.oncomplete = () => {
+          db.close();
+          resolvePromise();
+        };
+        tx.onerror = () => rejectPromise(tx.error);
+      };
+      rq.onerror = () => rejectPromise(rq.error);
+    });
+  }, { answer: REPLAY_MD, b64: PNG_1PX });
+
+  // 重进面板:reload 后从会话列表切入(面板缓存随 reload 清空,图片
+  // 缓存与 mermaid 渲染缓存都从零重建 —— 真回放路径)
+  await sidepanel.reload();
+  await sidepanel
+    .locator(`button[aria-label="${zh.chat.openSessions}"]`)
+    .click();
+  await sidepanel
+    .locator("li", { hasText: "回放回归:图表与网图" })
+    .click();
+
+  // mermaid 从历史原文重渲
+  const svg = sidepanel.locator(".diagram-body svg").first();
+  await svg.waitFor({ timeout: 20000 });
+  const box = await svg.boundingBox();
+  check(
+    !!box && box.width > 0 && box.height > 0,
+    `D3-1 回放 mermaid 成图(${box?.width}×${box?.height})`,
+    JSON.stringify(box),
+  );
+
+  // tars-img 经 GET_IMAGE 重取字节并解码(无失效占位 = 全部取到)
+  await sidepanel.locator(".media-gallery").waitFor({ timeout: 10000 });
+  const decoded = await sidepanel
+    .waitForFunction(
+      () => {
+        const imgs = [...document.querySelectorAll(".media-gallery img")];
+        return (
+          imgs.length === 2 &&
+          imgs.every(
+            (im) =>
+              im instanceof HTMLImageElement &&
+              im.src.startsWith("blob:") &&
+              im.naturalWidth > 0,
+          )
+        );
+      },
+      { timeout: 8000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check(decoded, "D3-2 回放图片经 GET_IMAGE 重取并解码");
+  const expired = await sidepanel.getByText(zh.chat.imageExpired).count();
+  check(expired === 0, `D3-3 回放无失效占位(${expired})`);
+
+  // 落盘全量:回放不丢原文(虚拟上下文地基)
+  const history = await loadHistoryViaPort(sidepanel, "d3-replay");
+  const assistantRow = history.find((m) => m.role === "assistant");
+  check(
+    typeof assistantRow?.content === "string" &&
+      assistantRow.content.includes("flowchart TD") &&
+      assistantRow.content.includes("tars-img:seed-r1"),
+    "D3-4 回放历史投影原样(虚拟上下文:落盘全量)",
+    String(assistantRow?.content).slice(0, 80),
+  );
+}
+
 // ---- 汇总 ----
 console.log("\n========================================");
 if (check.failures.length > 0) {
