@@ -185,7 +185,11 @@ export function AskCard({
                   {q.question}
                 </span>
                 {summary !== "" && (
-                  <div className="inline-flex max-w-full items-center rounded-full bg-primary-container px-2 py-0.5 text-[11.5px] text-on-primary-container">
+                  // 收起态摘要收敛为中性容器片:它只在正文语境回显用户答案,
+                  // 主题色大块太响(markdown.css 行内 code 同一取舍);accent
+                  // 留给展开态的「已选中」行。圆角随选项行用 md——full 在长
+                  // 答案折行时被钳成半球端头,观感成了第二个用户气泡
+                  <div className="inline-flex max-w-full items-center rounded-md bg-surface-container-highest px-2 py-0.5 text-[11.5px] text-on-surface">
                     <span className="break-all">{summary}</span>
                   </div>
                 )}
@@ -253,7 +257,9 @@ export function AskCard({
                           );
                         })}
                         {textAns && (
-                          <div className="mt-1 rounded-md bg-primary-container px-2.5 py-1.5 text-[12.5px] text-on-primary-container">
+                          // 与收起态摘要 chip 同一取舍:用户答案的大段文字回显
+                          // 走中性容器片,已选中的选项行才带主题色高亮
+                          <div className="mt-1 rounded-md bg-surface-container-highest px-2.5 py-1.5 text-[12.5px] text-on-surface">
                             {textAns}
                           </div>
                         )}

@@ -286,16 +286,19 @@ try {
       c.textContent?.includes("要操作哪个标签页"),
     );
     if (!card) return "no-card";
-    const highlighted = [...card.querySelectorAll("div")].filter((d) =>
-      d.className.includes("bg-primary-container"),
+    // 摘要 chip 已收敛为中性容器片(bg-surface-container-highest):回放态
+    // 卡片折叠,该容器片只会出现在摘要 chip 上,以此钉「答案在场」;
+    // 主题色高亮只存在于展开态的已选中选项行
+    const chip = [...card.querySelectorAll("div")].filter((d) =>
+      d.className.includes("bg-surface-container-highest"),
     ).length;
     const submit = card.querySelector(`button[aria-label="${submitLabel}"]`);
-    return `highlighted=${highlighted} submit=${!!submit}`;
+    return `chip=${chip} submit=${!!submit}`;
   }, zh.chat.askSubmit);
   check(replay !== "no-card", "回放渲染已答反问卡", replay);
   check(
-    replay.includes("highlighted=1") && replay.includes("submit=false"),
-    "回放:选中项高亮且无交互控件(实况=回放)",
+    replay.includes("chip=1") && replay.includes("submit=false"),
+    "回放:摘要 chip(中性底)在场且无交互控件(实况=回放)",
     replay,
   );
 
