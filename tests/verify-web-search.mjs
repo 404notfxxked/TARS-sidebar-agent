@@ -71,6 +71,9 @@ const searchHits = { count: 0 };
 /** 免 Key tab 通道:引擎模式(fixture=正常回放 / captcha=风控挑战页)与命中时间戳(节流断言) */
 const scrapeMode = { bing: "fixture", ddg: "fixture" };
 const scrapeHits = { bing: [], ddg: [] };
+/** ddg 结果页路由收到的全部请求 URL:套件末断言「凡命中必为搜索形态」,
+ *  防非搜索请求(如探测跳转腿)混入污染 lastScrape/scrapeHits */
+const scrapeUrls = { ddg: [] };
 /** 最近一次抓取请求快照(URL/语言头),auto 场景断言用 */
 let lastScrape = null;
 /** 最近一次搜索服务请求快照(URL/方法/鉴权头/请求体),API 场景断言用 */
@@ -162,6 +165,17 @@ mock.setRoutes([
       return answer("未知脚本,直接回答");
     },
   },
+  // 引擎可达性探测旁路:engineHealth 的探测是 SW fetch 引擎首页(无搜索
+  // 词,不匹配下方结果页路由),未拦截会落到真网(浏览器代理)。真网对
+  // ddg 首页回 302 → /html/,该跳转腿反而命中下方 ddg 结果页路由,把
+  // lastScrape/scrapeHits 污染成非搜索请求(A0-2 flaky 根因);慢腿 4s
+  // 超时还会把健康表 seed 过写成 dead 打乱引擎序。旁路只回 200,探测
+  // 确定性即时成功,不触碰真网与场景状态
+  {
+    match: (url) =>
+      /^https:\/\/(?:html\.duckduckgo\.com|www\.bing\.com|www\.google\.com|www\.baidu\.com)\/$/.test(url),
+    handle: (ctx) => ctx.fulfill({ status: 200, body: "ok" }),
+  },
   // 免 Key 抓取通道:搜索引擎结果页(bing/ddg),按 scrapeMode 分发
   {
     match: (url) => url.includes("bing.com/search"),
@@ -189,6 +203,7 @@ mock.setRoutes([
     handle: async (ctx) => {
       scrapeHits.ddg.push(Date.now());
       const req = ctx.params.request;
+      scrapeUrls.ddg.push(req.url);
       lastScrape = {
         url: req.url,
         acceptLanguage:
@@ -768,6 +783,22 @@ console.log("\n===== K2. web_fetch_image 私网地址过卡 =====");
     `K10 拒绝 → 无图片入库(${imgsBefore} → ${imgsBefore})`);
   check((await bodyText(sidepanel)).includes("ERR_OK"), "K11 run 正常收口", (await bodyText(sidepanel)).slice(-200));
 }
+
+// ---- ddg 结果页路由的请求形态守卫 ----
+// 凡命中 ddg 结果页路由的请求必须带 q 且不带辅助参数(与构造侧契约一致,
+// A0-2 同款形态)。裸 URL 或带 count/kl/df 的请求 = 非搜索请求混入:A0-2
+// flaky 的根因即引擎可达性探测(SW fetch 引擎首页,不带搜索词)落真网后
+// 服务端 302 的跳转腿(ddg: / → /html/)命中本路由,覆盖 lastScrape、
+// 污染 scrapeHits。探测旁路(上方首页路由)使探测不出网,此守卫作回归绊线
+check(
+  scrapeUrls.ddg.length > 0 &&
+    scrapeUrls.ddg.every((u) => {
+      const p = new URL(u).searchParams;
+      return p.get("q") !== null && [...p.keys()].every((k) => k === "q");
+    }),
+  `ddg 结果页路由只收搜索形态请求(共 ${scrapeUrls.ddg.length} 次:带 q 且无辅助参数)`,
+  JSON.stringify(scrapeUrls.ddg),
+);
 
 // ---- 汇总 ----
 console.log("\n========================================");

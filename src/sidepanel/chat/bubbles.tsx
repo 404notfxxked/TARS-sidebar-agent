@@ -388,7 +388,10 @@ function TarsImg({
         <img
           src={img.url}
           alt={alt ?? ""}
-          className="max-h-40 rounded-md"
+          // 高度上限走 markdown.css 的上下文规则(混排段行内小图 / 横滑行
+          // 160px):工具类 max-h 只能二选一,而 utilities 层恒压组件样式,
+          // 上下文覆写会失效
+          className="rounded-md"
           // objectURL 失效(blob 已被回收)退到失效占位:否则是破图 + 点开死链
           onError={() =>
             setImg((cur) =>

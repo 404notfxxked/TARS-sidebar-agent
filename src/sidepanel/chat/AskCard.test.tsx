@@ -172,8 +172,15 @@ describe("AskCard 收起态(作答后/回放同款)", () => {
       <AskCard questions={ONE_Q as never} interactive={false} result={answeredResult} />,
     );
     await user.click(screen.getByRole("button", { name: zhCN.chat.confirmExpand }));
-    // 摘要 chip 与选中的选项块都带「结算页」;未选项不落在高亮容器里
-    expect(screen.getAllByText("结算页")).toHaveLength(2);
+    // 摘要 chip 与选中的选项块都展示「结算页」;高亮契约:摘要 chip 收敛为
+    // 中性容器片(正文语境主题色太响),主题色只留给展开态的已选中选项行,
+    // 未选项不落在高亮容器里
+    const summaries = screen.getAllByText("结算页");
+    expect(summaries).toHaveLength(2);
+    const [chip, picked] = summaries.map((s) => s.closest("div")?.className ?? "");
+    expect(chip).toContain("bg-surface-container-highest");
+    expect(chip).not.toContain("bg-primary-container");
+    expect(picked).toContain("bg-primary-container");
     const other = screen.getByText("商品列表");
     expect(other.closest("div")?.className).not.toContain("bg-primary-container");
     await user.click(screen.getByRole("button", { name: zhCN.chat.confirmCollapse }));

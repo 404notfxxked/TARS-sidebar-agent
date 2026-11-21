@@ -28,6 +28,16 @@
   }
   .markdown .media-gallery img {
     max-width: none;
+    max-height: 160px;
+  }
+  /* 混排段(实文与图同段)里的行内配图:压到行文小图尺度并按基线对齐,
+     读作「行内配图」而非插在文字中间的一整块卡片。高度上限写在上下文
+     规则里(工具类 max-h 在 utilities 层,恒压 components 层,上下文覆写
+     压不过它);preflight 的 max-width:100% 保留,宽图贴段宽不溢出 */
+  .markdown p img {
+    display: inline-block;
+    max-height: 120px;
+    vertical-align: baseline;
   }
   /* 焦点环画进图内(--focus-offset 令牌,契约见 base.css 全局焦点规则):
      环默认外扩 5px,在 overflow-x 滚动容器里贴边只剩残边 */

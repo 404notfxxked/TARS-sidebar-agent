@@ -1,14 +1,14 @@
 // 图表视觉留档(非断言型,shot-m3 同族:截图人看 + 少量健康检查):
 // 复杂 mermaid 在窄面板的成图/横滚、放大查看器(缩放后)、echarts 统计图
 // 成图与快照查看器(data: URL 新标签页出口)、坏源码回退态、深浅两主题、
-// 窄面板 ResizeObserver 跟随。等待一律事件驱动(waitFor/locator.waitFor),
-// 不进固定等待基线。
+// 窄面板 ResizeObserver 跟随、混排段行内配图与纯图横滑对照。
+// 等待一律事件驱动(waitFor/locator.waitFor),不进固定等待基线。
 // 用法: pnpm build && node tests/shot-diagram.mjs
 
 import { mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { launchWithCdp, setTheme, answerSSE } from "./lib-cdp-mock.mjs";
+import { idbGetAll, launchWithCdp, setTheme, answerSSE } from "./lib-cdp-mock.mjs";
 import { zh } from "./lib-i18n.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -46,7 +46,7 @@ const GOOD_MD = [
   "    LOG[日志收集] --> MET[指标聚合]",
   "    MET --> ALERT[告警]",
   "  end",
-  "  API_CL --> LB",
+  "  API_CL -- HTTPS --> LB",
   "  RATE --> SVC_A",
   "  RATE --> SVC_B",
   "  RATE --> SVC_C",
@@ -66,6 +66,15 @@ const GOOD_MD = [
 /** 坏源码(flowchart 拼错)→ 回退源码态 + 静置后失败注记 */
 const BROKEN_MD = ["```mermaid", "flowchat TD", "  A --> B", "```"].join("\n");
 
+/** 混排段(文本与 tars-img 同段)与纯图段(横滑行对照):前者考察行内
+ *  配图观感,后者留档横滑成组不被波及 */
+const MIXED_MD = [
+  "先看混排:入口如图![示意图甲](tars-img:shot-1)所示,出口则是![示意图乙](tars-img:shot-2),两图应当读作行内配图而非整块卡片。",
+  "",
+  "![横滑甲](tars-img:shot-1)",
+  "![横滑乙](tars-img:shot-2)",
+].join("\n");
+
 let scriptNo = 0;
 const { browser, extId, mock } = await launchWithCdp({
   extDir: EXT_DIR,
@@ -78,7 +87,8 @@ mock.setRoutes([
     match: (url) => /api\.test\.example\.com/.test(url),
     handle: async (ctx) => {
       scriptNo += 1;
-      return answerSSE(ctx, scriptNo === 1 ? GOOD_MD : BROKEN_MD);
+      return answerSSE(ctx,
+        scriptNo === 1 ? GOOD_MD : scriptNo === 2 ? BROKEN_MD : MIXED_MD);
     },
   },
 ]);
@@ -289,6 +299,24 @@ await waitBars();
 await shot("5-flow-dark");
 ok(true, "深色主题重渲");
 
+// ④c 深色主题 mermaid fit 态留档:连线/箭头/边标签对深底的对比(420 宽)
+await page.locator(".diagram-figure").first().scrollIntoViewIfNeeded();
+const edgeColors = await page.evaluate(() => {
+  const styleOf = (sel, prop) => {
+    const el = document.querySelector(sel);
+    return el ? getComputedStyle(el)[prop] : null;
+  };
+  return {
+    line: styleOf(".flowchart-link", "stroke"),
+    arrow: styleOf(".marker.flowchart-v2", "fill"),
+    labelBg: styleOf(".edgeLabel foreignObject div", "backgroundColor"),
+    label: styleOf(".edgeLabel span", "color"),
+  };
+});
+console.log("  边线实际渲染色:", JSON.stringify(edgeColors));
+await shot("5c-flow-fit-dark");
+ok(true, "深色主题 mermaid fit 态留档");
+
 // ④b 深色主题下的查看器:底色跟随主题(深 surface),浅色线图对深底
 await page.locator(".diagram-btn").first().click();
 await page.locator('[role="dialog"]').waitFor({ timeout: 5000 });
@@ -327,6 +355,80 @@ ok(true, `echarts 随容器 resize(${wideW}px → 300px 面板内收窄)`);
 await page.locator(".diagram-figure").first().waitFor({ timeout: 5000 });
 await shot("6-narrow-300");
 ok(true, "300px 窄面板");
+
+// ⑥ 混排段行内配图 + 纯图横滑对照(深浅两主题):行内配图应读作小图
+// 而非整块卡片;横滑行观感保持不变(样式只作用于 .markdown p 内的 img)
+console.log("\n===== ⑥ 混排段行内配图(深浅两主题)=====");
+await page.setViewportSize({ width: 420, height: 740 });
+const sessions = await idbGetAll(page, "sessions");
+const shotSession = sessions.sort(
+  (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0),
+)[0];
+ok(!!shotSession, "会话已建立(种子图挂靠 sessionId)");
+
+/** canvas 实画两张小图种进 images store:用真实位图而非 1×1 占位,
+ *  行内缩小后的观感才可评判 */
+const seedShotImages = (sessionId) =>
+  page.evaluate(async (sid) => {
+    const draw = (color, accent) => {
+      const c = document.createElement("canvas");
+      c.width = 240;
+      c.height = 140;
+      const g = c.getContext("2d");
+      g.fillStyle = color;
+      g.fillRect(0, 0, c.width, c.height);
+      g.fillStyle = accent;
+      for (let i = 0; i < 5; i++) g.fillRect(20 + i * 44, 50, 32, 40);
+      return c;
+    };
+    const put = (id, canvas) =>
+      new Promise((resolve, reject) => {
+        canvas.toBlob(async (blob) => {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          const rq = indexedDB.open("tars");
+          rq.onsuccess = () => {
+            const db = rq.result;
+            const tx = db.transaction("images", "readwrite");
+            tx.objectStore("images").put({
+              sessionId: sid,
+              id,
+              mime: "image/png",
+              w: canvas.width,
+              h: canvas.height,
+              bytes,
+            });
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+          rq.onerror = () => reject(rq.error);
+        });
+      });
+    await put("shot-1", draw("#6ea8fe", "#1b4fa0"));
+    await put("shot-2", draw("#f2a65e", "#8a4b12"));
+  }, sessionId);
+await seedShotImages(shotSession.id);
+
+await input.fill("把两张入库图配着文字讲一下");
+await send.click();
+await send.waitFor({ state: "visible", timeout: 30000 });
+await page.locator(".markdown p img").first().waitFor({ timeout: 15000 });
+await page.locator(".media-gallery img").first().waitFor({ timeout: 15000 });
+ok(true, "混排段行内配图与纯图横滑行都已渲染");
+// 长会话底部的新内容滚进画面(横滑行是本段最底,上方紧邻混排段)
+await page.locator(".media-gallery").scrollIntoViewIfNeeded();
+await shot("7-mixed-dark");
+await setTheme(page, "light");
+await shot("7-mixed-light");
+ok(true, "深浅两主题混排段留档");
+// 最窄面板(300px):行内配图贴段宽不溢出(preflight max-width:100% 兜底),
+// 横滑行照常横滚
+await page.setViewportSize({ width: 300, height: 740 });
+await page.locator(".media-gallery").scrollIntoViewIfNeeded();
+await shot("8-mixed-narrow-300");
+ok(true, "300px 窄面板混排段留档");
 
 await browser.close();
 
