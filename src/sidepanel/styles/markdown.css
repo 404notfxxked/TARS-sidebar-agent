@@ -16,6 +16,24 @@
     margin: 0.5em 0;
     line-height: 1.6;
   }
+  /* 图片引用横滑行:段落里除空白外全是 tars-img 引用时整段替换成 flex 行
+     (GalleryParagraph),相邻多图一排滑动看;margin 与 .markdown p 对齐。
+     img 显式解除 preflight 的 max-width:100%——否则图片被钉在行宽里,
+     横向滚动永远出不来 */
+  .markdown .media-gallery {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+  .markdown .media-gallery img {
+    max-width: none;
+  }
+  /* 焦点环画进图内(--focus-offset 令牌,契约见 base.css 全局焦点规则):
+     环默认外扩 5px,在 overflow-x 滚动容器里贴边只剩残边 */
+  .markdown .media-gallery a {
+    --focus-offset: -3px;
+  }
   /* 层级靠字号 + 字重双通道:h2 明显大于正文(1em 曾与正文同字号,层级塌掉) */
   .markdown h1,
   .markdown h2,
@@ -214,6 +232,10 @@
     font: inherit;
     text-align: inherit;
     cursor: zoom-in;
+    /* 焦点环画进元素盒内(--focus-offset 令牌,契约见 base.css 全局焦点
+       规则):按钮填满 overflow:hidden 的 figure,环外扩 5px 三边被裁,
+       只剩头条下一条横线 */
+    --focus-offset: -3px;
   }
   .diagram-body {
     overflow-x: auto;

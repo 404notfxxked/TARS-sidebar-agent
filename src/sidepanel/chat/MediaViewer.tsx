@@ -1,7 +1,8 @@
 // 媒体放大查看器:图表(mermaid SVG)与图片的面板内全屏查看。侧栏不支持
 // 原生 Fullscreen API,这个覆盖层是「放大看」的主通道;真全屏走「新标签页
 // 打开」。交互:滚轮向光标缩放(50–300%)、拖拽平移、双击/点百分数复位、
-// 底部 ± 步进缩放胶囊(步进 25 个百分点)、Esc 关闭。经 portal 挂
+// 底部 ± 步进缩放胶囊(步进 25 个百分点)、点按空白处关闭(lightbox 惯例,
+// 与拖拽平移以位移阈值区分)、Esc 关闭。经 portal 挂
 // document.body——消息列表祖先链上任何 transform 都会改变 fixed 的包含块,
 // portal 到根才能保证覆盖层铺满面板。图标单视图私有,不上移 icons.tsx
 // (其收拢约定:有第二使用方才进公共层)。
@@ -27,6 +28,9 @@ interface Transform {
 const IDENTITY: Transform = { x: 0, y: 0, s: 1 };
 
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+
+/** 点按与拖拽的分界:位移不超过该值算点按(点按空白处关闭用) */
+const CLICK_MAX_MOVE = 5;
 
 /** SVG 新开标签页:不能开裸 SVG——mermaid 的 htmlLabels 会在图里嵌未闭合
  *  的 <br>/<p> 等 HTML 片段,注入 DOM 走 HTML 解析器无碍,但标签页把
@@ -139,9 +143,14 @@ export function MediaViewer({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
-  const dragRef = useRef<{ px: number; py: number; base: Transform } | null>(
-    null,
-  );
+  const dragRef = useRef<{
+    px: number;
+    py: number;
+    base: Transform;
+    /** 按下落点:pointercapture 会把 up 的 target 重定向到 stage,「按在
+     *  媒体还是空白」只能在 down 时记(点按空白关闭的判据) */
+    target: EventTarget | null;
+  } | null>(null);
 
   // 打开时聚焦容器(键盘可达),关闭时把焦点还给触发元素
   useEffect(() => {
@@ -189,7 +198,12 @@ export function MediaViewer({
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    dragRef.current = { px: e.clientX, py: e.clientY, base: tf };
+    dragRef.current = {
+      px: e.clientX,
+      py: e.clientY,
+      base: tf,
+      target: e.target,
+    };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -201,6 +215,19 @@ export function MediaViewer({
       y: d.base.y + (e.clientY - d.py),
     });
   };
+  // pointerup:拖拽收尾 + 点按空白关闭。位移超阈值的落手(拖拽平移)不算
+  // 点按;按下落在媒体内容上的点按也不关 —— 只认空白处的点按
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (!d) return;
+    const moved = Math.hypot(e.clientX - d.px, e.clientY - d.py);
+    const onMedia =
+      d.target instanceof Element &&
+      d.target.closest("img, .media-svg-host") !== null;
+    if (moved <= CLICK_MAX_MOVE && !onMedia) onClose();
+  };
+  // pointercancel(指针被系统接管)不算点击,只收尾
   const endDrag = () => {
     dragRef.current = null;
   };
@@ -306,7 +333,7 @@ export function MediaViewer({
         className="relative flex-1 cursor-grab touch-none overflow-hidden select-none active:cursor-grabbing"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
+        onPointerUp={onPointerUp}
         onPointerCancel={endDrag}
         onDoubleClick={() => setTf(IDENTITY)}
       >

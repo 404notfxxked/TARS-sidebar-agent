@@ -2,7 +2,9 @@
 // - 懒创建并去重 offscreen document(chrome.offscreen 全局只允许一份)
 // - page_* 三工具的调用转发(DOC_TOOL_CALL / DOC_TOOL_RESULT 协议)
 // - 一次性解析任务转发(PARSE_CALL / PARSE_RESULT):解析数据由本侧自带,
-//   不绑定 tab 快照(如 web_search 抓到的搜索结果页 HTML)
+//   不绑定 tab 快照(如 web_search 抓到的搜索结果页 HTML)。kind 清单与
+//   offscreen/main.ts handleParse 镜像(两侧同步改):search / fetch_build /
+//   fetch_read / diagram_validate
 // - 协议字面量(下述 7 个 type 串 + NOT_CACHED: 前缀,后者另见 webFetch.ts)
 //   与 src/offscreen/main.ts 是跨上下文镜像(offscreen 侧不可 import 本模块):
 //   改动任何一侧的字面量必须同步另一侧

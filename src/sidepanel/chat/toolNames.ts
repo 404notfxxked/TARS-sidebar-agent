@@ -13,6 +13,7 @@ const TOOL_KEYS: Record<string, string> = {
   page_outline: "chat.tool.pageOutline",
   web_search: "chat.tool.webSearch",
   web_fetch: "chat.tool.webFetch",
+  web_fetch_image: "chat.tool.webFetchImage",
   find_elements: "chat.tool.findElements",
   scroll_page: "chat.tool.scrollPage",
   page_screenshot: "chat.tool.pageScreenshot",

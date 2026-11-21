@@ -323,6 +323,29 @@ export async function getImage(id: string): Promise<ImageRow | undefined> {
   );
 }
 
+/** 单独落一张图片字节行(web_fetch_image 工具入库用):工具执行期先于消息
+ *  行落库,与 appendMessages 的批内落图是两条路径。行按 ImageRow 原形写入,
+ *  随会话删除级联消失;不被任何消息行引用时仅占库位,不参与
+ *  deleteMessagesFrom 的引用式级联(那条只扫消息行的 images 元数据) */
+export async function putImage(
+  sessionId: string,
+  id: string,
+  bytes: Uint8Array,
+  meta: { mime: string; w: number; h: number },
+): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(IMAGES, "readwrite");
+  tx.objectStore(IMAGES).put({
+    sessionId,
+    id,
+    mime: meta.mime,
+    w: meta.w,
+    h: meta.h,
+    bytes,
+  });
+  await settled(tx);
+}
+
 /** 删单个会话:元数据、消息、图片字节一起消失 */
 export async function deleteSessionRows(id: string): Promise<void> {
   const db = await openDb();

@@ -15,6 +15,7 @@ import {
 } from "./pipeline";
 import { fetchBuild, fetchRead } from "./fetchDoc";
 import { parseSearchResults } from "./searchParse";
+import { validateDiagramSource } from "./diagramValidate";
 import { SnapshotPool } from "./snapshotPool";
 import { createLogger, installGlobalErrorHook } from "../shared/logger";
 import { errText } from "../shared/errors";
@@ -126,7 +127,8 @@ async function handleDocTool(name: string, args: unknown, targetTabId: number, r
 
 // ---- 一次性解析任务(PARSE_CALL,不依赖任何 tab 快照)----
 // 与 DOC_TOOL_CALL 的区别:数据由 SW 随消息自带(web_fetch 抓到的网页 HTML),
-// 不需要先向某个 tab 索取快照
+// 不需要先向某个 tab 索取快照。kind 清单与 shared/docBridge.ts 头注镜像
+// (两侧同步改):search / fetch_build / fetch_read / diagram_validate
 
 /** async:内部 throw 必须变成 rejected promise —— 同步 throw 会逃出
  *  Promise.resolve(...) 成为 listener 未捕获异常,SW 侧拿到的是被 Chrome
@@ -161,6 +163,10 @@ async function handleParse(kind: string, payload: unknown): Promise<unknown> {
       const p = (payload ?? {}) as { url?: unknown };
       if (typeof p.url !== "string" || !p.url) throw new Error("fetch_read 缺少 url");
       return fetchRead(p as { url: string; offset?: unknown; chars?: unknown });
+    }
+    case "diagram_validate": {
+      const p = (payload ?? {}) as { source?: unknown };
+      return validateDiagramSource(p.source);
     }
     default:
       throw new Error(`unknown parse kind: ${kind}`);

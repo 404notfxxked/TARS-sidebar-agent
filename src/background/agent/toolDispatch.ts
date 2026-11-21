@@ -49,8 +49,8 @@ export function createDispatchToolCall(
       );
       if (decision.kind === "deny") throw new Error(deniedMessage(decision));
       // 批准即知情:同 run 内该域后续抓取不再重复确认(跨 run 由下一轮
-      // 从历史里的成功抓取结果推导)
-      if (name === "web_fetch") {
+      // 从历史里的成功抓取结果推导;web_fetch_image 与 web_fetch 同族同语义)
+      if (name === "web_fetch" || name === "web_fetch_image") {
         const domain = allowlistDomainOf(
           typeof (args as { url?: unknown } | null)?.url === "string"
             ? ((args as { url: string }).url as string)

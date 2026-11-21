@@ -164,6 +164,7 @@ e2e 套件先 `pnpm build` 再跑(dist 过期时 run.mjs 警告并置红退出�
 | `ask` | `verify-ask.mjs` | ask_user 反问端到端:点选后卡片级提交,单选同款防误触(答案以问题为键结构化回填)/两问含多选(未答齐禁用→答齐卡片提交,两问齐回)/「其他」自由输入 text 通道/作答前取消(run 立即收口、不回填观察结果、卡片失去交互控件)/历史回放由 tool 记录重渲染收起态已答卡(问题+所选摘要行,可展开回看高亮选项/无交互控件) |
 | `host-access` | `verify-host-access.mjs` | 权限拒绝路径与生产注入路径(zero/dynamic flavor):未授权工具给可行动指引且 run 正常收口(find_elements / web_fetch)/授权态无静态 content script 时按需注入真实执行(sendMessage 失败 → executeScript → 重试) |
 | `model-lists` | `verify-model-lists.mjs` | 模型列表漂移(设置页真拉取):刷新后本地独有模型标「不在官方列表」+ 行首警示图标、官方新模型并入/两段确认清理首点不写盘/官方加回后刷新摘标记/一键清理整批移除且默认模型被清时回落剩余首个(落盘核对) |
+| `diagrams` | `verify-diagrams.mjs` | 图表与网图回答:坏 mermaid 回喂自修复(两段式调用/run 日志/历史投影含坏轮与修复轮/synthetic 注记)/tars-img 引用(先种 images store 再回答:https 外链拦截/相邻引用横滑成组/GET_IMAGE 真解码/查看器开合/点按空白关闭与媒体点按不关)/会话回放(mermaid 重渲 + 图片重取无失效占位,实况=回放,落盘全量) |
 | `layout` | `probe-layout.mjs` | 悬浮层布局回归(docScrollable/headerTop/innerScrollable 数值断言),悬浮层硬规则的自动化防线;composer 窄宽度回归(320/280/250px 工具条单行、摘要栏与弹出面板无变形无溢出、浮层不推挤表体) |
 | `locale` | `probe-locale.mjs` | 语言切换:整树刷新/回首页/重载持久化 |
 | `focus` | `probe-focus.mjs` | 焦点与滚动体验:面板 autofocus/悬浮层关闭焦点回归/运行中输入框可编辑/「回到最新」出现-回底-消失/模型选择键盘导航(↑↓/Home/End/Enter/Tab/Esc)/历史搜索 autofocus |

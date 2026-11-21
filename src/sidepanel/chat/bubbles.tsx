@@ -4,6 +4,7 @@
 // 缓存,历史消息不因无关状态重渲染/重解析。
 
 import {
+  Children,
   isValidElement,
   useEffect,
   useState,
@@ -11,6 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import ReactMarkdown, {
+  defaultUrlTransform,
   type Options as MarkdownOptions,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -71,8 +73,17 @@ const MD_REHYPE: NonNullable<MarkdownOptions["rehypePlugins"]> = [
     },
   ],
 ];
+/** URL 白名单:只额外放行 tars-img:(本地入库图片的引用语法,字节经
+ *  images.ts 通路取,不发网络请求),其余交给 react-markdown 默认清洗
+ *  (剥 data:/自定义 scheme)。隐私边界:模型随手写的外链(https 图床)
+ *  不让面板向第三方发请求 —— 放行前缀与 img 组件的拒渲染是同一条红线的
+ *  两道闸,改一处必须过另一处 */
+const MD_URL_TRANSFORM: NonNullable<MarkdownOptions["urlTransform"]> = (url) =>
+  url.startsWith("tars-img:") ? url : defaultUrlTransform(url);
 const MD_COMPONENTS: NonNullable<MarkdownOptions["components"]> = {
   pre: CodeBlock,
+  img: TarsImg,
+  p: GalleryParagraph,
 };
 
 export function UserBubble({
@@ -135,6 +146,7 @@ export function AssistantBubble({
       <ReactMarkdown
         remarkPlugins={MD_REMARK}
         rehypePlugins={MD_REHYPE}
+        urlTransform={MD_URL_TRANSFORM}
         components={MD_COMPONENTS}
       >
         {text}
@@ -305,6 +317,119 @@ export function ChatImage({ meta }: { meta: ImageMeta }) {
       )}
     </>
   );
+}
+
+/** markdown 内嵌图片(web_fetch_image 入库的网图):只认 tars-img: 前缀的
+ *  引用语法,字节经 images.ts 的缓存/GET_IMAGE 通路取本地 objectURL。
+ *  隐私边界:其余 src(https 外链/data: 等)一律渲染为 null——模型随手写
+ *  的外链不得让面板向第三方图床发请求;放行前缀在 MD_URL_TRANSFORM,
+ *  两处是同一条红线的两道闸 */
+function TarsImg({
+  src,
+  alt,
+  node: _node,
+}: ComponentPropsWithoutRef<"img"> & { node?: unknown }) {
+  const t = useT();
+  const id = src?.startsWith("tars-img:")
+    ? src.slice("tars-img:".length)
+    : null;
+  // 流式增量里 src 逐字符生长会换引用:状态按 id 收拢,换 id 即重置,
+  // 不让上一张的 URL/失败态顶在新引用上(首帧窥缓存,miss 才发 GET_IMAGE)
+  const [img, setImg] = useState<{
+    id: string | null;
+    url: string | null;
+    failed: boolean;
+  }>(() => ({ id, url: id ? peekImgUrl(id) : null, failed: false }));
+  useEffect(() => {
+    if (img.id !== id) {
+      setImg({ id, url: id ? peekImgUrl(id) : null, failed: false });
+      return;
+    }
+    if (!id || img.url || img.failed) return;
+    let alive = true;
+    requestImgUrl(id).then((u) => {
+      if (alive)
+        setImg((cur) =>
+          cur.id === id ? { ...cur, url: u, failed: !u } : cur,
+        );
+    });
+    return () => {
+      alive = false;
+    };
+  }, [id, img]);
+  const [zoom, setZoom] = useState(false);
+  if (!id) return null;
+  if (img.failed) {
+    return (
+      <span className="flex h-20 w-28 shrink-0 items-center justify-center rounded-md bg-surface-container-high text-[12px] text-on-surface-variant">
+        {t("chat.imageExpired")}
+      </span>
+    );
+  }
+  if (!img.url) {
+    return (
+      <span className="h-20 w-28 shrink-0 animate-pulse rounded-md bg-surface-container-high" />
+    );
+  }
+  return (
+    <>
+      <a
+        href={img.url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => {
+          // 修饰键/非左键保留浏览器原生行为(新标签页/下载);普通单击进查看器
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+            return;
+          e.preventDefault();
+          setZoom(true);
+        }}
+      >
+        <img
+          src={img.url}
+          alt={alt ?? ""}
+          className="max-h-40 rounded-md"
+          // objectURL 失效(blob 已被回收)退到失效占位:否则是破图 + 点开死链
+          onError={() =>
+            setImg((cur) =>
+              cur.id === id ? { ...cur, url: null, failed: true } : cur,
+            )
+          }
+        />
+      </a>
+      {zoom && (
+        <MediaViewer
+          content={{ kind: "image", url: img.url, alt: alt ?? "" }}
+          onClose={() => setZoom(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/** 段落级横滑成组:段落里除空白文本外全是 tars-img 引用时整段替换成
+ *  .media-gallery 横滑行(相邻多图一排滑动看);含任何实文的段落保持
+ *  普通 <p>(图片随文内联)。非 tars-img 的 img 引用(隐私边界渲染为
+ *  null)不参与成组,避免空行占位 */
+function GalleryParagraph({
+  node: _node,
+  children,
+  ...rest
+}: ComponentPropsWithoutRef<"p"> & { node?: unknown }) {
+  const isTarsImg = (c: ReactNode): boolean =>
+    isValidElement(c) &&
+    c.type === TarsImg &&
+    typeof (c.props as { src?: unknown }).src === "string" &&
+    (c.props as { src: string }).src.startsWith("tars-img:");
+  const items = Children.toArray(children);
+  const hasImg = items.some(isTarsImg);
+  const groupable =
+    hasImg &&
+    items.every(
+      (c) => (typeof c === "string" && c.trim() === "") || isTarsImg(c),
+    );
+  if (!groupable) return <p {...rest}>{children}</p>;
+  return <div className="media-gallery">{children}</div>;
 }
 
 /** 代码块容器:顶部条(语言 + 复制)+ 横向滚动代码体。

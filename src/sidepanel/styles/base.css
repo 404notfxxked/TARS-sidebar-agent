@@ -20,10 +20,14 @@ body {
 }
 
 /* 键盘焦点 — M3 focus indicator:3px 主色描边 + 2px 外偏移,不用阴影环。
-   输入框自身有 focus 描边形态,不在全局规则里重复 */
+   输入框自身有 focus 描边形态,不在全局规则里重复。
+   --focus-offset 令牌:环默认外扩 5px(2 偏移 + 3 描边),在 overflow 裁切
+   容器里贴边的可聚焦元素会被裁掉环的靠边部分(残边甚至全无)。这类场景
+   在自己的 layer 里声明 --focus-offset: -3px 把环画进元素盒内;自定义
+   属性没有竞争声明,layer 内声明必然生效,无层叠竞争 */
 :focus-visible:not(input):not(textarea) {
   outline: 3px solid var(--md-sys-color-primary);
-  outline-offset: 2px;
+  outline-offset: var(--focus-offset, 2px);
 }
 
 /* 触屏(触屏笔记本/ChromeOS):交互控件免双击缩放延迟;不影响滚动与
