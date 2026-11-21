@@ -217,6 +217,23 @@ console.log("\n===== D2. tars-img 引用渲染(横滑成组 + 外链拦截)=====
     .locator(`button[aria-label="${zh.chat.media.close}"]`)
     .click();
   await viewer.waitFor({ state: "hidden", timeout: 5000 });
+
+  // 点按空白处关闭(lightbox 惯例):真浏览器才验得到 pointercapture 的
+  // target 重定向 —— up 永远落在 stage 上,判据必须取 down 时的落点
+  await gallery.locator("img").first().click();
+  await viewer.waitFor({ timeout: 5000 });
+  await sidepanel
+    .locator('[role="dialog"]')
+    .click({ position: { x: 15, y: 300 } });
+  await viewer.waitFor({ state: "hidden", timeout: 5000 });
+  check(true, "D2-5 点按空白处关闭查看器");
+
+  await gallery.locator("img").first().click();
+  await viewer.waitFor({ timeout: 5000 });
+  await viewer.locator("img").click();
+  check(await viewer.isVisible(), "D2-6 按在媒体上的点按不关闭");
+  await sidepanel.keyboard.press("Escape");
+  await viewer.waitFor({ state: "hidden", timeout: 5000 });
 }
 
 // ---- 汇总 ----

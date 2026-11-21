@@ -239,3 +239,47 @@ describe("媒体放大查看器", () => {
     expect(blobArg!.type).toBe("image/png");
   });
 });
+
+describe("点按空白处关闭", () => {
+  // stage 同时是拖拽平移面:点按与拖拽以位移阈值区分,按下落点在媒体内容
+  // 上的点按不复位为关闭(pointer capture 会把 up 的 target 重定向到
+  // stage,按下位置必须在 down 时记)。事件直接驱动,不经 media 管线
+  const onClose = vi.fn();
+
+  function renderViewer() {
+    onClose.mockClear();
+    render(
+      <MediaViewer
+        content={{ kind: "image", url: "blob:blank-x", alt: "x" }}
+        onClose={onClose}
+      />,
+    );
+    // stage 是 .media-stage(铺满的 flex 容器)的父元素;空白点击实际
+    // 命中 .media-stage,媒体内容命中其内的 img
+    return document.querySelector(".media-stage")!
+      .parentElement as HTMLElement;
+  }
+
+  it("点按空白处关闭(位移小于阈值)", () => {
+    const stage = renderViewer();
+    fireEvent.pointerDown(stage, { clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(stage, { clientX: 102, clientY: 101 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("按在媒体内容上的点按不关", () => {
+    const stage = renderViewer();
+    const img = within(screen.getByRole("dialog")).getByRole("img");
+    fireEvent.pointerDown(img, { clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(stage, { clientX: 100, clientY: 100 });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("按下后位移超阈值(拖拽平移)不关,即使落手在空白", () => {
+    const stage = renderViewer();
+    fireEvent.pointerDown(stage, { clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(stage, { clientX: 160, clientY: 140 });
+    fireEvent.pointerUp(stage, { clientX: 160, clientY: 140 });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
